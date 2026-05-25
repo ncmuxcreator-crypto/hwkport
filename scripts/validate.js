@@ -6,6 +6,10 @@ const required = [
   "dashboard/api/vessels.json",
   "dashboard/api/status.json",
   "dashboard/index.html",
+  "dashboard/api/hot-vessels.json",
+  "dashboard/api/commercial-command-center.json",
+  "dashboard/api/port-congestion-heatmap.json",
+  "dashboard/api/biofouling-timeline.json",
   "dashboard/api/candidates.json",
   "dashboard/api/backend-ops.json",
   "dashboard/api/candidate-changes.json",
@@ -42,6 +46,11 @@ for (const item of data) {
   for (const field of ["stay_hours", "berth_hours", "anchorage_hours", "work_window_hours", "biofouling_score", "cii_pressure_score", "total_sales_priority_score", "reason_codes"]) {
     if (!(field in item)) {
       throw new Error(`Missing intelligence field ${field} for ${item.vessel_name || item.vessel_id}`);
+    }
+  }
+  for (const field of ["hybrid_entity_key", "identification_method", "imo_status", "gt_group", "stay_days_group"]) {
+    if (!(field in item)) {
+      throw new Error(`Missing commercial command-center field ${field} for ${item.vessel_name || item.vessel_id}`);
     }
   }
 }
@@ -83,6 +92,9 @@ if (!status.backend_stability_batch || !status.runtime_budget || !status.master_
 }
 if (!status.collector_diagnostics || typeof status.collector_diagnostics.attempted_count !== "number") {
   throw new Error("Missing collector diagnostics");
+}
+if (!status.commercial_command_center || !Array.isArray(status.port_congestion_heatmap) || !Array.isArray(status.biofouling_timeline)) {
+  throw new Error("Missing commercial command-center frontend outputs");
 }
 
 const workflow = fs.readFileSync(".github/workflows/longterm-update.yml", "utf8");

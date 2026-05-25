@@ -2,7 +2,7 @@
   "version": "17.7.0",
   "build_name": "Backend Stability Batch",
   "backend_stage": "actual_collector_backend_ready",
-  "generated_at": "2026-05-25T14:16:14.877Z",
+  "generated_at": "2026-05-25T14:38:14.016Z",
   "collector_execution_mode": "fallback_sample_snapshot",
   "supabase_status": "not_configured",
   "record_count": 3,

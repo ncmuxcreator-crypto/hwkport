@@ -69,6 +69,112 @@ function deriveCiiPressureScore(v, metrics, biofoulingScore) {
   return Math.max(0, Math.min(100, score));
 }
 
+function normalizeIdentityToken(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9가-힣]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function deriveIdentity(v) {
+  const imo = normalizeIdentityToken(v.imo);
+  const mmsi = normalizeIdentityToken(v.mmsi);
+  const callSign = normalizeIdentityToken(v.call_sign || v.callsign);
+  const vesselName = normalizeIdentityToken(v.vessel_name);
+  const gt = normalizeIdentityToken(v.gt);
+  const port = normalizeIdentityToken(v.port);
+
+  if (imo) {
+    return {
+      hybrid_entity_key: `IMO-${imo}`,
+      identification_method: "IMO",
+      imo_status: "present",
+      imo_recovery_priority: "none"
+    };
+  }
+  if (mmsi) {
+    return {
+      hybrid_entity_key: `MMSI-${mmsi}`,
+      identification_method: "MMSI",
+      imo_status: "missing",
+      imo_recovery_priority: "medium"
+    };
+  }
+  if (callSign && vesselName && gt) {
+    return {
+      hybrid_entity_key: `HYBRID-${callSign}-${vesselName}-${gt}`,
+      identification_method: "HYBRID_CALLSIGN_NAME_GT",
+      imo_status: "missing_recoverable",
+      imo_recovery_priority: "high"
+    };
+  }
+  return {
+    hybrid_entity_key: `NAME_PORT-${vesselName || "UNKNOWN"}-${port || "UNKNOWN"}`,
+    identification_method: "NAME_PORT_FALLBACK",
+    imo_status: "missing_low_confidence",
+    imo_recovery_priority: "review"
+  };
+}
+
+function deriveFleetBadges(v) {
+  const operator = String(v.operator || "").toLowerCase();
+  const vesselName = String(v.vessel_name || "").toLowerCase();
+  const text = `${operator} ${vesselName}`;
+  const badges = [];
+  if (v.operator) badges.push("operator_known");
+  if (/hmm|hyundai|glovis|pan ocean|panocean|kss|sk shipping|sinokor|kmtc|korea|대한|현대|팬오션|고려|흥아|장금/.test(text)) {
+    badges.push("korea_linked_operator");
+  }
+  if (v.operator && (v.observation_count || 0) >= 2) badges.push("repeat_observed_fleet");
+  if ((v.cleaning_candidate_score || 0) >= 65 && v.operator) badges.push("fleet_leverage_watch");
+  return badges;
+}
+
+function deriveOperationalRisk(v, metrics, biofoulingScore) {
+  const status = String(v.status || "").toLowerCase();
+  const flags = [];
+  if ((metrics.anchorage_hours || 0) >= 24 || /waiting|anchorage|anchor|idle|drifting/.test(status)) flags.push("anchorage_waiting");
+  if ((metrics.work_window_hours || 0) >= 24) flags.push("uwc_window_available");
+  if ((metrics.stay_hours || 0) >= 168) flags.push("long_stay_7d");
+  if ((metrics.stay_hours || 0) >= 336) flags.push("long_stay_14d");
+  if (biofoulingScore >= 85) flags.push("biofouling_critical");
+  else if (biofoulingScore >= 70) flags.push("biofouling_high");
+  if (/berth|alongside|moored/.test(status)) flags.push("berth_coordination_needed");
+
+  return {
+    operational_risk_flags: flags,
+    work_feasibility: (metrics.work_window_hours || 0) >= 24
+      ? "workable_window"
+      : /waiting|anchorage|anchor|idle|drifting/.test(status)
+        ? "anchorage_review"
+        : "monitor_window",
+    operational_risk_score: Math.min(100, Math.round(
+      (metrics.work_window_hours || 0) * 0.25 +
+      (metrics.anchorage_hours || 0) * 0.15 +
+      biofoulingScore * 0.45
+    ))
+  };
+}
+
+function gtGroup(gt) {
+  const value = Number(gt || 0);
+  if (value >= 80000) return "gt_80000_plus";
+  if (value >= 30000) return "gt_30000_79999";
+  if (value >= 5000) return "gt_5000_29999";
+  if (value > 0) return "gt_under_5000";
+  return "gt_unknown";
+}
+
+function stayDaysGroup(hours) {
+  const days = Number(hours || 0) / 24;
+  if (days >= 21) return "stay_21d_plus";
+  if (days >= 14) return "stay_14_20d";
+  if (days >= 7) return "stay_7_13d";
+  if (days >= 3) return "stay_3_6d";
+  return "stay_under_3d";
+}
+
 console.log(`[HWK] v${VERSION} ${BUILD_NAME} pipeline started`);
 
 const startedAt = new Date().toISOString();
@@ -272,6 +378,7 @@ function enrichSalesSignals(records) {
     const biofoulingScore = deriveBiofoulingScore(v, scheduleMetrics);
     const ciiPressureScore = deriveCiiPressureScore(v, scheduleMetrics, biofoulingScore);
     const candidateProfile = buildCandidateProfile({ ...v, ...scheduleMetrics, risk_score: biofoulingScore, compliance_watch: complianceWatch });
+    const identity = deriveIdentity(v);
     const isSample = String(v.source_mode || "").includes("sample");
     const reasonCodes = [
       ...(v.reason_codes || []),
@@ -295,13 +402,118 @@ function enrichSalesSignals(records) {
       total_sales_priority_score: Math.min(100, Math.round(candidateProfile.cleaning_candidate_score * 0.5 + biofoulingScore * 0.3 + ciiPressureScore * 0.2)),
       risk_level: riskLevel(biofoulingScore),
       sales_priority: candidateProfile.is_immediate_candidate ? "Immediate Candidate" : biofoulingScore >= 85 ? "Critical" : biofoulingScore >= 70 ? "High" : "Normal",
+      ...identity,
+      compliance_band: complianceWatch ? "biosecurity_watch" : "standard",
+      gt_group: gtGroup(v.gt),
+      stay_days_group: stayDaysGroup(scheduleMetrics.stay_hours),
       reason_codes: reasonCodes,
       sales_reason: reasonCodes,
       compliance_watch: complianceWatch
     };
+    Object.assign(enriched, deriveOperationalRisk(enriched, scheduleMetrics, biofoulingScore));
+    enriched.operator_fleet_badges = deriveFleetBadges(enriched);
     enriched.recommended_action = enriched.candidate_next_action || recommendedAction(enriched);
     enriched.opportunity_usd = estimateOpportunity(enriched);
     return enriched;
+  });
+}
+
+function sortCommercialPriority(records) {
+  return records.slice().sort((a, b) =>
+    Number(b.is_immediate_candidate) - Number(a.is_immediate_candidate) ||
+    (b.total_sales_priority_score || 0) - (a.total_sales_priority_score || 0) ||
+    (b.biofouling_score || 0) - (a.biofouling_score || 0) ||
+    (b.work_window_hours || 0) - (a.work_window_hours || 0)
+  );
+}
+
+function buildHotVessels(records) {
+  return sortCommercialPriority(records)
+    .filter(v => v.is_cleaning_candidate || (v.biofouling_score || 0) >= 65 || (v.operational_risk_score || 0) >= 60)
+    .slice(0, 40);
+}
+
+function buildCommercialCommandCenter(records) {
+  const hot = buildHotVessels(records);
+  const missingImo = records.filter(v => v.imo_status && v.imo_status !== "present");
+  return {
+    generated_at: new Date().toISOString(),
+    focus_question: "Which vessel should HullWiper Korea contact now, and why?",
+    hot_count: hot.length,
+    full_count: records.length,
+    immediate_targets: hot.filter(v => v.is_immediate_candidate).slice(0, 8),
+    operational_risk_queue: sortCommercialPriority(records)
+      .filter(v => (v.operational_risk_flags || []).length || (v.operational_risk_score || 0) >= 60)
+      .slice(0, 12),
+    imo_recovery_board: missingImo
+      .sort((a, b) => (b.total_sales_priority_score || 0) - (a.total_sales_priority_score || 0))
+      .slice(0, 12)
+      .map(v => ({
+        vessel_name: v.vessel_name,
+        port: v.port,
+        gt: v.gt,
+        call_sign: v.call_sign || v.callsign || null,
+        hybrid_entity_key: v.hybrid_entity_key,
+        identification_method: v.identification_method,
+        imo_status: v.imo_status,
+        priority: v.imo_recovery_priority,
+        score: v.total_sales_priority_score
+      })),
+    operating_rule: "Load hot vessels first for mobile speed. Load full vessels only when the operator expands the full queue."
+  };
+}
+
+function buildPortCongestionHeatmap(records) {
+  const ports = new Map();
+  for (const v of records) {
+    const port = v.port || "Unknown";
+    const current = ports.get(port) || {
+      port,
+      total: 0,
+      waiting: 0,
+      long_stay: 0,
+      high_biofouling: 0,
+      immediate: 0,
+      score: 0
+    };
+    current.total += 1;
+    if ((v.anchorage_hours || 0) >= 12 || /waiting|anchorage|anchor|idle|drifting/i.test(v.status || "")) current.waiting += 1;
+    if ((v.stay_hours || 0) >= 168) current.long_stay += 1;
+    if ((v.biofouling_score || 0) >= 70) current.high_biofouling += 1;
+    if (v.is_immediate_candidate) current.immediate += 1;
+    current.score += Math.min(100, (v.operational_risk_score || 0) + (v.is_immediate_candidate ? 15 : 0));
+    ports.set(port, current);
+  }
+  return [...ports.values()]
+    .map(p => ({
+      ...p,
+      congestion_score: p.total ? Math.min(100, Math.round(p.score / p.total + p.waiting * 4 + p.long_stay * 5 + p.immediate * 8)) : 0
+    }))
+    .sort((a, b) => b.congestion_score - a.congestion_score || b.immediate - a.immediate || b.high_biofouling - a.high_biofouling);
+}
+
+function buildBiofoulingTimeline(records) {
+  const buckets = [
+    { key: "0_3d", label: "0-3 days", min: 0, max: 72 },
+    { key: "3_7d", label: "3-7 days", min: 72, max: 168 },
+    { key: "7_14d", label: "7-14 days", min: 168, max: 336 },
+    { key: "14_21d", label: "14-21 days", min: 336, max: 504 },
+    { key: "21d_plus", label: "21+ days", min: 504, max: Infinity }
+  ];
+  return buckets.map(bucket => {
+    const rows = records.filter(v => {
+      const hours = Number(v.stay_hours || 0);
+      return hours >= bucket.min && hours < bucket.max;
+    });
+    return {
+      ...bucket,
+      count: rows.length,
+      high_biofouling: rows.filter(v => (v.biofouling_score || 0) >= 70).length,
+      immediate: rows.filter(v => v.is_immediate_candidate).length,
+      avg_biofouling_score: rows.length
+        ? Math.round(rows.reduce((sum, v) => sum + (v.biofouling_score || 0), 0) / rows.length)
+        : 0
+    };
   });
 }
 
@@ -961,6 +1173,10 @@ try {
     supabaseStatus
   });
   vessels = snapshotOutputs.merged;
+  const hotVessels = buildHotVessels(vessels);
+  const commercialCommandCenter = buildCommercialCommandCenter(vessels);
+  const portCongestionHeatmap = buildPortCongestionHeatmap(vessels);
+  const biofoulingTimeline = buildBiofoulingTimeline(vessels);
 
   const report = {
     ...baseReport,
@@ -976,6 +1192,10 @@ try {
     backend_stability_batch: buildBackendStabilityBatch(vessels, detectSecrets(), baseReport),
     candidate_ops: buildCandidateOps(vessels, baseReport),
     backend_health: buildBackendHealth(vessels, detectSecrets(), baseReport),
+    commercial_command_center: commercialCommandCenter,
+    hot_vessel_count: hotVessels.length,
+    port_congestion_heatmap: portCongestionHeatmap,
+    biofouling_timeline: biofoulingTimeline,
     deployment_readiness: buildDeploymentReadiness(baseReport, vessels, detectSecrets())
   };
 
@@ -996,6 +1216,10 @@ try {
   };
 
   fs.writeFileSync("dashboard/api/candidates.json", JSON.stringify(buildCandidateSummary(vessels), null, 2));
+  fs.writeFileSync("dashboard/api/hot-vessels.json", JSON.stringify(hotVessels, null, 2));
+  fs.writeFileSync("dashboard/api/commercial-command-center.json", JSON.stringify(commercialCommandCenter, null, 2));
+  fs.writeFileSync("dashboard/api/port-congestion-heatmap.json", JSON.stringify(portCongestionHeatmap, null, 2));
+  fs.writeFileSync("dashboard/api/biofouling-timeline.json", JSON.stringify(biofoulingTimeline, null, 2));
   fs.writeFileSync("dashboard/api/status.json", JSON.stringify(report, null, 2));
   fs.writeFileSync("data/pipeline-report.json", JSON.stringify(report, null, 2));
   fs.writeFileSync(`data/reports/${today}.json`, JSON.stringify(report, null, 2));

@@ -1,363 +1,134 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HWK 항만 선체청소 후보 대시보드</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HWK 항만 선체청소 후보 지휘소</title>
 <style>
-:root{--bg:#020617;--panel:#0f172a;--line:#1e293b;--text:#f8fafc;--muted:#94a3b8;--blue:#38bdf8;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--violet:#a855f7}
-*{box-sizing:border-box}body{margin:0;background:#020617;color:var(--text);font-family:Arial,"Noto Sans KR",system-ui,sans-serif;padding:24px}.header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--blue);font-weight:700;font-size:12px}.title{font-size:32px;margin:6px 0}.meta{color:var(--muted);font-size:13px}.badge{padding:10px 14px;background:#14532d;border:1px solid #166534;border-radius:999px;color:#bbf7d0;font-weight:700}.badge.warn{background:#78350f;color:#fde68a;border-color:#92400e}.badge.error{background:#7f1d1d;color:#fecaca;border-color:#991b1b}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-top:22px}.metric,.card,.check{background:rgba(15,23,42,.96);border:1px solid var(--line);border-radius:10px;padding:16px}.metric span{display:block;color:var(--muted);font-size:13px}.metric strong{display:block;margin-top:8px;font-size:28px;color:var(--blue)}.section{margin-top:24px}.section h2{font-size:18px;margin:0 0 12px}.readiness,.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.small{font-size:12px;color:var(--muted)}.chip{display:inline-block;margin:4px 6px 4px 0;padding:5px 9px;border-radius:999px;background:#1e293b;color:#cbd5e1;font-size:12px}.chip.pass{background:#14532d;color:#bbf7d0}.chip.warn{background:#78350f;color:#fde68a}.chip.fail,.chip.critical{background:#7f1d1d;color:#fecaca}.chip.info{background:#172554;color:#bfdbfe}.chip.hot{background:#3b0764;color:#e9d5ff}.chip.action{background:#082f49;color:#bae6fd}.toolbar{display:flex;gap:10px;flex-wrap:wrap}.toolbar input,.toolbar select,.toolbar button{background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:150px}.toolbar button{cursor:pointer;color:#bae6fd}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px}table{width:100%;border-collapse:collapse;background:rgba(15,23,42,.96);min-width:980px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}th{color:#93c5fd;background:#0b1220}.row{cursor:pointer}.row:hover{background:#111827}.score{font-size:38px;font-weight:800;color:var(--blue)}.money{color:#86efac;font-weight:700}.reason{padding-left:18px;color:#cbd5e1}.empty{border:1px dashed var(--line);border-radius:10px;padding:16px;color:var(--muted)}.footer{margin-top:28px;color:var(--muted);font-size:12px}.note{background:#082f49;border:1px solid #075985;border-radius:10px;padding:12px;color:#dbeafe;margin-top:10px}.ok{color:#bbf7d0}.stale{color:#fde68a}
+:root{--bg:#060914;--panel:#101827;--panel2:#151f31;--line:#273449;--text:#eef4ff;--muted:#9aa8bd;--blue:#38bdf8;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--violet:#a78bfa;--cyan:#22d3ee}
+*{box-sizing:border-box}body{margin:0;background:#060914;color:var(--text);font-family:Arial,"Noto Sans KR",system-ui,sans-serif;font-size:13px}.wrap{max-width:1560px;margin:0 auto;padding:22px 16px 48px}.top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--blue);font-weight:800;font-size:12px}.title{margin:5px 0 4px;font-size:28px;letter-spacing:0}.sub{color:var(--muted);line-height:1.55}.badge{border:1px solid #166534;background:#14532d;color:#bbf7d0;border-radius:999px;padding:9px 12px;font-weight:800}.badge.warn{background:#78350f;border-color:#92400e;color:#fde68a}.badge.error{background:#7f1d1d;border-color:#991b1b;color:#fecaca}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:16px 0}.metric,.card,.panel{background:rgba(16,24,39,.96);border:1px solid var(--line);border-radius:8px}.metric{padding:14px}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:6px;font-size:24px;color:#bae6fd}.section{margin-top:18px}.section h2{font-size:17px;margin:0 0 10px}.command{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}.card{padding:13px}.card h3{margin:0 0 6px;font-size:15px}.muted{color:var(--muted)}.small{font-size:12px;color:var(--muted);line-height:1.45}.score{font-size:30px;font-weight:900;color:var(--blue)}.chip{display:inline-flex;align-items:center;gap:4px;margin:3px 4px 3px 0;padding:4px 8px;border-radius:999px;background:#1f2a3b;color:#d7e0ee;font-size:11px;font-weight:700}.chip.hot{background:#7f1d1d;color:#fecaca}.chip.strong{background:#78350f;color:#fde68a}.chip.watch{background:#164e63;color:#a5f3fc}.chip.ok{background:#14532d;color:#bbf7d0}.chip.info{background:#172554;color:#bfdbfe}.chip.miss{background:#581c87;color:#e9d5ff}.toolbar{display:grid;grid-template-columns:2fr repeat(8,minmax(110px,1fr));gap:8px;margin-bottom:10px}.toolbar input,.toolbar select,.toolbar button{min-width:0;background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px 10px}.toolbar button{cursor:pointer;color:#bae6fd}.panel{overflow:hidden}.ph{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}.tablewrap{overflow:auto;max-height:620px}table{width:100%;border-collapse:collapse;min-width:1320px}th,td{text-align:left;padding:9px;border-bottom:1px solid var(--line);vertical-align:top}th{position:sticky;top:0;background:#0b1220;color:#93c5fd;font-size:12px;z-index:1}tr{cursor:pointer}tr:hover td{background:#121c2c}.layout{display:grid;grid-template-columns:1fr 380px;gap:12px}.detail{padding:14px}.kv{display:grid;grid-template-columns:110px 1fr;gap:7px;margin-top:8px}.k{color:var(--muted)}.reason{padding-left:18px;color:#d3dce9;line-height:1.65}.heat{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.heatcell{border:1px solid var(--line);border-radius:8px;padding:10px;background:#101827}.bar{height:8px;border-radius:999px;background:#1e293b;overflow:hidden;margin-top:8px}.bar span{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--amber),var(--red));width:0}.mobileCards{display:none;gap:10px}.mcard{background:#101827;border:1px solid var(--line);border-radius:8px;padding:12px}.footer{margin-top:22px;color:var(--muted);font-size:12px}
+@media(max-width:1180px){.command,.layout{grid-template-columns:1fr}.toolbar{grid-template-columns:1fr 1fr 1fr}.toolbar input{grid-column:1/-1}}
+@media(max-width:760px){.wrap{padding:14px 10px 36px}.title{font-size:22px}.metrics{grid-template-columns:repeat(2,1fr)}.toolbar{grid-template-columns:1fr 1fr}.toolbar input{grid-column:1/-1}.tablewrap{display:none}.mobileCards{display:grid}.kv{grid-template-columns:1fr}.ph{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
-<div class="header">
-  <div>
-    <div class="eyebrow">HullWiper Korea 항만 인텔리전스</div>
-    <h1 class="title">선체청소 후보 발견 대시보드</h1>
-    <p class="meta">항만 일정 · 통합 VTS · 선석/묘박 · Biofouling/CII · 영업 우선순위</p>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div class="eyebrow">HullWiper Korea Commercial Command Center</div>
+      <h1 class="title">항만 선체청소 후보 지휘소</h1>
+      <div class="sub">PORT-MIS, 항만 배정, 통합 VTS, 선박 제원, 스냅샷을 합쳐 “지금 연락할 선박과 이유”를 먼저 보여줍니다.</div>
+    </div>
+    <div id="statusBadge" class="badge">상태 확인 중</div>
   </div>
-  <div id="statusBadge" class="badge">상태 불러오는 중...</div>
-</div>
 
-<div class="metrics">
-  <div class="metric"><span>전체 선박</span><strong id="totalTargets">-</strong></div>
-  <div class="metric"><span>긴급 위험</span><strong id="criticalTargets">-</strong></div>
-  <div class="metric"><span>높은 위험</span><strong id="highRisk">-</strong></div>
-  <div class="metric"><span>청소 후보</span><strong id="cleaningCandidates">-</strong></div>
-  <div class="metric"><span>즉시 연락</span><strong id="immediateCandidates">-</strong></div>
-  <div class="metric"><span>신규/변경</span><strong id="changedCandidates">-</strong></div>
-  <div class="metric"><span>규제/준수 관찰</span><strong id="complianceWatch">-</strong></div>
-  <div class="metric"><span>예상 기회금액</span><strong id="pipelineValue" style="font-size:22px;">-</strong></div>
-  <div class="metric"><span>데이터 최신성</span><strong id="dataFreshness" style="font-size:16px;">-</strong></div>
-</div>
-
-<div class="section">
-  <h2>데이터 안전 상태</h2>
-  <div id="dataMode" class="readiness"><div class="check">데이터 모드 불러오는 중...</div></div>
-  <div class="note">샘플 데이터는 실제 영업 연락 후보로 사용하면 안 됩니다. 실제 연락 전에는 데이터 모드, 최신성, 출처를 확인하세요.</div>
-</div>
-
-<div class="section">
-  <h2>영업 우선순위 큐</h2>
-  <div class="toolbar">
-    <input id="searchBox" placeholder="선박 / 선사 / 항만 검색">
-    <select id="riskFilter"><option value="all">전체 위험</option><option value="critical">긴급만</option><option value="high">고위험 이상</option><option value="candidate">청소 후보</option><option value="immediate">즉시 연락</option><option value="compliance">규제/준수 관찰</option></select>
-    <select id="portFilter"><option value="all">전체 항만</option></select>
-    <select id="priorityFilter"><option value="all">전체 우선순위</option><option value="immediate">즉시</option><option value="strong">강한 후보</option><option value="watch">관찰 후보</option></select>
-    <select id="statusFilter"><option value="all">전체 상태</option><option value="waiting">대기 / 묘박</option><option value="berth">접안</option><option value="expected">예정</option></select>
-    <button id="exportCsv">CSV 내보내기</button>
+  <div class="metrics">
+    <div class="metric"><span>전체 선박</span><strong id="mTotal">-</strong></div>
+    <div class="metric"><span>Hot 데이터</span><strong id="mHot">-</strong></div>
+    <div class="metric"><span>즉시 타겟</span><strong id="mNow">-</strong></div>
+    <div class="metric"><span>청소 후보</span><strong id="mCandidate">-</strong></div>
+    <div class="metric"><span>고위험</span><strong id="mHigh">-</strong></div>
+    <div class="metric"><span>IMO 복구 필요</span><strong id="mImo">-</strong></div>
+    <div class="metric"><span>예상 기회금액</span><strong id="mValue" style="font-size:19px">-</strong></div>
+    <div class="metric"><span>최신성</span><strong id="mFresh" style="font-size:16px">-</strong></div>
   </div>
-  <p class="small" id="resultCount">대상 선박 불러오는 중...</p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>선박</th><th>항만</th><th>상태</th><th>ETA</th><th>ETB</th><th>ETD</th><th>체류</th><th>작업창</th><th>Bio</th><th>CII</th><th>우선순위</th></tr></thead>
-      <tbody id="candidateRows"><tr><td colspan="11">불러오는 중...</td></tr></tbody>
-    </table>
-  </div>
-  <div class="card" id="vesselDetail" style="margin-top:12px;"><b>선박 상세</b><div class="small">행을 선택하면 일정, 작업 가능 시간, 후보 사유를 확인할 수 있습니다.</div></div>
-  <div id="grid" class="grid" style="margin-top:12px;"></div>
-</div>
 
-<div class="section">
-  <h2>항만별 위험 요약</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>항만</th><th>전체</th><th>긴급</th><th>고위험</th><th>평균 위험</th><th>대기/묘박</th><th>기회금액</th></tr></thead>
-      <tbody id="portRows"><tr><td colspan="7">불러오는 중...</td></tr></tbody>
-    </table>
-  </div>
-</div>
+  <section class="section">
+    <h2>NOW Commercial Opportunities / 즉시 타겟</h2>
+    <div class="command">
+      <div class="cards" id="nowTargets"><div class="card">Hot 데이터 불러오는 중</div></div>
+      <div class="card">
+        <h3>데이터 로딩 방식</h3>
+        <div class="small">모바일 속도를 위해 처음에는 상위 후보만 담은 Hot 데이터를 읽습니다. 더 많은 검토가 필요할 때 전체 데이터를 불러옵니다.</div>
+        <p><span id="loadMode" class="chip info">Hot</span><span id="dataMode" class="chip info">확인 중</span></p>
+        <button id="loadFullBtn">전체 데이터 불러오기</button>
+      </div>
+    </div>
+  </section>
 
-<div class="section">
-  <h2>후보 변화 추적</h2>
-  <div id="candidateChanges" class="readiness"><div class="check">후보 변화 불러오는 중...</div></div>
-</div>
+  <section class="section">
+    <h2>후보 테이블</h2>
+    <div class="toolbar">
+      <input id="searchBox" placeholder="선박명 / 선사 / 항만 / 호출부호 / 식별키 검색">
+      <select id="priorityFilter"><option value="all">영업 우선도 전체</option><option value="immediate">즉시</option><option value="strong">강한 후보</option><option value="watch">관찰 후보</option></select>
+      <select id="portFilter"><option value="all">항만 전체</option></select>
+      <select id="operatorFilter"><option value="all">선사 전체</option></select>
+      <select id="statusFilter"><option value="all">상태 전체</option><option value="waiting">묘박/대기</option><option value="berth">접안</option><option value="expected">입항 예정</option></select>
+      <select id="idFilter"><option value="all">식별 방식 전체</option><option value="IMO">IMO</option><option value="MMSI">MMSI</option><option value="HYBRID_CALLSIGN_NAME_GT">Hybrid</option><option value="NAME_PORT_FALLBACK">명칭+항만</option></select>
+      <select id="imoFilter"><option value="all">IMO 상태 전체</option><option value="present">IMO 있음</option><option value="missing">IMO 없음</option><option value="missing_recoverable">복구 가능</option><option value="missing_low_confidence">낮은 신뢰</option></select>
+      <select id="complianceFilter"><option value="all">컴플라이언스 전체</option><option value="biosecurity_watch">Biosecurity 관찰</option><option value="standard">일반</option></select>
+      <select id="gtFilter"><option value="all">GT 전체</option><option value="gt_80000_plus">80k+</option><option value="gt_30000_79999">30k-80k</option><option value="gt_5000_29999">5k-30k</option><option value="gt_under_5000">5k 미만</option><option value="gt_unknown">GT 없음</option></select>
+      <select id="stayFilter"><option value="all">체류일수 전체</option><option value="stay_21d_plus">21일+</option><option value="stay_14_20d">14-20일</option><option value="stay_7_13d">7-13일</option><option value="stay_3_6d">3-6일</option><option value="stay_under_3d">3일 미만</option></select>
+      <button id="exportCsv">CSV</button>
+    </div>
+    <div class="layout">
+      <div class="panel">
+        <div class="ph"><strong id="resultCount">-</strong><span class="small">Hot / Full 전환 가능</span></div>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>선박</th><th>항만/상태</th><th>ETA/ETB</th><th>ETD/ATD</th><th>체류</th><th>작업창</th><th>Bio</th><th>CII</th><th>우선도</th><th>식별</th><th>이유</th></tr></thead>
+            <tbody id="candidateRows"><tr><td colspan="11">불러오는 중</td></tr></tbody>
+          </table>
+        </div>
+        <div id="mobileCards" class="mobileCards"></div>
+      </div>
+      <aside class="panel"><div class="ph"><strong>선박 상세</strong></div><div id="detail" class="detail">선박을 선택하면 일정, 작업창, 이유 코드, 식별 정보를 보여줍니다.</div></aside>
+    </div>
+  </section>
 
-<div class="section">
-  <h2>수집기와 소스 상태</h2>
-  <div id="dataStrategy" class="readiness"><div class="check">소스 전략 불러오는 중...</div></div>
-  <div id="apiSources" class="readiness" style="margin-top:12px;"><div class="check">API 상태 불러오는 중...</div></div>
-</div>
+  <section class="section">
+    <h2>항만 히트맵 + Biofouling Timeline</h2>
+    <div class="heat" id="portHeatmap"></div>
+    <div class="heat" id="bioTimeline" style="margin-top:10px"></div>
+  </section>
 
-<div class="section">
-  <h2>운영 품질 점검</h2>
-  <div id="backendHealth" class="readiness"><div class="check">백엔드 상태 불러오는 중...</div></div>
-  <div id="dataQuality" class="readiness" style="margin-top:12px;"><div class="check">데이터 품질 불러오는 중...</div></div>
-  <div id="readiness" class="readiness" style="margin-top:12px;"><div class="check">배포 준비 상태 불러오는 중...</div></div>
-</div>
+  <section class="section">
+    <h2>IMO Missing Recovery Board</h2>
+    <div class="panel"><div class="tablewrap"><table><thead><tr><th>선박</th><th>항만</th><th>호출부호</th><th>GT</th><th>하이브리드 키</th><th>복구 우선도</th></tr></thead><tbody id="imoRows"></tbody></table></div></div>
+  </section>
 
-<div class="footer">질문: “지금 HullWiper Korea가 어떤 선박에 연락해야 하며, 왜 연락해야 하는가?”</div>
+  <section class="section">
+    <h2>Operational Risk Queue</h2>
+    <div class="cards" id="riskQueue"></div>
+  </section>
+
+  <div class="footer">일반 AIS 지도보다, 선체청소 후보 발견과 영업 사유 설명을 우선합니다.</div>
+</div>
 
 <script>
-const safe = value => String(value ?? "").replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
-const money = value => new Intl.NumberFormat("ko-KR", { style:"currency", currency:"USD", maximumFractionDigits:0 }).format(value || 0);
-let vesselsCache = [];
-let statusCache = {};
+const safe=v=>String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
+const money=v=>new Intl.NumberFormat("ko-KR",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(v||0);
+let statusCache={}, centerCache={}, vesselsCache=[], fullLoaded=false;
 
-const levelKo = value => ({
-  "Immediate Candidate":"즉시 연락 후보",
-  "Strong Candidate":"강한 후보",
-  "Watch Candidate":"관찰 후보",
-  "Monitor":"관찰"
-}[value] || value || "관찰");
+function ageText(iso){if(!iso)return "시간 없음";const m=Math.max(0,Math.round((Date.now()-new Date(iso).getTime())/60000));return m<1?"방금 전":m<60?`${m}분 전`:`${Math.round(m/60)}시간 전`;}
+function levelClass(v){if(v?.is_immediate_candidate)return"hot";if((v?.cleaning_candidate_score||0)>=65)return"strong";return"watch";}
+function levelText(v){if(v?.is_immediate_candidate)return"즉시 타겟";if((v?.cleaning_candidate_score||0)>=65)return"강한 후보";if(v?.is_cleaning_candidate)return"관찰 후보";return"모니터";}
+function statusText(v){const s=String(v||"");if(/waiting|anchorage|anchor|idle|drifting/i.test(s))return"묘박/대기";if(/berth|alongside|moored/i.test(s))return"접안";if(/expected|scheduled|planned/i.test(s))return"입항 예정";if(/departed|departure/i.test(s))return"출항";return s||"-";}
+function reasonText(r){const t=String(r||"");const map=[[/waiting|anchorage/i,"묘박/대기 신호"],[/long korea stay|idle exposure/i,"한국 항만 장기 체류"],[/valuable vessel|commercially relevant/i,"상업적으로 유의미한 선종"],[/biofouling-sensitive|regulated destination/i,"민감 항로 또는 컴플라이언스 관찰"],[/workable uwc window/i,"작업 가능한 시간창"],[/operator identified/i,"연락 가능한 선사 정보"],[/critical/i,"높은 선체 성능 저하 위험"],[/high fouling/i,"Biofouling 고위험"]];for(const [p,l]of map)if(p.test(t))return l;return t;}
+function actionText(v){if(v?.is_immediate_candidate)return"오늘 연락: 항만 작업창과 선체 상태 확인";if((v?.cleaning_candidate_score||0)>=65)return"48시간 내 확인: 일정과 다음 항차 확인";return"관찰: 다음 스냅샷에서 점수 변화 확인";}
 
-const statusKo = value => {
-  const text = String(value || "");
-  if (/waiting|anchorage|anchor|idle|drifting|대기|묘박/i.test(text)) return "대기/묘박";
-  if (/berth|alongside|moored|접안/i.test(text)) return "접안";
-  if (/expected|scheduled|planned|예정/i.test(text)) return "예정";
-  if (/departed|departure|출항/i.test(text)) return "출항";
-  if (/source error/i.test(text)) return "소스 오류";
-  return text || "-";
-};
+async function fetchJson(path,fallback){try{const r=await fetch(path+"?t="+Date.now());if(!r.ok)throw new Error(path);return await r.json();}catch{return fallback;}}
+async function loadStatus(){statusCache=await fetchJson("./api/status.json",{});centerCache=await fetchJson("./api/commercial-command-center.json",statusCache.commercial_command_center||{});const ok=statusCache.status==="success";const badge=document.getElementById("statusBadge");badge.textContent=ok?`정상 v${statusCache.version||"-"}`:`확인 필요 v${statusCache.version||"-"}`;badge.className=ok?"badge":"badge error";document.getElementById("mTotal").textContent=statusCache.record_count??0;document.getElementById("mHot").textContent=statusCache.hot_vessel_count??centerCache.hot_count??0;document.getElementById("mNow").textContent=statusCache.immediate_candidate_count??0;document.getElementById("mCandidate").textContent=statusCache.cleaning_candidate_count??0;document.getElementById("mHigh").textContent=statusCache.high_risk_count??0;document.getElementById("mValue").textContent=money(statusCache.opportunity_usd||0);document.getElementById("mFresh").textContent=ageText(statusCache.completed_at);document.getElementById("dataMode").textContent=statusCache.data_mode_detail?.label||statusCache.data_mode||"확인 중";}
+async function loadHot(){fullLoaded=false;document.getElementById("loadMode").textContent="Hot";vesselsCache=await fetchJson("./api/hot-vessels.json",[]);if(!vesselsCache.length)vesselsCache=await fetchJson("./api/vessels.json",[]);updateFilters();render();}
+async function loadFull(){fullLoaded=true;document.getElementById("loadMode").textContent="Full";vesselsCache=await fetchJson("./api/vessels.json",[]);updateFilters();render();}
 
-const actionKo = value => {
-  const text = String(value || "");
-  if (/prepare uwc outreach|immediate outreach/i.test(text)) return "즉시 연락: 항만 작업 가능 시간과 선체 상태 확인";
-  if (/sales follow-up/i.test(text)) return "영업 후속: 선체 상태와 다음 항차 확인";
-  if (/monitor/i.test(text)) return "관찰: 다음 항만/VTS 신호 확인";
-  return text || "관찰";
-};
+function updateFilters(){const setOptions=(id,values,label)=>{const el=document.getElementById(id);const cur=el.value;el.innerHTML=`<option value="all">${label}</option>`+[...new Set(values.filter(Boolean))].sort().slice(0,80).map(v=>`<option value="${safe(v)}">${safe(v)}</option>`).join("");if([...el.options].some(o=>o.value===cur))el.value=cur;};setOptions("portFilter",vesselsCache.map(v=>v.port),"항만 전체");setOptions("operatorFilter",vesselsCache.map(v=>v.operator),"선사 전체");}
+function pass(v){const q=document.getElementById("searchBox").value.trim().toLowerCase();const f=id=>document.getElementById(id).value;const hay=[v.vessel_name,v.operator,v.port,v.call_sign,v.callsign,v.hybrid_entity_key,v.destination,v.vessel_type].join(" ").toLowerCase();if(q&&!hay.includes(q))return false;if(f("priorityFilter")==="immediate"&&!v.is_immediate_candidate)return false;if(f("priorityFilter")==="strong"&&!((v.cleaning_candidate_score||0)>=65&&!v.is_immediate_candidate))return false;if(f("priorityFilter")==="watch"&&!((v.cleaning_candidate_score||0)>=45&&(v.cleaning_candidate_score||0)<65))return false;if(f("portFilter")!=="all"&&v.port!==f("portFilter"))return false;if(f("operatorFilter")!=="all"&&v.operator!==f("operatorFilter"))return false;const st=String(v.status||"").toLowerCase();if(f("statusFilter")==="waiting"&&!/waiting|anchorage|anchor|idle|drifting/.test(st))return false;if(f("statusFilter")==="berth"&&!/berth|alongside|moored/.test(st))return false;if(f("statusFilter")==="expected"&&!/expected|scheduled|planned/.test(st))return false;if(f("idFilter")!=="all"&&v.identification_method!==f("idFilter"))return false;if(f("imoFilter")!=="all"&&v.imo_status!==f("imoFilter"))return false;if(f("complianceFilter")!=="all"&&v.compliance_band!==f("complianceFilter"))return false;if(f("gtFilter")!=="all"&&v.gt_group!==f("gtFilter"))return false;if(f("stayFilter")!=="all"&&v.stay_days_group!==f("stayFilter"))return false;return true;}
+function filtered(){return vesselsCache.filter(pass).sort((a,b)=>(b.is_immediate_candidate?1:0)-(a.is_immediate_candidate?1:0)||(b.total_sales_priority_score||0)-(a.total_sales_priority_score||0));}
 
-const reasonKo = value => {
-  const text = String(value || "");
-  const map = [
-    [/critical hull-performance risk/i, "선체 성능 저하 위험이 높음"],
-    [/high fouling watchlist/i, "Biofouling 고위험 관찰 대상"],
-    [/long korea stay|idle exposure/i, "한국 항만 장기 체류/대기 노출"],
-    [/low-speed|waiting condition/i, "저속 운항 또는 대기 상태"],
-    [/biofouling-sensitive destination/i, "Biofouling 민감 항로/목적지"],
-    [/waiting\/anchorage/i, "대기/묘박 상태"],
-    [/commercially relevant vessel type/i, "상업적으로 유의미한 선종"],
-    [/workable uwc window/i, "작업 가능한 UWC 시간창 존재"],
-    [/operator identified/i, "연락 가능한 선사/운영자 식별"]
-  ];
-  for (const [pattern, label] of map) if (pattern.test(text)) return label;
-  return text;
-};
+function renderNowTargets(){const rows=(centerCache.immediate_targets||vesselsCache.filter(v=>v.is_immediate_candidate)).slice(0,6);document.getElementById("nowTargets").innerHTML=rows.map(v=>`<div class="card"><h3>${safe(v.vessel_name||"선박명 없음")}</h3><div class="score">${safe(v.total_sales_priority_score??v.score??v.cleaning_candidate_score??"-")}</div><span class="chip hot">즉시 타겟</span><span class="chip info">${safe(v.port||"-")}</span><p class="small">${safe(actionText(v))}</p><ul class="reason">${(v.reason_codes||v.reasons||[]).slice(0,3).map(r=>`<li>${safe(reasonText(r))}</li>`).join("")}</ul></div>`).join("")||'<div class="card">즉시 타겟은 아직 없습니다. Hot 후보를 계속 관찰하세요.</div>';}
+function renderRows(rows){document.getElementById("candidateRows").innerHTML=rows.map((v,i)=>`<tr onclick="showDetail(${i})"><td><b>${safe(v.vessel_name)}</b><div class="small">${safe(v.operator||"-")} / ${safe(v.vessel_type||"-")}</div></td><td>${safe(v.port)}<div class="small">${safe(statusText(v.status))}</div></td><td>${safe(v.eta||"-")}<div class="small">ETB ${safe(v.etb||"-")}</div></td><td>${safe(v.etd||"-")}<div class="small">ATD ${safe(v.atd||"-")}</div></td><td>${safe(v.stay_hours??"-")}h<div class="small">묘박 ${safe(v.anchorage_hours??"-")}h</div></td><td>${safe(v.work_window_hours??"-")}h</td><td>${safe(v.biofouling_score??"-")}</td><td>${safe(v.cii_pressure_score??"-")}</td><td><span class="chip ${levelClass(v)}">${levelText(v)}</span><div>${safe(v.total_sales_priority_score??"-")}</div></td><td>${safe(v.identification_method||"-")}<div class="small">${safe(v.imo_status||"-")}</div></td><td>${(v.reason_codes||[]).slice(0,2).map(reasonText).map(safe).join("<br>")}</td></tr>`).join("")||'<tr><td colspan="11">조건에 맞는 후보가 없습니다.</td></tr>';document.getElementById("mobileCards").innerHTML=rows.map((v,i)=>`<div class="mcard" onclick="showDetail(${i})"><b>${safe(v.vessel_name)}</b><div class="small">${safe(v.port)} / ${safe(statusText(v.status))}</div><p><span class="chip ${levelClass(v)}">${levelText(v)}</span><span class="chip info">Bio ${safe(v.biofouling_score??"-")}</span></p><div class="small">작업창 ${safe(v.work_window_hours??"-")}h / 체류 ${safe(v.stay_hours??"-")}h</div></div>`).join("");}
+function showDetail(i){const v=filtered()[i];if(!v)return;document.getElementById("detail").innerHTML=`<h2>${safe(v.vessel_name||"선박명 없음")}</h2><div class="small">${safe(v.port)} / ${safe(v.berth||v.anchorage_zone||"-")} / ${safe(statusText(v.status))}</div><div class="kv"><div class="k">일정</div><div>ETA ${safe(v.eta||"-")} / ETB ${safe(v.etb||"-")} / ATA ${safe(v.ata||"-")} / ATB ${safe(v.atb||"-")} / ETD ${safe(v.etd||"-")} / ATD ${safe(v.atd||"-")}</div><div class="k">작업성</div><div>체류 ${safe(v.stay_hours??"-")}h, 접안 ${safe(v.berth_hours??"-")}h, 묘박 ${safe(v.anchorage_hours??"-")}h, 작업창 ${safe(v.work_window_hours??"-")}h</div><div class="k">점수</div><div>Bio ${safe(v.biofouling_score??"-")} / CII ${safe(v.cii_pressure_score??"-")} / 영업 ${safe(v.total_sales_priority_score??"-")}</div><div class="k">식별</div><div>${safe(v.hybrid_entity_key||"-")}<br>${safe(v.identification_method||"-")} / ${safe(v.imo_status||"-")}</div><div class="k">배지</div><div>${(v.operator_fleet_badges||[]).map(b=>`<span class="chip ok">${safe(b)}</span>`).join("")||"-"}</div><div class="k">권장 액션</div><div>${safe(actionText(v))}</div></div><ul class="reason">${(v.reason_codes||[]).map(r=>`<li>${safe(reasonText(r))}</li>`).join("")||"<li>추가 스냅샷 필요</li>"}</ul>`;}
+function renderHeatmaps(){const ports=statusCache.port_congestion_heatmap||[];document.getElementById("portHeatmap").innerHTML=ports.map(p=>`<div class="heatcell"><b>${safe(p.port)}</b><div class="small">혼잡 ${p.congestion_score} / 즉시 ${p.immediate} / 장기 ${p.long_stay}</div><div class="bar"><span style="width:${Math.min(100,p.congestion_score||0)}%"></span></div></div>`).join("")||'<div class="heatcell">항만 히트맵 데이터 없음</div>';const timeline=statusCache.biofouling_timeline||[];document.getElementById("bioTimeline").innerHTML=timeline.map(t=>`<div class="heatcell"><b>${safe(t.label)}</b><div class="small">선박 ${t.count} / 고위험 ${t.high_biofouling} / 즉시 ${t.immediate}</div><div class="bar"><span style="width:${Math.min(100,t.avg_biofouling_score||0)}%"></span></div></div>`).join("")||'<div class="heatcell">Biofouling Timeline 없음</div>';}
+function renderBoards(){const board=centerCache.imo_recovery_board||vesselsCache.filter(v=>v.imo_status&&v.imo_status!=="present").slice(0,12);document.getElementById("mImo").textContent=board.length;document.getElementById("imoRows").innerHTML=board.map(v=>`<tr><td>${safe(v.vessel_name)}</td><td>${safe(v.port)}</td><td>${safe(v.call_sign||"-")}</td><td>${safe(v.gt||"-")}</td><td>${safe(v.hybrid_entity_key)}</td><td><span class="chip miss">${safe(v.priority||v.imo_recovery_priority||"-")}</span></td></tr>`).join("")||'<tr><td colspan="6">IMO 복구 대상 없음</td></tr>';const risk=centerCache.operational_risk_queue||[];document.getElementById("riskQueue").innerHTML=risk.slice(0,8).map(v=>`<div class="card"><h3>${safe(v.vessel_name)}</h3><span class="chip ${levelClass(v)}">${safe(v.port||"-")}</span><span class="chip info">Risk ${safe(v.operational_risk_score??"-")}</span><p class="small">${(v.operational_risk_flags||[]).map(safe).join(", ")||"관찰"}</p></div>`).join("")||'<div class="card">운영 리스크 큐 없음</div>';}
+function render(){const rows=filtered();document.getElementById("resultCount").textContent=`${rows.length} / ${vesselsCache.length}척 표시 (${fullLoaded?"Full":"Hot"})`;renderNowTargets();renderRows(rows);showDetail(0);renderHeatmaps();renderBoards();}
+function exportCsv(){const rows=filtered();const headers=["vessel_name","port","operator","status","eta","etb","ata","atb","etd","atd","stay_hours","berth_hours","anchorage_hours","work_window_hours","biofouling_score","cii_pressure_score","total_sales_priority_score","hybrid_entity_key","identification_method","imo_status","reason_codes"];const csv=[headers.join(",")].concat(rows.map(v=>headers.map(h=>`"${String(Array.isArray(v[h])?v[h].join("; "):v[h]??"").replaceAll('"','""')}"`).join(","))).join("\n");const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="hwk_commercial_candidates.csv";a.click();URL.revokeObjectURL(a.href);}
 
-function ageText(iso){
-  if(!iso) return "시간 없음";
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if(minutes < 1) return "방금 전";
-  if(minutes < 60) return `${minutes}분 전`;
-  return `${Math.round(minutes/60)}시간 전`;
-}
-
-async function loadStatus(){
-  const res = await fetch("./api/status.json?t=" + Date.now());
-  const status = await res.json();
-  statusCache = status;
-  const warnings = status.deployment_readiness?.warnings || 0;
-  const ok = status.status === "success";
-  const badge = document.getElementById("statusBadge");
-  badge.textContent = ok ? `파이프라인 정상 · v${status.version}${warnings ? ` · 경고 ${warnings}개` : ""}` : `파이프라인 오류 · v${status.version || "-"}`;
-  badge.className = ok ? (warnings ? "badge warn" : "badge") : "badge error";
-
-  document.getElementById("totalTargets").textContent = status.record_count ?? 0;
-  document.getElementById("criticalTargets").textContent = status.critical_count ?? 0;
-  document.getElementById("highRisk").textContent = status.high_risk_count ?? 0;
-  document.getElementById("cleaningCandidates").textContent = status.cleaning_candidate_count ?? status.candidate_summary?.candidate_count ?? 0;
-  document.getElementById("immediateCandidates").textContent = status.immediate_candidate_count ?? status.candidate_summary?.immediate_count ?? 0;
-  document.getElementById("changedCandidates").textContent = status.candidate_changes?.changed_count ?? 0;
-  document.getElementById("complianceWatch").textContent = status.compliance_watch_count ?? 0;
-  document.getElementById("pipelineValue").textContent = money(status.opportunity_usd || 0);
-  const fresh = ageText(status.completed_at);
-  document.getElementById("dataFreshness").innerHTML = `<span class="${fresh.includes("시간") ? "stale" : "ok"}">${safe(fresh)}</span>`;
-
-  const dm = status.data_mode_detail || {};
-  document.getElementById("dataMode").innerHTML = `
-    <div class="check"><span class="chip ${dm.mode === "sample_only" ? "warn" : "pass"}">${safe(dm.label || status.data_mode || "알 수 없음")}</span><b>현재 데이터 모드</b><div class="small">${safe(dm.message || "데이터 모드 설명 없음")}</div></div>
-    <div class="check"><span class="chip info">${dm.real_rows || 0}</span><b>실데이터 행</b><div class="small">샘플 행: ${dm.sample_rows || 0}</div></div>
-    <div class="check"><span class="chip ${dm.supabase_status === "synced" ? "pass" : "warn"}">${safe(dm.supabase_status || "not_configured")}</span><b>Supabase 누적</b><div class="small">반복 스냅샷과 장기 체류 이력 저장용입니다.</div></div>
-  `;
-
-  const strategy = status.data_strategy || {};
-  document.getElementById("dataStrategy").innerHTML = `
-    <div class="check"><span class="chip pass">공공데이터 우선</span><b>운영 원칙</b><div class="small">${safe(strategy.principle || "한국 공공/항만/MOF 데이터를 기본 소스로 사용합니다.")}</div></div>
-    <div class="check"><span class="chip ${strategy.public_enabled_count ? "pass" : "warn"}">${strategy.public_enabled_count || 0}</span><b>활성 공공 소스</b><div class="small">${strategy.public_enabled?.length ? strategy.public_enabled.map(safe).join(", ") : "아직 감지 없음"}</div></div>
-    <div class="check"><span class="chip info">${strategy.paid_enabled_count || 0}</span><b>유료 AIS 소스</b><div class="small">MarineTraffic/VesselFinder는 선택적 보강 소스입니다.</div></div>
-    <div class="check"><span class="chip action">통합 VTS</span><b>VTS 구조</b><div class="small">${safe(strategy.vts_architecture || "여수 단일 구조가 아니라 전국/통합 VTS 레이어로 봅니다.")}</div></div>
-  `;
-
-  const apiSources = status.api_sources || [];
-  document.getElementById("apiSources").innerHTML = apiSources.map(s => `
-    <div class="check">
-      <span class="chip ${s.enabled ? "pass" : s.partial ? "warn" : "info"}">${s.enabled ? "활성" : s.partial ? "부분" : "미설정"}</span>
-      <b>${safe(s.label)}</b>
-      <div class="small">${safe(s.use)}</div>
-      <div class="small"><b>사용 중:</b> ${s.using?.length ? s.using.map(safe).join(", ") : "없음"}</div>
-      ${s.missing?.length ? `<div class="small"><b>필요:</b> ${s.missing.map(safe).join(" / ")}</div>` : ""}
-    </div>
-  `).join("") || '<div class="check">API 목록 없음</div>';
-
-  const health = status.backend_health || {};
-  document.getElementById("backendHealth").innerHTML = `
-    <div class="check"><span class="chip ${health.status === "stable" ? "pass" : health.status === "blocked" ? "fail" : "warn"}">${health.score || 0}/100</span><b>백엔드 상태</b><div class="small">상태: ${safe(health.status || "unknown")}</div></div>
-    <div class="check"><span class="chip info">${health.enabled_source_groups || 0}</span><b>활성 소스 그룹</b><div class="small">부분 설정: ${health.partial_source_groups || 0}</div></div>
-    <div class="check"><span class="chip ${health.real_rows ? "pass" : "warn"}">${health.real_rows || 0}</span><b>실데이터 행</b><div class="small">샘플 행: ${health.sample_rows || 0}</div></div>
-  `;
-
-  const dq = status.data_quality || {};
-  const missing = dq.missing_fields || {};
-  document.getElementById("dataQuality").innerHTML = `
-    <div class="check"><span class="chip ${dq.score >= 85 ? "pass" : dq.score >= 70 ? "warn" : "fail"}">${dq.score || 0}/100</span><b>품질 점수</b><div class="small">${safe(dq.grade || "정리 필요")} · ${dq.record_count || 0}행</div></div>
-    <div class="check"><span class="chip info">${dq.completeness_percent || 0}%</span><b>완성도</b><div class="small">누락: 선사 ${missing.operator || 0}, 목적지 ${missing.destination || 0}, 항만 ${missing.port || 0}</div></div>
-    <div class="check"><span class="chip ${dq.duplicate_count ? "warn" : "pass"}">${dq.duplicate_count || 0}</span><b>중복 감시</b><div class="small">동일 선박/항만 중복 행 감지</div></div>
-  `;
-
-  const checks = status.deployment_readiness?.checks || [];
-  document.getElementById("readiness").innerHTML = checks.map(c => `
-    <div class="check"><span class="chip ${safe(c.status)}">${safe(c.status).toUpperCase()}</span><b>${safe(c.label)}</b><div class="small">${safe(c.detail)}</div></div>
-  `).join("") || '<div class="check">배포 점검 정보 없음</div>';
-
-  const rows = (status.port_summary || []).map(p => `
-    <tr><td>${safe(p.port)}</td><td>${p.total}</td><td>${p.critical}</td><td>${p.high_risk}</td><td>${p.avg_risk}</td><td>${p.waiting}</td><td class="money">${money(p.opportunity_usd)}</td></tr>
-  `).join("");
-  document.getElementById("portRows").innerHTML = rows || '<tr><td colspan="7">항만 데이터 없음</td></tr>';
-}
-
-async function loadCandidateChanges(){
-  try {
-    const res = await fetch("./api/candidate-changes.json?t=" + Date.now());
-    const changes = await res.json();
-    const top = changes.top_changes || [];
-    document.getElementById("candidateChanges").innerHTML = `
-      <div class="check"><span class="chip ${changes.changed_count ? "warn" : "info"}">${changes.changed_count || 0}</span><b>변경된 후보 신호</b><div class="small">신규 후보, 즉시 후보 승격, 점수 급등 여부</div></div>
-      <div class="check"><span class="chip critical">${changes.became_immediate_count || 0}</span><b>즉시 연락 승격</b><div class="small">실데이터 모드에서 가장 먼저 확인할 대상</div></div>
-      ${top.slice(0,6).map(c => `<div class="check"><span class="chip ${c.is_immediate_candidate ? "critical" : c.is_cleaning_candidate ? "hot" : "info"}">${safe(c.change_type)}</span><b>${safe(c.vessel_name || "선박명 없음")} · ${safe(c.port || "-")}</b><div class="small">점수 ${safe(c.previous_score)} → ${safe(c.current_score)} · ${safe(c.contact_window || "관찰")}</div></div>`).join("")}
-    `;
-  } catch {
-    document.getElementById("candidateChanges").innerHTML = '<div class="check"><span class="chip warn">대기</span><b>후보 변화 파일 없음</b><div class="small">candidate-changes.json 생성 후 표시됩니다.</div></div>';
-  }
-}
-
-function updatePortFilter(vessels){
-  const select = document.getElementById("portFilter");
-  const current = select.value;
-  const ports = [...new Set(vessels.map(v => v.port).filter(Boolean))].sort();
-  select.innerHTML = '<option value="all">전체 항만</option>' + ports.map(p => `<option value="${safe(p)}">${safe(p)}</option>`).join("");
-  if (ports.includes(current)) select.value = current;
-}
-
-function passesFilters(v){
-  const q = document.getElementById("searchBox").value.trim().toLowerCase();
-  const risk = document.getElementById("riskFilter").value;
-  const port = document.getElementById("portFilter").value;
-  const priority = document.getElementById("priorityFilter").value;
-  const status = document.getElementById("statusFilter").value;
-  const statusText = String(v.status || "").toLowerCase();
-  const haystack = [v.vessel_name, v.operator, v.port, v.destination, v.vessel_type].join(" ").toLowerCase();
-  if (q && !haystack.includes(q)) return false;
-  if (port !== "all" && v.port !== port) return false;
-  if (risk === "critical" && (v.risk_score || 0) < 85) return false;
-  if (risk === "high" && (v.risk_score || 0) < 70) return false;
-  if (risk === "candidate" && !v.is_cleaning_candidate) return false;
-  if (risk === "immediate" && !v.is_immediate_candidate) return false;
-  if (risk === "compliance" && !v.compliance_watch) return false;
-  if (priority === "immediate" && !v.is_immediate_candidate) return false;
-  if (priority === "strong" && !((v.cleaning_candidate_score || 0) >= 65 && (v.cleaning_candidate_score || 0) < 82)) return false;
-  if (priority === "watch" && !((v.cleaning_candidate_score || 0) >= 45 && (v.cleaning_candidate_score || 0) < 65)) return false;
-  if (status === "waiting" && !/waiting|anchorage|anchor|idle|drifting/.test(statusText)) return false;
-  if (status === "berth" && !/berth|alongside|moored/.test(statusText)) return false;
-  if (status === "expected" && !/expected|scheduled|planned/.test(statusText)) return false;
-  return true;
-}
-
-function currentFiltered(){ return vesselsCache.filter(passesFilters); }
-
-function exportCsv(){
-  const rows = currentFiltered();
-  const headers = ["vessel_name","vessel_id","port","berth","anchorage_zone","status","eta","etb","ata","atb","etd","atd","stay_hours","berth_hours","anchorage_hours","work_window_hours","biofouling_score","cii_pressure_score","total_sales_priority_score","reason_codes","operator","destination","vessel_type","cleaning_candidate_score","cleaning_candidate_level","contact_window","candidate_confidence","risk_score","risk_level","recommended_action","opportunity_usd","updated_at"];
-  const csv = [headers.join(",")].concat(rows.map(v => headers.map(h => `"${String(v[h] ?? "").replaceAll('"','""')}"`).join(","))).join("\n");
-  const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `hwk_선체청소_후보_${statusCache.version || "v"}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function renderDetail(v){
-  if (!v) return;
-  const reasons = (v.reason_codes || v.sales_reason || []).map(r => `<li>${safe(reasonKo(r))}</li>`).join("");
-  document.getElementById("vesselDetail").innerHTML = `
-    <b>${safe(v.vessel_name || "선박명 없음")}</b>
-    <div class="small">${safe(v.port)} · ${safe(v.berth || v.anchorage_zone || "-")} · ${safe(statusKo(v.status))}</div>
-    <p><b>일정:</b> ETA ${safe(v.eta || "-")} · ETB ${safe(v.etb || "-")} · ATA ${safe(v.ata || "-")} · ATB ${safe(v.atb || "-")} · ETD ${safe(v.etd || "-")} · ATD ${safe(v.atd || "-")}</p>
-    <p><b>시간:</b> 체류 ${safe(v.stay_hours ?? "-")}h · 선석 ${safe(v.berth_hours ?? "-")}h · 묘박/대기 ${safe(v.anchorage_hours ?? "-")}h · 작업창 ${safe(v.work_window_hours ?? "-")}h</p>
-    <p><b>점수:</b> Biofouling ${safe(v.biofouling_score ?? v.risk_score ?? "-")} · CII ${safe(v.cii_pressure_score ?? "-")} · 영업 우선순위 ${safe(v.total_sales_priority_score ?? v.cleaning_candidate_score ?? "-")}</p>
-    <p><b>권장 액션:</b> ${safe(actionKo(v.recommended_action))}</p>
-    <ul class="reason">${reasons || "<li>후보 사유 없음</li>"}</ul>
-  `;
-}
-
-function renderCandidateTable(rows){
-  document.getElementById("candidateRows").innerHTML = rows.map((v, index) => `
-    <tr class="row" onclick="renderDetail(currentFiltered()[${index}])">
-      <td>${safe(v.vessel_name)}</td><td>${safe(v.port)}</td><td>${safe(statusKo(v.status))}</td>
-      <td>${safe(v.eta || "-")}</td><td>${safe(v.etb || "-")}</td><td>${safe(v.etd || "-")}</td>
-      <td>${safe(v.stay_hours ?? "-")}h</td><td>${safe(v.work_window_hours ?? "-")}h</td>
-      <td>${safe(v.biofouling_score ?? v.risk_score ?? "-")}</td><td>${safe(v.cii_pressure_score ?? "-")}</td>
-      <td>${safe(v.total_sales_priority_score ?? v.cleaning_candidate_score ?? "-")}</td>
-    </tr>
-  `).join("") || '<tr><td colspan="11">조건에 맞는 후보 없음</td></tr>';
-}
-
-function renderData(){
-  const grid = document.getElementById("grid");
-  const filtered = currentFiltered();
-  document.getElementById("resultCount").textContent = `${filtered.length} / ${vesselsCache.length}척 표시 · ${statusCache.refresh_interval_seconds || 30}초마다 새로고침`;
-  renderCandidateTable(filtered);
-  renderDetail(filtered[0]);
-  if (!filtered.length) {
-    grid.innerHTML = '<div class="empty">조건에 맞는 선박이 없습니다. 필터를 넓혀보세요.</div>';
-    return;
-  }
-  grid.innerHTML = filtered.map(v => {
-    const score = v.risk_score || 0;
-    const reasons = (v.sales_reason || []).slice(0,4).map(r => `<li>${safe(reasonKo(r))}</li>`).join("");
-    return `
-      <div class="card">
-        <h2>${safe(v.vessel_name)}</h2>
-        <div class="score">${v.cleaning_candidate_score ?? score}</div>
-        <span class="chip ${v.is_immediate_candidate ? "critical" : v.is_cleaning_candidate ? "hot" : "info"}">${safe(levelKo(v.cleaning_candidate_level))}</span>
-        <span class="chip info">위험 ${score}</span>
-        ${v.compliance_watch ? '<span class="chip warn">규제/준수 관찰</span>' : ""}
-        <p><b>항만:</b> ${safe(v.port)} · <b>상태:</b> ${safe(statusKo(v.status))}</p>
-        <p><b>선사:</b> ${safe(v.operator || "-")} · <b>선종:</b> ${safe(v.vessel_type || "-")}</p>
-        <p><b>일정:</b> ETA ${safe(v.eta || "-")} · ETB ${safe(v.etb || "-")} · ETD ${safe(v.etd || "-")}</p>
-        <p><b>작업창:</b> ${safe(v.work_window_hours ?? "-")}h · <b>체류:</b> ${safe(v.stay_hours ?? "-")}h · <b>선석:</b> ${safe(v.berth_hours ?? "-")}h</p>
-        <p><b>Biofouling:</b> ${safe(v.biofouling_score ?? score)} · <b>CII:</b> ${safe(v.cii_pressure_score ?? "-")} · <b>우선순위:</b> ${safe(v.total_sales_priority_score ?? "-")}</p>
-        <p><b>권장 액션:</b> ${safe(actionKo(v.recommended_action))}</p>
-        <p><b>예상 기회금액:</b> <span class="money">${money(v.opportunity_usd)}</span></p>
-        <ul class="reason">${reasons || "<li>특별 신호 없음</li>"}</ul>
-      </div>`;
-  }).join("");
-}
-
-async function loadData(){
-  const res = await fetch("./api/vessels.json?t=" + Date.now());
-  vesselsCache = await res.json();
-  updatePortFilter(vesselsCache);
-  renderData();
-}
-
-async function refresh(){
-  await loadStatus();
-  await loadData();
-  await loadCandidateChanges();
-}
-
-document.getElementById("searchBox").addEventListener("input", renderData);
-document.getElementById("riskFilter").addEventListener("change", renderData);
-document.getElementById("portFilter").addEventListener("change", renderData);
-document.getElementById("priorityFilter").addEventListener("change", renderData);
-document.getElementById("statusFilter").addEventListener("change", renderData);
-document.getElementById("exportCsv").addEventListener("click", exportCsv);
-refresh();
-setInterval(refresh, 30000);
+["searchBox","priorityFilter","portFilter","operatorFilter","statusFilter","idFilter","imoFilter","complianceFilter","gtFilter","stayFilter"].forEach(id=>document.getElementById(id).addEventListener("input",render));
+document.getElementById("loadFullBtn").addEventListener("click",loadFull);
+document.getElementById("exportCsv").addEventListener("click",exportCsv);
+(async()=>{await loadStatus();await loadHot();})();
 </script>
 </body>
 </html>

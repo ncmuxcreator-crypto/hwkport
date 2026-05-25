@@ -10,7 +10,7 @@
     "days_in_korea": 21,
     "speed": 2,
     "risk_score": 95,
-    "updated_at": "2026-05-25T14:16:14.872Z",
+    "updated_at": "2026-05-25T14:38:14.011Z",
     "source_mode": "sample_snapshot",
     "api_ready": [],
     "cleaning_candidate_score": 100,
@@ -51,10 +51,10 @@
     "recommended_action": "Prepare UWC outreach now: confirm hull condition, port window, and compliance route.",
     "opportunity_usd": 42000,
     "first_seen_at": "2026-05-25T00:30:45.030Z",
-    "last_seen_at": "2026-05-25T14:16:14.872Z",
+    "last_seen_at": "2026-05-25T14:38:14.011Z",
     "previous_candidate_score": 100,
     "candidate_score_delta": 0,
-    "observation_count": 23,
+    "observation_count": 25,
     "snapshot_key": "IMO-9876543|BUSAN",
     "contact_priority_rank": 1,
     "stale_guard": "sample_data_do_not_sell_as_live",
@@ -95,6 +95,26 @@
       "Workable UWC window available",
       "Critical fouling / performance risk score",
       "Operator identified for outreach"
+    ],
+    "hybrid_entity_key": "NAME_PORT-MV-HF-ZHOUSHAN-BUSAN",
+    "identification_method": "NAME_PORT_FALLBACK",
+    "imo_status": "missing_low_confidence",
+    "imo_recovery_priority": "review",
+    "compliance_band": "biosecurity_watch",
+    "gt_group": "gt_80000_plus",
+    "stay_days_group": "stay_21d_plus",
+    "operational_risk_flags": [
+      "anchorage_waiting",
+      "uwc_window_available",
+      "long_stay_7d",
+      "long_stay_14d",
+      "biofouling_critical"
+    ],
+    "work_feasibility": "workable_window",
+    "operational_risk_score": 100,
+    "operator_fleet_badges": [
+      "operator_known",
+      "fleet_leverage_watch"
     ]
   },
   {
@@ -108,7 +128,7 @@
     "days_in_korea": 16,
     "speed": 1,
     "risk_score": 90,
-    "updated_at": "2026-05-25T14:16:14.872Z",
+    "updated_at": "2026-05-25T14:38:14.011Z",
     "source_mode": "sample_snapshot",
     "api_ready": [],
     "cleaning_candidate_score": 100,
@@ -149,10 +169,10 @@
     "recommended_action": "Prepare UWC outreach now: confirm hull condition, port window, and compliance route.",
     "opportunity_usd": 42000,
     "first_seen_at": "2026-05-25T00:30:45.030Z",
-    "last_seen_at": "2026-05-25T14:16:14.872Z",
+    "last_seen_at": "2026-05-25T14:38:14.011Z",
     "previous_candidate_score": 100,
     "candidate_score_delta": 0,
-    "observation_count": 23,
+    "observation_count": 25,
     "snapshot_key": "IMO-7000001|YEOSU",
     "contact_priority_rank": 1,
     "stale_guard": "sample_data_do_not_sell_as_live",
@@ -193,6 +213,26 @@
       "Workable UWC window available",
       "Critical fouling / performance risk score",
       "Operator identified for outreach"
+    ],
+    "hybrid_entity_key": "NAME_PORT-YEOSU-TARGET-YEOSU",
+    "identification_method": "NAME_PORT_FALLBACK",
+    "imo_status": "missing_low_confidence",
+    "imo_recovery_priority": "review",
+    "compliance_band": "biosecurity_watch",
+    "gt_group": "gt_80000_plus",
+    "stay_days_group": "stay_21d_plus",
+    "operational_risk_flags": [
+      "anchorage_waiting",
+      "uwc_window_available",
+      "long_stay_7d",
+      "long_stay_14d",
+      "biofouling_critical"
+    ],
+    "work_feasibility": "workable_window",
+    "operational_risk_score": 100,
+    "operator_fleet_badges": [
+      "operator_known",
+      "fleet_leverage_watch"
     ]
   },
   {
@@ -206,7 +246,7 @@
     "days_in_korea": 5,
     "speed": 10,
     "risk_score": 35,
-    "updated_at": "2026-05-25T14:16:14.872Z",
+    "updated_at": "2026-05-25T14:38:14.011Z",
     "source_mode": "sample_snapshot",
     "api_ready": [],
     "cleaning_candidate_score": 24,
@@ -234,10 +274,10 @@
     "recommended_action": "Monitor only; wait for stronger port-stay or itinerary signal.",
     "opportunity_usd": 6480,
     "first_seen_at": "2026-05-25T00:30:45.030Z",
-    "last_seen_at": "2026-05-25T14:16:14.872Z",
+    "last_seen_at": "2026-05-25T14:38:14.011Z",
     "previous_candidate_score": 24,
     "candidate_score_delta": 0,
-    "observation_count": 23,
+    "observation_count": 25,
     "snapshot_key": "IMO-8111222|ULSAN",
     "contact_priority_rank": 9,
     "stale_guard": "sample_data_do_not_sell_as_live",
@@ -270,6 +310,22 @@
       "Commercially relevant vessel type",
       "Workable UWC window available",
       "Operator identified for outreach"
+    ],
+    "hybrid_entity_key": "NAME_PORT-MAERSK-DEMO-ULSAN",
+    "identification_method": "NAME_PORT_FALLBACK",
+    "imo_status": "missing_low_confidence",
+    "imo_recovery_priority": "review",
+    "compliance_band": "standard",
+    "gt_group": "gt_30000_79999",
+    "stay_days_group": "stay_3_6d",
+    "operational_risk_flags": [
+      "uwc_window_available",
+      "berth_coordination_needed"
+    ],
+    "work_feasibility": "workable_window",
+    "operational_risk_score": 45,
+    "operator_fleet_badges": [
+      "operator_known"
     ]
   }
 ]
