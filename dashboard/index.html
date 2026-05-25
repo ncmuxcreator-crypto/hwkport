@@ -3,176 +3,155 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HWK Intelligence v17.7</title>
+<title>HWK 항만 선체청소 후보 대시보드</title>
 <style>
-:root{--bg:#020617;--card:#0f172a;--line:#1e293b;--text:#f8fafc;--muted:#94a3b8;--blue:#38bdf8;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--purple:#a855f7}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#0b2447 0,#020617 46%);color:var(--text);font-family:Arial,system-ui,sans-serif;padding:28px}.header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--blue);font-weight:700;letter-spacing:.08em;font-size:12px;text-transform:uppercase}.title{font-size:34px;margin:6px 0}.meta{color:var(--muted);font-size:13px}.badge{padding:10px 16px;background:#14532d;border:1px solid #166534;border-radius:999px;color:#bbf7d0;font-weight:700}.badge.error{background:#7f1d1d;color:#fecaca;border-color:#991b1b}.badge.warn{background:#78350f;color:#fde68a;border-color:#92400e}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:24px}.metric{background:rgba(15,23,42,.92);padding:18px;border-radius:18px;border:1px solid var(--line);box-shadow:0 20px 60px rgba(0,0,0,.24)}.metric span{display:block;color:var(--muted);font-size:13px}.metric strong{display:block;margin-top:8px;font-size:30px;color:var(--blue)}.section{margin-top:26px}.section h2{font-size:18px;margin-bottom:12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:16px}.card{background:rgba(15,23,42,.94);padding:20px;border-radius:20px;border:1px solid var(--line)}.vessel-card.critical{border-color:#ef4444;box-shadow:0 0 0 1px rgba(239,68,68,.25)}.vessel-card.high{border-color:#7c3aed}.score{font-size:42px;font-weight:800;color:var(--blue);line-height:1}.chip{display:inline-block;margin:8px 6px 0 0;padding:6px 10px;border-radius:999px;background:#1e293b;color:#cbd5e1;font-size:12px}.chip.hot{background:#3b0764;color:#e9d5ff}.chip.critical{background:#7f1d1d;color:#fecaca}.chip.compliance{background:#422006;color:#fde68a}.chip.action{background:#082f49;color:#bae6fd}.chip.pass{background:#14532d;color:#bbf7d0}.chip.warn{background:#78350f;color:#fde68a}.chip.fail{background:#7f1d1d;color:#fecaca}.chip.info{background:#172554;color:#bfdbfe}.port-table{width:100%;border-collapse:collapse;background:rgba(15,23,42,.94);border:1px solid var(--line);border-radius:18px;overflow:hidden}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);font-size:14px}th{color:#93c5fd;background:#0b1220}.reason{margin:10px 0 0;padding-left:18px;color:#cbd5e1}.reason li{margin:4px 0}.footer{margin-top:28px;color:var(--muted);font-size:12px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.toolbar input,.toolbar select,.toolbar button{background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:11px 12px;min-width:160px}.toolbar button{cursor:pointer;color:#bae6fd}.empty{border:1px dashed var(--line);border-radius:18px;padding:22px;color:var(--muted)}.money{color:#86efac;font-weight:700}.small{font-size:12px;color:var(--muted)}.readiness{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.check{border:1px solid var(--line);border-radius:16px;padding:14px;background:#0b1220}.check b{display:block;margin-bottom:6px}.copy{font-size:12px;color:#93c5fd;cursor:pointer;margin-top:8px;display:inline-block}.note{background:#082f49;border:1px solid #075985;border-radius:16px;padding:14px;color:#dbeafe;margin-top:12px}.stale{color:#fde68a}.ok{color:#bbf7d0}.radar{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.radar-card{background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(30,41,59,.88));border:1px solid var(--line);border-radius:18px;padding:16px}.radar-score{font-size:34px;font-weight:800;color:#67e8f9}.urgent{border-color:#ef4444;box-shadow:0 0 0 1px rgba(239,68,68,.22)}
+:root{--bg:#020617;--panel:#0f172a;--line:#1e293b;--text:#f8fafc;--muted:#94a3b8;--blue:#38bdf8;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--violet:#a855f7}
+*{box-sizing:border-box}body{margin:0;background:#020617;color:var(--text);font-family:Arial,"Noto Sans KR",system-ui,sans-serif;padding:24px}.header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--blue);font-weight:700;font-size:12px}.title{font-size:32px;margin:6px 0}.meta{color:var(--muted);font-size:13px}.badge{padding:10px 14px;background:#14532d;border:1px solid #166534;border-radius:999px;color:#bbf7d0;font-weight:700}.badge.warn{background:#78350f;color:#fde68a;border-color:#92400e}.badge.error{background:#7f1d1d;color:#fecaca;border-color:#991b1b}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-top:22px}.metric,.card,.check{background:rgba(15,23,42,.96);border:1px solid var(--line);border-radius:10px;padding:16px}.metric span{display:block;color:var(--muted);font-size:13px}.metric strong{display:block;margin-top:8px;font-size:28px;color:var(--blue)}.section{margin-top:24px}.section h2{font-size:18px;margin:0 0 12px}.readiness,.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.small{font-size:12px;color:var(--muted)}.chip{display:inline-block;margin:4px 6px 4px 0;padding:5px 9px;border-radius:999px;background:#1e293b;color:#cbd5e1;font-size:12px}.chip.pass{background:#14532d;color:#bbf7d0}.chip.warn{background:#78350f;color:#fde68a}.chip.fail,.chip.critical{background:#7f1d1d;color:#fecaca}.chip.info{background:#172554;color:#bfdbfe}.chip.hot{background:#3b0764;color:#e9d5ff}.chip.action{background:#082f49;color:#bae6fd}.toolbar{display:flex;gap:10px;flex-wrap:wrap}.toolbar input,.toolbar select,.toolbar button{background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:150px}.toolbar button{cursor:pointer;color:#bae6fd}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px}table{width:100%;border-collapse:collapse;background:rgba(15,23,42,.96);min-width:980px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}th{color:#93c5fd;background:#0b1220}.row{cursor:pointer}.row:hover{background:#111827}.score{font-size:38px;font-weight:800;color:var(--blue)}.money{color:#86efac;font-weight:700}.reason{padding-left:18px;color:#cbd5e1}.empty{border:1px dashed var(--line);border-radius:10px;padding:16px;color:var(--muted)}.footer{margin-top:28px;color:var(--muted);font-size:12px}.note{background:#082f49;border:1px solid #075985;border-radius:10px;padding:12px;color:#dbeafe;margin-top:10px}.ok{color:#bbf7d0}.stale{color:#fde68a}
 </style>
 </head>
 <body>
 <div class="header">
   <div>
-    <div class="eyebrow">HullWiper Korea Market Intelligence</div>
-    <h1 class="title">HWK Intelligence v17.7</h1>
-    <p class="meta">Seven Improvement Stability Bundle · Candidate ops · Backend health · 7-pack release cadence</p>
+    <div class="eyebrow">HullWiper Korea 항만 인텔리전스</div>
+    <h1 class="title">선체청소 후보 발견 대시보드</h1>
+    <p class="meta">항만 일정 · 통합 VTS · 선석/묘박 · Biofouling/CII · 영업 우선순위</p>
   </div>
-  <div id="statusBadge" class="badge">Loading status...</div>
+  <div id="statusBadge" class="badge">상태 불러오는 중...</div>
 </div>
 
 <div class="metrics">
-  <div class="metric"><span>Total Targets</span><strong id="totalTargets">-</strong></div>
-  <div class="metric"><span>Critical</span><strong id="criticalTargets">-</strong></div>
-  <div class="metric"><span>High Risk</span><strong id="highRisk">-</strong></div>
-  <div class="metric"><span>Cleaning Candidates</span><strong id="cleaningCandidates">-</strong></div>
-  <div class="metric"><span>Immediate Outreach</span><strong id="immediateCandidates">-</strong></div>
-  <div class="metric"><span>New / Changed</span><strong id="changedCandidates">-</strong></div>
-  <div class="metric"><span>Compliance Watch</span><strong id="complianceWatch">-</strong></div>
-  <div class="metric"><span>Estimated Pipeline</span><strong id="pipelineValue" style="font-size:22px;">-</strong></div>
-  <div class="metric"><span>Data Freshness</span><strong id="dataFreshness" style="font-size:16px;">-</strong></div>
+  <div class="metric"><span>전체 선박</span><strong id="totalTargets">-</strong></div>
+  <div class="metric"><span>긴급 위험</span><strong id="criticalTargets">-</strong></div>
+  <div class="metric"><span>높은 위험</span><strong id="highRisk">-</strong></div>
+  <div class="metric"><span>청소 후보</span><strong id="cleaningCandidates">-</strong></div>
+  <div class="metric"><span>즉시 연락</span><strong id="immediateCandidates">-</strong></div>
+  <div class="metric"><span>신규/변경</span><strong id="changedCandidates">-</strong></div>
+  <div class="metric"><span>규제/준수 관찰</span><strong id="complianceWatch">-</strong></div>
+  <div class="metric"><span>예상 기회금액</span><strong id="pipelineValue" style="font-size:22px;">-</strong></div>
+  <div class="metric"><span>데이터 최신성</span><strong id="dataFreshness" style="font-size:16px;">-</strong></div>
 </div>
 
 <div class="section">
-  <h2>Data Mode Guard</h2>
-  <div id="dataMode" class="readiness"><div class="check">Loading data mode...</div></div>
+  <h2>데이터 안전 상태</h2>
+  <div id="dataMode" class="readiness"><div class="check">데이터 모드 불러오는 중...</div></div>
+  <div class="note">샘플 데이터는 실제 영업 연락 후보로 사용하면 안 됩니다. 실제 연락 전에는 데이터 모드, 최신성, 출처를 확인하세요.</div>
 </div>
 
 <div class="section">
-  <h2>Data Quality Control</h2>
-  <div id="dataQuality" class="readiness"><div class="check">Loading data quality...</div></div>
-</div>
-
-<div class="section">
-  <h2>Data Source Strategy</h2>
-  <div id="dataStrategy" class="readiness"><div class="check">Loading data strategy...</div></div>
-</div>
-
-<div class="section">
-  <h2>Collector Readiness Roadmap</h2>
-  <div id="collectorReadiness" class="readiness"><div class="check">Loading collector readiness...</div></div>
-</div>
-
-<div class="section">
-  <h2>Collector Manifest</h2>
-  <div id="collectorManifest" class="readiness"><div class="check">Loading collector manifest...</div></div>
-</div>
-
-<div class="section">
-  <h2>Source Registry</h2>
-  <div id="sourceRegistry" class="readiness"><div class="check">Loading source registry...</div></div>
-</div>
-
-<div class="section">
-  <h2>Cloud Master DB Strategy</h2>
-  <div id="cloudMasterDb" class="readiness"><div class="check">Loading cloud master DB strategy...</div></div>
-</div>
-
-
-<div class="section">
-  <h2>Candidate Operations Center</h2>
-  <div id="candidateOps" class="readiness"><div class="check">Loading candidate operations...</div></div>
-</div>
-
-<div class="section">
-  <h2>Backend Health Guardrails</h2>
-  <div id="backendHealth" class="readiness"><div class="check">Loading backend health...</div></div>
-</div>
-
-<div class="section">
-  <h2>Seven-Pack Release Summary</h2>
-  <div id="sevenPack" class="readiness"><div class="check">Loading release bundle...</div></div>
-</div>
-
-<div class="section">
-  <h2>Backend Operations</h2>
-  <div id="backendOps" class="readiness"><div class="check">Loading backend operations...</div></div>
-</div>
-
-<div class="section">
-  <h2>Release Cadence</h2>
-  <div id="releaseCadence" class="readiness"><div class="check">Loading release cadence...</div></div>
-</div>
-
-<div class="section">
-  <h2>Next Development Plan</h2>
-  <div id="nextPlan" class="readiness"><div class="check">Loading development plan...</div></div>
-</div>
-
-<div class="section">
-  <h2>API Secret Status</h2>
-  <div id="apiSources" class="readiness"><div class="check">Loading API status...</div></div>
-</div>
-
-<div class="section">
-  <h2>Deployment Readiness</h2>
-  <div id="readiness" class="readiness"><div class="check">Loading checks...</div></div>
-  <div class="note" id="hostingHint">Hosting hint loading...</div>
-</div>
-
-
-<div class="section">
-  <h2>Cleaning Candidate Radar</h2>
-  <div id="candidateRadar" class="radar"><div class="check">Loading candidate radar...</div></div>
-  <div class="note">Candidate Engine 목표: 지금 청소 후보가 몇 척인지, 어떤 선박을 먼저 연락해야 하는지, 24~48시간 내 영업 액션을 바로 판단합니다.</div>
-</div>
-
-<div class="section">
-  <h2>Candidate Change Tracker</h2>
-  <div id="candidateChanges" class="readiness"><div class="check">Loading candidate change tracker...</div></div>
-  <div class="note">새로 후보가 되었거나 점수가 급등한 선박을 먼저 보여줍니다. 프론트 접속 전에도 candidate-changes.json으로 오늘 연락 우선순위를 확인할 수 있습니다.</div>
-</div>
-
-<div class="section">
-  <h2>Port Risk Summary</h2>
-  <table class="port-table">
-    <thead><tr><th>Port</th><th>Total</th><th>Critical</th><th>High Risk</th><th>Avg Risk</th><th>Waiting</th><th>Opportunity</th></tr></thead>
-    <tbody id="portRows"><tr><td colspan="7">Loading...</td></tr></tbody>
-  </table>
-</div>
-
-<div class="section">
-  <h2>Sales Priority Queue</h2>
+  <h2>영업 우선순위 큐</h2>
   <div class="toolbar">
-    <input id="searchBox" placeholder="Search vessel / operator / port">
-    <select id="riskFilter"><option value="all">All Risk</option><option value="critical">Critical only</option><option value="high">High + Critical</option><option value="candidate">Cleaning Candidate</option><option value="immediate">Immediate Candidate</option><option value="compliance">Compliance Watch</option></select>
-    <select id="portFilter"><option value="all">All Ports</option></select>
-    <select id="priorityFilter"><option value="all">All Priority</option><option value="immediate">Immediate</option><option value="strong">Strong</option><option value="watch">Watch</option></select>
-    <select id="statusFilter"><option value="all">All Status</option><option value="waiting">Waiting / Anchorage</option><option value="berth">At Berth</option><option value="expected">Expected</option></select>
-    <button id="exportCsv">Export CSV</button>
+    <input id="searchBox" placeholder="선박 / 선사 / 항만 검색">
+    <select id="riskFilter"><option value="all">전체 위험</option><option value="critical">긴급만</option><option value="high">고위험 이상</option><option value="candidate">청소 후보</option><option value="immediate">즉시 연락</option><option value="compliance">규제/준수 관찰</option></select>
+    <select id="portFilter"><option value="all">전체 항만</option></select>
+    <select id="priorityFilter"><option value="all">전체 우선순위</option><option value="immediate">즉시</option><option value="strong">강한 후보</option><option value="watch">관찰 후보</option></select>
+    <select id="statusFilter"><option value="all">전체 상태</option><option value="waiting">대기 / 묘박</option><option value="berth">접안</option><option value="expected">예정</option></select>
+    <button id="exportCsv">CSV 내보내기</button>
   </div>
-  <p class="small" id="resultCount">Loading targets...</p>
-  <table class="port-table">
-    <thead><tr><th>Vessel</th><th>Port</th><th>Status</th><th>ETA</th><th>ETB</th><th>ETD</th><th>Stay</th><th>Work</th><th>Bio</th><th>CII</th><th>Priority</th></tr></thead>
-    <tbody id="candidateRows"><tr><td colspan="11">Loading...</td></tr></tbody>
-  </table>
-  <div class="card" id="vesselDetail" style="margin-top:14px;"><b>Vessel detail</b><div class="small">Select a row to inspect schedule, work window, and reason codes.</div></div>
-  <div id="grid" class="grid"></div>
+  <p class="small" id="resultCount">대상 선박 불러오는 중...</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>선박</th><th>항만</th><th>상태</th><th>ETA</th><th>ETB</th><th>ETD</th><th>체류</th><th>작업창</th><th>Bio</th><th>CII</th><th>우선순위</th></tr></thead>
+      <tbody id="candidateRows"><tr><td colspan="11">불러오는 중...</td></tr></tbody>
+    </table>
+  </div>
+  <div class="card" id="vesselDetail" style="margin-top:12px;"><b>선박 상세</b><div class="small">행을 선택하면 일정, 작업 가능 시간, 후보 사유를 확인할 수 있습니다.</div></div>
+  <div id="grid" class="grid" style="margin-top:12px;"></div>
 </div>
 
-<div class="footer">v17.7 build: backend stability batch, runtime budget, master DB roadmap, candidate guardrails.</div>
+<div class="section">
+  <h2>항만별 위험 요약</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>항만</th><th>전체</th><th>긴급</th><th>고위험</th><th>평균 위험</th><th>대기/묘박</th><th>기회금액</th></tr></thead>
+      <tbody id="portRows"><tr><td colspan="7">불러오는 중...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h2>후보 변화 추적</h2>
+  <div id="candidateChanges" class="readiness"><div class="check">후보 변화 불러오는 중...</div></div>
+</div>
+
+<div class="section">
+  <h2>수집기와 소스 상태</h2>
+  <div id="dataStrategy" class="readiness"><div class="check">소스 전략 불러오는 중...</div></div>
+  <div id="apiSources" class="readiness" style="margin-top:12px;"><div class="check">API 상태 불러오는 중...</div></div>
+</div>
+
+<div class="section">
+  <h2>운영 품질 점검</h2>
+  <div id="backendHealth" class="readiness"><div class="check">백엔드 상태 불러오는 중...</div></div>
+  <div id="dataQuality" class="readiness" style="margin-top:12px;"><div class="check">데이터 품질 불러오는 중...</div></div>
+  <div id="readiness" class="readiness" style="margin-top:12px;"><div class="check">배포 준비 상태 불러오는 중...</div></div>
+</div>
+
+<div class="footer">질문: “지금 HullWiper Korea가 어떤 선박에 연락해야 하며, 왜 연락해야 하는가?”</div>
 
 <script>
 const safe = value => String(value ?? "").replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
-const money = value => new Intl.NumberFormat("en-US", { style:"currency", currency:"USD", maximumFractionDigits:0 }).format(value || 0);
+const money = value => new Intl.NumberFormat("ko-KR", { style:"currency", currency:"USD", maximumFractionDigits:0 }).format(value || 0);
 let vesselsCache = [];
 let statusCache = {};
 
+const levelKo = value => ({
+  "Immediate Candidate":"즉시 연락 후보",
+  "Strong Candidate":"강한 후보",
+  "Watch Candidate":"관찰 후보",
+  "Monitor":"관찰"
+}[value] || value || "관찰");
+
+const statusKo = value => {
+  const text = String(value || "");
+  if (/waiting|anchorage|anchor|idle|drifting|대기|묘박/i.test(text)) return "대기/묘박";
+  if (/berth|alongside|moored|접안/i.test(text)) return "접안";
+  if (/expected|scheduled|planned|예정/i.test(text)) return "예정";
+  if (/departed|departure|출항/i.test(text)) return "출항";
+  if (/source error/i.test(text)) return "소스 오류";
+  return text || "-";
+};
+
+const actionKo = value => {
+  const text = String(value || "");
+  if (/prepare uwc outreach|immediate outreach/i.test(text)) return "즉시 연락: 항만 작업 가능 시간과 선체 상태 확인";
+  if (/sales follow-up/i.test(text)) return "영업 후속: 선체 상태와 다음 항차 확인";
+  if (/monitor/i.test(text)) return "관찰: 다음 항만/VTS 신호 확인";
+  return text || "관찰";
+};
+
+const reasonKo = value => {
+  const text = String(value || "");
+  const map = [
+    [/critical hull-performance risk/i, "선체 성능 저하 위험이 높음"],
+    [/high fouling watchlist/i, "Biofouling 고위험 관찰 대상"],
+    [/long korea stay|idle exposure/i, "한국 항만 장기 체류/대기 노출"],
+    [/low-speed|waiting condition/i, "저속 운항 또는 대기 상태"],
+    [/biofouling-sensitive destination/i, "Biofouling 민감 항로/목적지"],
+    [/waiting\/anchorage/i, "대기/묘박 상태"],
+    [/commercially relevant vessel type/i, "상업적으로 유의미한 선종"],
+    [/workable uwc window/i, "작업 가능한 UWC 시간창 존재"],
+    [/operator identified/i, "연락 가능한 선사/운영자 식별"]
+  ];
+  for (const [pattern, label] of map) if (pattern.test(text)) return label;
+  return text;
+};
+
 function ageText(iso){
-  if(!iso) return "No timestamp";
+  if(!iso) return "시간 없음";
   const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if(minutes < 1) return "just now";
-  if(minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes/60);
-  return `${hours} hr ago`;
+  if(minutes < 1) return "방금 전";
+  if(minutes < 60) return `${minutes}분 전`;
+  return `${Math.round(minutes/60)}시간 전`;
 }
 
 async function loadStatus(){
   const res = await fetch("./api/status.json?t=" + Date.now());
   const status = await res.json();
   statusCache = status;
-  const badge = document.getElementById("statusBadge");
-  const ok = status.status === "success";
   const warnings = status.deployment_readiness?.warnings || 0;
-  badge.textContent = ok ? `Pipeline OK · v${status.version}${warnings ? ` · ${warnings} warning(s)` : ""}` : `Pipeline Error · v${status.version || "16.4"}`;
+  const ok = status.status === "success";
+  const badge = document.getElementById("statusBadge");
+  badge.textContent = ok ? `파이프라인 정상 · v${status.version}${warnings ? ` · 경고 ${warnings}개` : ""}` : `파이프라인 오류 · v${status.version || "-"}`;
   badge.className = ok ? (warnings ? "badge warn" : "badge") : "badge error";
 
   document.getElementById("totalTargets").textContent = status.record_count ?? 0;
@@ -180,178 +159,62 @@ async function loadStatus(){
   document.getElementById("highRisk").textContent = status.high_risk_count ?? 0;
   document.getElementById("cleaningCandidates").textContent = status.cleaning_candidate_count ?? status.candidate_summary?.candidate_count ?? 0;
   document.getElementById("immediateCandidates").textContent = status.immediate_candidate_count ?? status.candidate_summary?.immediate_count ?? 0;
-  document.getElementById("changedCandidates").textContent = status.candidate_changes?.changed_count ?? status.backend_ops?.changed_candidate_count ?? 0;
+  document.getElementById("changedCandidates").textContent = status.candidate_changes?.changed_count ?? 0;
   document.getElementById("complianceWatch").textContent = status.compliance_watch_count ?? 0;
   document.getElementById("pipelineValue").textContent = money(status.opportunity_usd || 0);
   const fresh = ageText(status.completed_at);
-  document.getElementById("dataFreshness").innerHTML = `<span class="${fresh.includes('hr') ? 'stale' : 'ok'}">${safe(fresh)}</span>`;
+  document.getElementById("dataFreshness").innerHTML = `<span class="${fresh.includes("시간") ? "stale" : "ok"}">${safe(fresh)}</span>`;
 
   const dm = status.data_mode_detail || {};
   document.getElementById("dataMode").innerHTML = `
-    <div class="check"><span class="chip ${dm.mode === 'sample_only' ? 'warn' : 'pass'}">${safe(dm.label || status.data_mode || 'UNKNOWN')}</span><b>Current Data Mode</b><div class="small">${safe(dm.message || 'No mode detail available.')}</div></div>
-    <div class="check"><span class="chip info">${dm.real_rows || 0}</span><b>Real/API Rows</b><div class="small">Sample rows: ${dm.sample_rows || 0}</div></div>
-    <div class="check"><span class="chip ${dm.supabase_status === 'synced' ? 'pass' : 'warn'}">${safe(dm.supabase_status || 'not_configured')}</span><b>Supabase History</b><div class="small">Use Supabase for port-stay history and repeated snapshots.</div></div>
-    <div class="check"><span class="chip action">LIGHT</span><b>Weight Policy</b><div class="small">Keep repo light. Store heavy raw data outside GitHub.</div></div>
-  `;
-
-
-  const ops = status.candidate_ops || {};
-  const topQueue = ops.top_24h_queue || [];
-  document.getElementById("candidateOps").innerHTML = `
-    <div class="check"><span class="chip ${ops.immediate_24h_count ? 'critical' : 'info'}">${ops.immediate_24h_count || 0}</span><b>24h Contact Queue</b><div class="small">${safe(ops.recommended_daily_action || 'No candidate ops summary available.')}</div></div>
-    <div class="check"><span class="chip pass">${ops.current_candidate_count || 0}</span><b>Total Cleaning Candidates</b><div class="small">High confidence: ${ops.confidence_buckets?.high || 0} · Medium: ${ops.confidence_buckets?.medium || 0} · Low: ${ops.confidence_buckets?.low || 0}</div></div>
-    <div class="check"><span class="chip warn">GUARD</span><b>Live Data Warning</b><div class="small">${safe(ops.live_data_warning || 'Check data mode before outreach.')}</div></div>
-    ${topQueue.slice(0,4).map(v => `<div class="check"><span class="chip critical">#${v.rank} · ${v.score}</span><b>${safe(v.vessel_name)}</b><div class="small">${safe(v.port)} · ${safe(v.operator || 'operator unknown')}</div><div class="small">${safe(v.recommended_action)}</div></div>`).join('')}
-  `;
-
-  const health = status.backend_health || {};
-  document.getElementById("backendHealth").innerHTML = `
-    <div class="check"><span class="chip ${health.status === 'stable' ? 'pass' : health.status === 'blocked' ? 'fail' : 'warn'}">${health.score || 0}/100</span><b>Backend Health</b><div class="small">Status: ${safe(health.status || 'unknown')}</div></div>
-    <div class="check"><span class="chip info">${health.enabled_source_groups || 0}</span><b>Enabled Source Groups</b><div class="small">Partial groups: ${health.partial_source_groups || 0}</div></div>
-    <div class="check"><span class="chip ${health.real_rows ? 'pass' : 'warn'}">${health.real_rows || 0}</span><b>Real Rows</b><div class="small">Sample rows: ${health.sample_rows || 0}</div></div>
-    <div class="check"><span class="chip action">NEXT</span><b>Next Backend Moves</b><div class="small">${(health.next_backend_moves || []).map(safe).join(' · ')}</div></div>
-  `;
-
-  const seven = status.seven_pack_summary || {};
-  document.getElementById("sevenPack").innerHTML = `
-    <div class="check"><span class="chip pass">${safe(seven.release_version || '17.7.0')}</span><b>Stable Bundle</b><div class="small">${safe(seven.delivery_policy || 'Grouped release cadence.')}</div></div>
-    <div class="check"><span class="chip info">${seven.bundle_size || 7}</span><b>Improvements Bundled</b><div class="small">${(seven.improvements || []).map(safe).join(' · ')}</div></div>
-    <div class="check"><span class="chip action">SAFE</span><b>Stability Guard</b><div class="small">${safe(seven.stability_guard || 'No breaking change expected.')}</div></div>
-  `;
-
-
-  const candidate = status.candidate_summary || {};
-  const topCandidates = candidate.top_candidates || [];
-  document.getElementById("candidateRadar").innerHTML = `
-    <div class="radar-card urgent"><span class="chip critical">NOW</span><b>Immediate Candidates</b><div class="radar-score">${candidate.immediate_count || 0}</div><div class="small">Contact within 24 hours where possible.</div></div>
-    <div class="radar-card"><span class="chip hot">SOON</span><b>Strong Candidates</b><div class="radar-score">${candidate.strong_count || 0}</div><div class="small">Contact within 48 hours.</div></div>
-    <div class="radar-card"><span class="chip warn">WATCH</span><b>Watch Candidates</b><div class="radar-score">${candidate.watch_count || 0}</div><div class="small">Review after next port/AIS signal.</div></div>
-    <div class="radar-card"><span class="chip action">RULE</span><b>Detection Logic</b><div class="small">${safe(candidate.operating_rule || 'Candidate score combines waiting, idle exposure, vessel type, destination and outreach confidence.')}</div></div>
-    ${topCandidates.slice(0,3).map(v => `
-      <div class="radar-card ${v.score >= 82 ? 'urgent' : ''}">
-        <span class="chip ${v.score >= 82 ? 'critical' : 'hot'}">${safe(v.level)} · ${safe(v.score)}</span>
-        <b>${safe(v.vessel_name)}</b>
-        <div class="small">${safe(v.port)} · ${safe(v.contact_window)}</div>
-        <div class="small"><b>Next:</b> ${safe(v.next_action)}</div>
-        <div class="small">${(v.reasons || []).slice(0,3).map(safe).join(' · ')}</div>
-      </div>
-    `).join('')}
-  `;
-
-  const rows = (status.port_summary || []).map(p => `
-    <tr><td>${safe(p.port)}</td><td>${p.total}</td><td>${p.critical}</td><td>${p.high_risk}</td><td>${p.avg_risk}</td><td>${p.waiting}</td><td class="money">${money(p.opportunity_usd)}</td></tr>
-  `).join("");
-  document.getElementById("portRows").innerHTML = rows || '<tr><td colspan="7">No port data</td></tr>';
-
-  const dq = status.data_quality || {};
-  const missing = dq.missing_fields || {};
-  const issueList = (dq.issues && dq.issues.length ? dq.issues : dq.next_cleanup_focus || []).map(safe).join(' · ');
-  document.getElementById("dataQuality").innerHTML = `
-    <div class="check"><span class="chip ${dq.score >= 85 ? 'pass' : dq.score >= 70 ? 'warn' : 'fail'}">${dq.score || 0}/100</span><b>Quality Score</b><div class="small">${safe(dq.grade || 'Needs Cleanup')} · ${dq.record_count || 0} records</div></div>
-    <div class="check"><span class="chip info">${dq.completeness_percent || 0}%</span><b>Completeness</b><div class="small">Missing: operator ${missing.operator || 0}, destination ${missing.destination || 0}, port ${missing.port || 0}</div></div>
-    <div class="check"><span class="chip ${dq.duplicate_count ? 'warn' : 'pass'}">${dq.duplicate_count || 0}</span><b>Duplicate Watch</b><div class="small">Duplicate vessel/port rows detected from merged sources.</div></div>
-    <div class="check"><span class="chip action">FOCUS</span><b>Next Cleanup Focus</b><div class="small">${issueList || 'No major cleanup issue detected'}</div></div>
+    <div class="check"><span class="chip ${dm.mode === "sample_only" ? "warn" : "pass"}">${safe(dm.label || status.data_mode || "알 수 없음")}</span><b>현재 데이터 모드</b><div class="small">${safe(dm.message || "데이터 모드 설명 없음")}</div></div>
+    <div class="check"><span class="chip info">${dm.real_rows || 0}</span><b>실데이터 행</b><div class="small">샘플 행: ${dm.sample_rows || 0}</div></div>
+    <div class="check"><span class="chip ${dm.supabase_status === "synced" ? "pass" : "warn"}">${safe(dm.supabase_status || "not_configured")}</span><b>Supabase 누적</b><div class="small">반복 스냅샷과 장기 체류 이력 저장용입니다.</div></div>
   `;
 
   const strategy = status.data_strategy || {};
   document.getElementById("dataStrategy").innerHTML = `
-    <div class="check"><span class="chip pass">PUBLIC FIRST</span><b>Operating Mode</b><div class="small">${safe(strategy.principle || "Korea public data is the default base layer.")}</div></div>
-    <div class="check"><span class="chip ${strategy.public_enabled_count ? 'pass' : 'warn'}">${strategy.public_enabled_count || 0}</span><b>Public / Port API Groups Enabled</b><div class="small">${strategy.public_enabled && strategy.public_enabled.length ? strategy.public_enabled.map(safe).join(', ') : 'none detected yet'}</div></div>
-    <div class="check"><span class="chip info">${strategy.paid_enabled_count || 0}</span><b>Paid AIS Groups Enabled</b><div class="small">${strategy.paid_enabled && strategy.paid_enabled.length ? strategy.paid_enabled.map(safe).join(', ') : 'MarineTraffic / VesselFinder are optional, not required for this build.'}</div></div>
-    <div class="check"><span class="chip action">NEXT</span><b>Next Data Work</b><div class="small">${(strategy.next_focus || []).map(safe).join(' · ')}</div></div>
+    <div class="check"><span class="chip pass">공공데이터 우선</span><b>운영 원칙</b><div class="small">${safe(strategy.principle || "한국 공공/항만/MOF 데이터를 기본 소스로 사용합니다.")}</div></div>
+    <div class="check"><span class="chip ${strategy.public_enabled_count ? "pass" : "warn"}">${strategy.public_enabled_count || 0}</span><b>활성 공공 소스</b><div class="small">${strategy.public_enabled?.length ? strategy.public_enabled.map(safe).join(", ") : "아직 감지 없음"}</div></div>
+    <div class="check"><span class="chip info">${strategy.paid_enabled_count || 0}</span><b>유료 AIS 소스</b><div class="small">MarineTraffic/VesselFinder는 선택적 보강 소스입니다.</div></div>
+    <div class="check"><span class="chip action">통합 VTS</span><b>VTS 구조</b><div class="small">${safe(strategy.vts_architecture || "여수 단일 구조가 아니라 전국/통합 VTS 레이어로 봅니다.")}</div></div>
   `;
-
-  const collectors = status.collector_readiness || [];
-  document.getElementById("collectorReadiness").innerHTML = collectors.map(c => `
-    <div class="check">
-      <span class="chip ${c.status === 'ready' ? 'pass' : c.status === 'partial' ? 'warn' : 'info'}">${safe(c.readiness_percent || 0)}%</span>
-      <b>${safe(c.phase)} · ${safe(c.name)}</b>
-      <div class="small">${safe(c.goal)}</div>
-      <div class="small"><b>Active:</b> ${c.active_sources && c.active_sources.length ? c.active_sources.map(safe).join(', ') : 'none yet'}</div>
-      <div class="small"><b>Missing:</b> ${c.missing_sources && c.missing_sources.length ? c.missing_sources.map(safe).join(', ') : 'none'}</div>
-    </div>
-  `).join("") || '<div class="check">No collector readiness data</div>';
-
-  const manifest = status.collector_manifest || [];
-  document.getElementById("collectorManifest").innerHTML = manifest.map(c => `
-    <div class="check">
-      <span class="chip ${c.status === 'ready' ? 'pass' : c.status === 'partial' ? 'warn' : 'info'}">P${safe(c.priority)} · ${safe(c.readiness_percent || 0)}%</span>
-      <b>${safe(c.collector)}</b>
-      <div class="small">${safe(c.business_use)}</div>
-      <div class="small"><b>Output:</b> ${safe(c.output)} · <b>Weight:</b> ${safe(c.weight)}</div>
-      <div class="small"><b>Enabled:</b> ${c.enabled_sources && c.enabled_sources.length ? c.enabled_sources.map(safe).join(', ') : 'none'}</div>
-      <div class="small"><b>Next:</b> ${safe(c.next_action)}</div>
-    </div>
-  `).join("") || '<div class="check">No collector manifest available</div>';
-
-  const registry = status.source_registry || {};
-  document.getElementById("sourceRegistry").innerHTML = `
-    <div class="check"><span class="chip ${registry.operating_posture === 'public_data_ready' ? 'pass' : registry.operating_posture === 'public_data_partial' ? 'warn' : 'info'}">${safe(registry.operating_posture || 'unknown')}</span><b>Operating Posture</b><div class="small">${safe(registry.immediate_focus || 'No focus available')}</div></div>
-    <div class="check"><span class="chip pass">${registry.public_enabled_groups || 0}</span><b>Public Groups Enabled</b><div class="small">Public/port/MOF sources are the preferred base layer.</div></div>
-    <div class="check"><span class="chip info">${registry.storage_enabled_groups || 0}</span><b>Storage Groups Enabled</b><div class="small">Supabase/GDrive keep history outside GitHub.</div></div>
-    <div class="check"><span class="chip ${registry.paid_enabled_groups ? 'warn' : 'info'}">${registry.paid_enabled_groups || 0}</span><b>Paid AIS Groups Enabled</b><div class="small">Paid AIS remains optional enrichment.</div></div>
-    <div class="check"><span class="chip action">WEIGHT</span><b>Repository Weight Guidance</b><div class="small">${safe(registry.weight_guidance || 'Keep repo light.')}</div></div>
-  `;
-
-  const cloud = status.cloud_master_db || {};
-  const tables = cloud.master_tables || [];
-  document.getElementById("cloudMasterDb").innerHTML = `
-    <div class="check"><span class="chip ${cloud.readiness?.supabase_ready ? 'pass' : 'warn'}">${safe(cloud.current_mode || 'local_snapshot_only')}</span><b>DB Operating Mode</b><div class="small">${safe(cloud.principle || 'Use GitHub for code and cloud DB for accumulated data.')}</div></div>
-    <div class="check"><span class="chip ${cloud.readiness?.can_accumulate_history ? 'pass' : 'warn'}">${cloud.readiness?.can_accumulate_history ? 'READY' : 'PENDING'}</span><b>History Accumulation</b><div class="small">Supabase should become the append-only source of truth for daily snapshots.</div></div>
-    <div class="check"><span class="chip info">${tables.length}</span><b>Recommended Master Tables</b><div class="small">${tables.map(t => safe(t.table)).join(' · ')}</div></div>
-    <div class="check"><span class="chip action">ORDER</span><b>Development Order</b><div class="small">${(cloud.development_order || []).map(safe).join(' · ')}</div></div>
-    <div class="check"><span class="chip pass">LIGHT</span><b>Weight Control</b><div class="small">Queryable rows go to Supabase. Heavy raw files go to GDrive/Object Storage. GitHub stays light.</div></div>
-  `;
-
-  const backend = status.backend_ops || {};
-  const tiers = backend.collector_tiers || [];
-  document.getElementById("backendOps").innerHTML = `
-    <div class="check"><span class="chip ${backend.collector_execution_mode === 'fallback_sample_snapshot' ? 'warn' : 'pass'}">${safe(backend.collector_execution_mode || 'unknown')}</span><b>Collector Execution Mode</b><div class="small">Backend stage: ${safe(backend.backend_stage || 'not reported')}</div></div>
-    <div class="check"><span class="chip ${backend.supabase_status === 'synced' ? 'pass' : 'warn'}">${safe(backend.supabase_status || 'not_configured')}</span><b>Supabase Accumulation</b><div class="small">Candidate rows are snapshot-ready; cloud accumulation starts when Supabase keys and tables are active.</div></div>
-    <div class="check"><span class="chip action">${backend.changed_candidate_count || 0}</span><b>Candidate Score Delta Rows</b><div class="small">Tracks score change versus previous local snapshot to spot newly urgent targets.</div></div>
-    ${tiers.map(t => `<div class="check"><span class="chip ${t.status === 'ready' ? 'pass' : t.status === 'partial' ? 'warn' : 'info'}">${t.readiness_percent}%</span><b>${safe(t.name)}</b><div class="small"><b>Active:</b> ${t.active_sources?.length ? t.active_sources.map(safe).join(', ') : 'none'}</div><div class="small"><b>Tier:</b> ${safe(t.tier)}</div></div>`).join('')}
-  `;
-
-  const cadence = status.release_cadence || {};
-  const bundle = cadence.current_bundle || [];
-  const guards = cadence.stability_guardrails || [];
-  document.getElementById("releaseCadence").innerHTML = `
-    <div class="check"><span class="chip action">${safe(cadence.cadence_version || 'v17.7')}</span><b>Minor Bundle Policy</b><div class="small">${safe(cadence.policy || 'Bundle small improvements into stable minor releases.')}</div></div>
-    <div class="check"><span class="chip pass">3-IN-1</span><b>Current Bundle</b><div class="small">${bundle.map(safe).join(' · ')}</div></div>
-    <div class="check"><span class="chip warn">HOTFIX</span><b>Hotfix Rule</b><div class="small">${safe(cadence.hotfix_rule || 'Patch only for blocking failures.')}</div></div>
-    <div class="check"><span class="chip info">GUARDRAILS</span><b>Stability Guardrails</b><div class="small">${guards.map(safe).join(' · ')}</div></div>
-  `;
-
-  const nextPlan = status.next_development_plan || [];
-  document.getElementById("nextPlan").innerHTML = nextPlan.map(p => `
-    <div class="check">
-      <span class="chip action">STEP ${safe(p.step)}</span>
-      <b>${safe(p.title)}</b>
-      <div class="small">${safe(p.detail)}</div>
-    </div>
-  `).join("") || '<div class="check">No development plan available</div>';
 
   const apiSources = status.api_sources || [];
   document.getElementById("apiSources").innerHTML = apiSources.map(s => `
     <div class="check">
-      <span class="chip ${s.enabled ? 'pass' : s.partial ? 'warn' : 'info'}">${s.status.toUpperCase()}</span>
+      <span class="chip ${s.enabled ? "pass" : s.partial ? "warn" : "info"}">${s.enabled ? "활성" : s.partial ? "부분" : "미설정"}</span>
       <b>${safe(s.label)}</b>
       <div class="small">${safe(s.use)}</div>
-      <div class="small"><b>Using:</b> ${s.using && s.using.length ? s.using.map(safe).join(', ') : 'none'}</div>
-      ${s.missing && s.missing.length ? `<div class="small"><b>Missing:</b> ${s.missing.map(safe).join(' / ')}</div>` : ''}
+      <div class="small"><b>사용 중:</b> ${s.using?.length ? s.using.map(safe).join(", ") : "없음"}</div>
+      ${s.missing?.length ? `<div class="small"><b>필요:</b> ${s.missing.map(safe).join(" / ")}</div>` : ""}
     </div>
-  `).join("") || '<div class="check">No API secret catalog available</div>';
+  `).join("") || '<div class="check">API 목록 없음</div>';
+
+  const health = status.backend_health || {};
+  document.getElementById("backendHealth").innerHTML = `
+    <div class="check"><span class="chip ${health.status === "stable" ? "pass" : health.status === "blocked" ? "fail" : "warn"}">${health.score || 0}/100</span><b>백엔드 상태</b><div class="small">상태: ${safe(health.status || "unknown")}</div></div>
+    <div class="check"><span class="chip info">${health.enabled_source_groups || 0}</span><b>활성 소스 그룹</b><div class="small">부분 설정: ${health.partial_source_groups || 0}</div></div>
+    <div class="check"><span class="chip ${health.real_rows ? "pass" : "warn"}">${health.real_rows || 0}</span><b>실데이터 행</b><div class="small">샘플 행: ${health.sample_rows || 0}</div></div>
+  `;
+
+  const dq = status.data_quality || {};
+  const missing = dq.missing_fields || {};
+  document.getElementById("dataQuality").innerHTML = `
+    <div class="check"><span class="chip ${dq.score >= 85 ? "pass" : dq.score >= 70 ? "warn" : "fail"}">${dq.score || 0}/100</span><b>품질 점수</b><div class="small">${safe(dq.grade || "정리 필요")} · ${dq.record_count || 0}행</div></div>
+    <div class="check"><span class="chip info">${dq.completeness_percent || 0}%</span><b>완성도</b><div class="small">누락: 선사 ${missing.operator || 0}, 목적지 ${missing.destination || 0}, 항만 ${missing.port || 0}</div></div>
+    <div class="check"><span class="chip ${dq.duplicate_count ? "warn" : "pass"}">${dq.duplicate_count || 0}</span><b>중복 감시</b><div class="small">동일 선박/항만 중복 행 감지</div></div>
+  `;
 
   const checks = status.deployment_readiness?.checks || [];
   document.getElementById("readiness").innerHTML = checks.map(c => `
-    <div class="check">
-      <span class="chip ${safe(c.status)}">${safe(c.status).toUpperCase()}</span>
-      <b>${safe(c.label)}</b>
-      <div class="small">${safe(c.detail)}</div>
-    </div>
-  `).join("") || '<div class="check">No readiness checks available</div>';
-  const host = status.recommended_hosting || {};
-  document.getElementById("hostingHint").innerHTML = `<b>Hosting setup:</b> Build Command <code>${safe(host.build_command || "npm run build")}</code> · Output Directory <code>${safe(host.output_directory || "public")}</code> · Node <code>${safe(host.node_version || ">=18")}</code>`;
+    <div class="check"><span class="chip ${safe(c.status)}">${safe(c.status).toUpperCase()}</span><b>${safe(c.label)}</b><div class="small">${safe(c.detail)}</div></div>
+  `).join("") || '<div class="check">배포 점검 정보 없음</div>';
+
+  const rows = (status.port_summary || []).map(p => `
+    <tr><td>${safe(p.port)}</td><td>${p.total}</td><td>${p.critical}</td><td>${p.high_risk}</td><td>${p.avg_risk}</td><td>${p.waiting}</td><td class="money">${money(p.opportunity_usd)}</td></tr>
+  `).join("");
+  document.getElementById("portRows").innerHTML = rows || '<tr><td colspan="7">항만 데이터 없음</td></tr>';
 }
 
 async function loadCandidateChanges(){
@@ -360,14 +223,12 @@ async function loadCandidateChanges(){
     const changes = await res.json();
     const top = changes.top_changes || [];
     document.getElementById("candidateChanges").innerHTML = `
-      <div class="check"><span class="chip ${changes.changed_count ? 'warn' : 'info'}">${changes.changed_count || 0}</span><b>Changed Candidate Signals</b><div class="small">New candidate, immediate upgrade, or major score movement detected in this build.</div></div>
-      <div class="check"><span class="chip critical">${changes.became_immediate_count || 0}</span><b>New Immediate / Upgraded</b><div class="small">Contact these first if real data mode is active.</div></div>
-      <div class="check"><span class="chip hot">${changes.new_candidate_count || 0}</span><b>New Cleaning Candidates</b><div class="small">Newly identified candidate rows versus previous local snapshot.</div></div>
-      <div class="check"><span class="chip action">${changes.score_jump_count || 0}</span><b>Score Jumps</b><div class="small">Candidate score increased by 15+ points.</div></div>
-      ${top.slice(0,6).map(c => `<div class="check"><span class="chip ${c.is_immediate_candidate ? 'critical' : c.is_cleaning_candidate ? 'hot' : 'info'}">${safe(c.change_type)}</span><b>${safe(c.vessel_name || 'Unknown vessel')} · ${safe(c.port || '-')}</b><div class="small">Score ${safe(c.previous_score)} → ${safe(c.current_score)} (${Number(c.delta) > 0 ? '+' : ''}${safe(c.delta)}) · ${safe(c.contact_window || 'Monitor')}</div><div class="small">${safe(c.recommended_action || 'Monitor')}</div></div>`).join('')}
+      <div class="check"><span class="chip ${changes.changed_count ? "warn" : "info"}">${changes.changed_count || 0}</span><b>변경된 후보 신호</b><div class="small">신규 후보, 즉시 후보 승격, 점수 급등 여부</div></div>
+      <div class="check"><span class="chip critical">${changes.became_immediate_count || 0}</span><b>즉시 연락 승격</b><div class="small">실데이터 모드에서 가장 먼저 확인할 대상</div></div>
+      ${top.slice(0,6).map(c => `<div class="check"><span class="chip ${c.is_immediate_candidate ? "critical" : c.is_cleaning_candidate ? "hot" : "info"}">${safe(c.change_type)}</span><b>${safe(c.vessel_name || "선박명 없음")} · ${safe(c.port || "-")}</b><div class="small">점수 ${safe(c.previous_score)} → ${safe(c.current_score)} · ${safe(c.contact_window || "관찰")}</div></div>`).join("")}
     `;
-  } catch (e) {
-    document.getElementById("candidateChanges").innerHTML = '<div class="check"><span class="chip warn">PENDING</span><b>Candidate change tracker not available</b><div class="small">candidate-changes.json has not been generated yet.</div></div>';
+  } catch {
+    document.getElementById("candidateChanges").innerHTML = '<div class="check"><span class="chip warn">대기</span><b>후보 변화 파일 없음</b><div class="small">candidate-changes.json 생성 후 표시됩니다.</div></div>';
   }
 }
 
@@ -375,7 +236,7 @@ function updatePortFilter(vessels){
   const select = document.getElementById("portFilter");
   const current = select.value;
   const ports = [...new Set(vessels.map(v => v.port).filter(Boolean))].sort();
-  select.innerHTML = '<option value="all">All Ports</option>' + ports.map(p => `<option value="${safe(p)}">${safe(p)}</option>`).join("");
+  select.innerHTML = '<option value="all">전체 항만</option>' + ports.map(p => `<option value="${safe(p)}">${safe(p)}</option>`).join("");
   if (ports.includes(current)) select.value = current;
 }
 
@@ -413,77 +274,65 @@ function exportCsv(){
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `hwk_sales_priority_v${statusCache.version || "16.4"}.csv`;
+  a.download = `hwk_선체청소_후보_${statusCache.version || "v"}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-function copyAction(name, action){
-  navigator.clipboard?.writeText(`${name}: ${action}`).catch(()=>{});
-}
-
 function renderDetail(v){
-  const reasons = (v.reason_codes || v.sales_reason || []).map(r => `<li>${safe(r)}</li>`).join("");
+  if (!v) return;
+  const reasons = (v.reason_codes || v.sales_reason || []).map(r => `<li>${safe(reasonKo(r))}</li>`).join("");
   document.getElementById("vesselDetail").innerHTML = `
-    <b>${safe(v.vessel_name || "Unknown vessel")}</b>
-    <div class="small">${safe(v.port)} · ${safe(v.berth || v.anchorage_zone || "-")} · ${safe(v.status || "-")}</div>
-    <p><b>Schedule:</b> ETA ${safe(v.eta || "-")} · ETB ${safe(v.etb || "-")} · ATA ${safe(v.ata || "-")} · ATB ${safe(v.atb || "-")} · ETD ${safe(v.etd || "-")} · ATD ${safe(v.atd || "-")}</p>
-    <p><b>Durations:</b> stay ${safe(v.stay_hours ?? "-")}h · berth ${safe(v.berth_hours ?? "-")}h · anchorage ${safe(v.anchorage_hours ?? "-")}h · work window ${safe(v.work_window_hours ?? "-")}h</p>
-    <p><b>Scores:</b> biofouling ${safe(v.biofouling_score ?? v.risk_score ?? "-")} · CII ${safe(v.cii_pressure_score ?? "-")} · sales priority ${safe(v.total_sales_priority_score ?? v.cleaning_candidate_score ?? "-")}</p>
-    <p><b>Next action:</b> ${safe(v.recommended_action || "Monitor")}</p>
-    <ul class="reason">${reasons || "<li>No reason code available</li>"}</ul>
+    <b>${safe(v.vessel_name || "선박명 없음")}</b>
+    <div class="small">${safe(v.port)} · ${safe(v.berth || v.anchorage_zone || "-")} · ${safe(statusKo(v.status))}</div>
+    <p><b>일정:</b> ETA ${safe(v.eta || "-")} · ETB ${safe(v.etb || "-")} · ATA ${safe(v.ata || "-")} · ATB ${safe(v.atb || "-")} · ETD ${safe(v.etd || "-")} · ATD ${safe(v.atd || "-")}</p>
+    <p><b>시간:</b> 체류 ${safe(v.stay_hours ?? "-")}h · 선석 ${safe(v.berth_hours ?? "-")}h · 묘박/대기 ${safe(v.anchorage_hours ?? "-")}h · 작업창 ${safe(v.work_window_hours ?? "-")}h</p>
+    <p><b>점수:</b> Biofouling ${safe(v.biofouling_score ?? v.risk_score ?? "-")} · CII ${safe(v.cii_pressure_score ?? "-")} · 영업 우선순위 ${safe(v.total_sales_priority_score ?? v.cleaning_candidate_score ?? "-")}</p>
+    <p><b>권장 액션:</b> ${safe(actionKo(v.recommended_action))}</p>
+    <ul class="reason">${reasons || "<li>후보 사유 없음</li>"}</ul>
   `;
 }
 
 function renderCandidateTable(rows){
   document.getElementById("candidateRows").innerHTML = rows.map((v, index) => `
-    <tr onclick="renderDetail(currentFiltered()[${index}])" style="cursor:pointer;">
-      <td>${safe(v.vessel_name)}</td><td>${safe(v.port)}</td><td>${safe(v.status)}</td>
+    <tr class="row" onclick="renderDetail(currentFiltered()[${index}])">
+      <td>${safe(v.vessel_name)}</td><td>${safe(v.port)}</td><td>${safe(statusKo(v.status))}</td>
       <td>${safe(v.eta || "-")}</td><td>${safe(v.etb || "-")}</td><td>${safe(v.etd || "-")}</td>
       <td>${safe(v.stay_hours ?? "-")}h</td><td>${safe(v.work_window_hours ?? "-")}h</td>
       <td>${safe(v.biofouling_score ?? v.risk_score ?? "-")}</td><td>${safe(v.cii_pressure_score ?? "-")}</td>
       <td>${safe(v.total_sales_priority_score ?? v.cleaning_candidate_score ?? "-")}</td>
     </tr>
-  `).join("") || '<tr><td colspan="11">No matching candidates</td></tr>';
+  `).join("") || '<tr><td colspan="11">조건에 맞는 후보 없음</td></tr>';
 }
 
 function renderData(){
   const grid = document.getElementById("grid");
   const filtered = currentFiltered();
-  document.getElementById("resultCount").textContent = `${filtered.length} of ${vesselsCache.length} targets shown · auto-refresh ${statusCache.refresh_interval_seconds || 30}s`;
-  if (!filtered.length) {
-    grid.innerHTML = '<div class="empty">No matching targets. Try a broader filter.</div>';
-    renderCandidateTable(filtered);
-    return;
-  }
+  document.getElementById("resultCount").textContent = `${filtered.length} / ${vesselsCache.length}척 표시 · ${statusCache.refresh_interval_seconds || 30}초마다 새로고침`;
   renderCandidateTable(filtered);
   renderDetail(filtered[0]);
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="empty">조건에 맞는 선박이 없습니다. 필터를 넓혀보세요.</div>';
+    return;
+  }
   grid.innerHTML = filtered.map(v => {
     const score = v.risk_score || 0;
-    const critical = score >= 85;
-    const high = score >= 70;
-    const reasons = (v.sales_reason || []).map(r => `<li>${safe(r)}</li>`).join("");
-    const action = v.recommended_action || "Monitor";
+    const reasons = (v.sales_reason || []).slice(0,4).map(r => `<li>${safe(reasonKo(r))}</li>`).join("");
     return `
-      <div class="card vessel-card ${critical ? "critical" : high ? "high" : ""}">
+      <div class="card">
         <h2>${safe(v.vessel_name)}</h2>
         <div class="score">${v.cleaning_candidate_score ?? score}</div>
-        <span class="chip ${v.is_immediate_candidate ? "critical" : v.is_cleaning_candidate ? "hot" : ""}">${safe(v.cleaning_candidate_level || "Monitor")}</span>
-        <span class="chip info">Risk ${score}</span>
-        ${v.compliance_watch ? '<span class="chip compliance">Compliance Watch</span>' : ''}
-        <span class="chip action">${safe(action)}</span>
-        <p><b>Port:</b> ${safe(v.port)} · <b>Status:</b> ${safe(v.status)}</p>
-        <p><b>Operator:</b> ${safe(v.operator)}</p>
-        <p><b>Destination:</b> ${safe(v.destination)} · <b>Type:</b> ${safe(v.vessel_type)}</p>
-        <p><b>Schedule:</b> ETA ${safe(v.eta || "-")} · ETB ${safe(v.etb || "-")} · ETD ${safe(v.etd || "-")}</p>
-        <p><b>Stay:</b> ${safe(v.stay_hours ?? "-")}h · <b>Berth:</b> ${safe(v.berth_hours ?? "-")}h · <b>Work window:</b> ${safe(v.work_window_hours ?? "-")}h</p>
-        <p><b>Biofouling:</b> ${safe(v.biofouling_score ?? score)} · <b>CII:</b> ${safe(v.cii_pressure_score ?? "-")} · <b>Sales priority:</b> ${safe(v.total_sales_priority_score ?? v.cleaning_candidate_score ?? score)}</p>
-        <p><b>Contact window:</b> ${safe(v.contact_window || "Monitor weekly")} · <b>Confidence:</b> ${safe(v.candidate_confidence ?? "-")}%</p>
-        <p><b>Estimated opportunity:</b> <span class="money">${money(v.opportunity_usd)}</span></p>
-        <p><b>Snapshot:</b> seen ${safe(v.observation_count || 1)}x · score delta ${Number(v.candidate_score_delta || 0) > 0 ? "+" : ""}${safe(v.candidate_score_delta || 0)}</p>
-        <ul class="reason">${reasons || '<li>No special signal</li>'}</ul>
-        <span class="copy" onclick="copyAction('${safe(v.vessel_name)}','${safe(action)}')">Copy action note</span>
-        <p class="meta">Updated: ${v.updated_at ? new Date(v.updated_at).toLocaleString() : "-"}</p>
+        <span class="chip ${v.is_immediate_candidate ? "critical" : v.is_cleaning_candidate ? "hot" : "info"}">${safe(levelKo(v.cleaning_candidate_level))}</span>
+        <span class="chip info">위험 ${score}</span>
+        ${v.compliance_watch ? '<span class="chip warn">규제/준수 관찰</span>' : ""}
+        <p><b>항만:</b> ${safe(v.port)} · <b>상태:</b> ${safe(statusKo(v.status))}</p>
+        <p><b>선사:</b> ${safe(v.operator || "-")} · <b>선종:</b> ${safe(v.vessel_type || "-")}</p>
+        <p><b>일정:</b> ETA ${safe(v.eta || "-")} · ETB ${safe(v.etb || "-")} · ETD ${safe(v.etd || "-")}</p>
+        <p><b>작업창:</b> ${safe(v.work_window_hours ?? "-")}h · <b>체류:</b> ${safe(v.stay_hours ?? "-")}h · <b>선석:</b> ${safe(v.berth_hours ?? "-")}h</p>
+        <p><b>Biofouling:</b> ${safe(v.biofouling_score ?? score)} · <b>CII:</b> ${safe(v.cii_pressure_score ?? "-")} · <b>우선순위:</b> ${safe(v.total_sales_priority_score ?? "-")}</p>
+        <p><b>권장 액션:</b> ${safe(actionKo(v.recommended_action))}</p>
+        <p><b>예상 기회금액:</b> <span class="money">${money(v.opportunity_usd)}</span></p>
+        <ul class="reason">${reasons || "<li>특별 신호 없음</li>"}</ul>
       </div>`;
   }).join("");
 }
