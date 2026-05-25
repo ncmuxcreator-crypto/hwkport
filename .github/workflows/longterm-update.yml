@@ -101,9 +101,41 @@ jobs:
         run: |
           npm ci --legacy-peer-deps --no-audit --no-fund --progress=false --registry=https://registry.npmjs.org/ || npm install --legacy-peer-deps --no-audit --no-fund --progress=false --registry=https://registry.npmjs.org/
 
-      - name: Run update pipeline
+      - name: Collect public port data and build dashboard
         timeout-minutes: 6
-        run: npm run update
+        run: |
+          echo "Starting HWK public-data collection pipeline"
+          echo "Collectors are executed inside scripts/update.js -> collectKoreaData()"
+          npm run update
+
+      - name: Print collector diagnostics
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const path = "dashboard/api/status.json";
+          if (!fs.existsSync(path)) {
+            console.log("status.json was not generated.");
+            process.exit(0);
+          }
+          const status = JSON.parse(fs.readFileSync(path, "utf8"));
+          const diag = status.collector_diagnostics || {};
+          console.log("=== HWK Collector Diagnostics ===");
+          console.log(`data_mode=${status.data_mode}`);
+          console.log(`records=${status.record_count}`);
+          console.log(`attempted=${diag.attempted_count || 0}`);
+          console.log(`success=${diag.success_count || 0}`);
+          console.log(`failed=${diag.failed_count || 0}`);
+          console.log(`skipped=${diag.skipped_count || 0}`);
+          console.log(`real_rows=${diag.real_row_count || 0}`);
+          console.log(`fallback_used=${Boolean(diag.fallback_used)}`);
+          for (const source of diag.sources || []) {
+            const state = source.success ? "success" : source.skipped ? `skipped:${source.reason || "unknown"}` : source.error ? `failed:${source.error}` : "pending";
+            console.log(`${source.key}: ${state}; rows=${source.row_count || 0}; normalized=${source.normalized_count || 0}`);
+          }
+          console.log("storage.supabase=", status.storage_status?.supabase?.status || status.supabase_write?.status || "unknown");
+          console.log("storage.gdrive=", status.storage_status?.gdrive?.status || status.gdrive_archive?.status || "unknown");
+          NODE
 
       - name: Validate output
         timeout-minutes: 2
