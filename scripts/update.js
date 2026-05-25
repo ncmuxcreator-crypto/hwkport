@@ -15,6 +15,59 @@ const PRIORITY_PORTS = [
   "Pohang"
 ];
 
+function parseScheduleTime(value) {
+  if (!value) return null;
+  const parsed = new Date(String(value).replace(" ", "T"));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function hoursBetween(start, end) {
+  const startDate = parseScheduleTime(start);
+  const endDate = parseScheduleTime(end);
+  if (!startDate || !endDate) return null;
+  return Math.max(0, Math.round(((endDate.getTime() - startDate.getTime()) / 36e5) * 10) / 10);
+}
+
+function deriveScheduleMetrics(v) {
+  const arrival = v.ata || v.eta;
+  const berthStart = v.atb || v.etb;
+  const departure = v.atd || v.etd;
+  const stayHours = hoursBetween(arrival, departure);
+  const berthHours = hoursBetween(berthStart || arrival, departure);
+  const waitingHours = berthStart ? hoursBetween(arrival, berthStart) : (/waiting|anchorage|anchor|idle|drifting/i.test(v.status || "") ? stayHours : 0);
+  const workWindowHours = Math.max(0, Math.min(96, berthHours ?? stayHours ?? 0));
+
+  return {
+    stay_hours: stayHours ?? Math.round(Number(v.days_in_korea || 0) * 24),
+    berth_hours: berthHours ?? 0,
+    anchorage_hours: waitingHours ?? 0,
+    work_window_hours: workWindowHours,
+    schedule_confidence: [v.eta, v.etb, v.ata, v.atb, v.etd, v.atd].filter(Boolean).length
+  };
+}
+
+function deriveBiofoulingScore(v, metrics) {
+  const type = String(v.vessel_type || "").toLowerCase();
+  const route = [v.destination, v.previous_port, v.next_port].join(" ").toLowerCase();
+  let score = Number(v.risk_score || 0) * 0.55;
+  score += Math.min(24, (metrics.stay_hours || 0) / 24 * 2.5);
+  score += Math.min(18, (metrics.anchorage_hours || 0) / 24 * 3);
+  if (/vlcc|cape|capesize|bulk|bulker|tanker|lng|lpg|cruise|container/.test(type)) score += 10;
+  if (/australia|brazil|new zealand|california|usa|canada|port hedland|ponta da madeira/.test(route)) score += 12;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function deriveCiiPressureScore(v, metrics, biofoulingScore) {
+  const type = String(v.vessel_type || "").toLowerCase();
+  const route = [v.destination, v.previous_port, v.next_port].join(" ").toLowerCase();
+  let score = Math.round(biofoulingScore * 0.42);
+  if (Number(v.gt || 0) >= 5000) score += 18;
+  if (/container|bulk|bulker|tanker|vlcc|lng|lpg|cruise/.test(type)) score += 12;
+  if ((metrics.stay_hours || 0) >= 72) score += 8;
+  if (/australia|brazil|usa|california|canada|singapore|china/.test(route)) score += 8;
+  return Math.max(0, Math.min(100, score));
+}
+
 console.log(`[HWK] v${VERSION} ${BUILD_NAME} pipeline started`);
 
 const startedAt = new Date().toISOString();
@@ -62,18 +115,19 @@ function candidateSignals(v) {
   const reasons = [];
   const status = String(v.status || "").toLowerCase();
   const type = String(v.vessel_type || "").toLowerCase();
-  const dest = String(v.destination || v.next_port_country || "").toLowerCase();
+  const dest = String(v.destination || v.next_port_country || v.next_port || "").toLowerCase();
   const days = Number(v.days_in_korea || v.idle_days || 0);
   const speed = Number(v.speed || 0);
   const risk = Number(v.risk_score || 0);
 
-  if (/waiting|anchorage|묘박|대기/.test(status)) reasons.push({ key: "waiting", points: 22, label: "Waiting/anchorage condition" });
+  if (/waiting|anchorage|anchor|idle|drifting/.test(status)) reasons.push({ key: "waiting", points: 22, label: "Waiting/anchorage condition" });
   if (days >= 21) reasons.push({ key: "long_idle_21", points: 24, label: "21+ days Korea stay / idle exposure" });
   else if (days >= 14) reasons.push({ key: "long_idle_14", points: 18, label: "14+ days Korea stay / idle exposure" });
   else if (days >= 7) reasons.push({ key: "idle_7", points: 9, label: "7+ days Korea stay" });
   if (speed > 0 && speed <= 3) reasons.push({ key: "low_speed", points: 12, label: "Low speed / near-static movement" });
   if (/vlcc|cape|capesize|bulk|bulker|tanker|lng|lpg|cruise|container/.test(type)) reasons.push({ key: "valuable_vessel", points: 12, label: "Commercially relevant vessel type" });
   if (/australia|brazil|new zealand|california|usa|canada/.test(dest)) reasons.push({ key: "regulated_destination", points: 16, label: "Biofouling-sensitive destination" });
+  if ((v.work_window_hours || 0) >= 24) reasons.push({ key: "work_window", points: 8, label: "Workable UWC window available" });
   if (risk >= 85) reasons.push({ key: "risk_critical", points: 18, label: "Critical fouling / performance risk score" });
   else if (risk >= 70) reasons.push({ key: "risk_high", points: 12, label: "High fouling / performance risk score" });
   if (v.operator) reasons.push({ key: "operator_known", points: 4, label: "Operator identified for outreach" });
@@ -188,8 +242,8 @@ function buildPortSummary(records) {
     current.total += 1;
     current.critical += (v.risk_score || 0) >= 85 ? 1 : 0;
     current.high_risk += (v.risk_score || 0) >= 70 ? 1 : 0;
-    current.waiting += /waiting|anchorage|대기/i.test(v.status || "") ? 1 : 0;
-    current.at_berth += /berth|alongside|접안/i.test(v.status || "") ? 1 : 0;
+    current.waiting += /waiting|anchorage|anchor|idle|drifting/i.test(v.status || "") ? 1 : 0;
+    current.at_berth += /berth|alongside|moored/i.test(v.status || "") ? 1 : 0;
     current.avg_risk += v.risk_score || 0;
     current.opportunity_usd += v.opportunity_usd || 0;
     summary.set(port, current);
@@ -211,10 +265,19 @@ function enrichSalesSignals(records) {
     if ((v.speed || 0) <= 3) reasons.push("Low-speed or waiting condition");
     if (complianceWatch) reasons.push("Biofouling-sensitive destination");
 
-    const candidateProfile = buildCandidateProfile({ ...v, compliance_watch: complianceWatch });
+    const scheduleMetrics = deriveScheduleMetrics(v);
+    const biofoulingScore = deriveBiofoulingScore(v, scheduleMetrics);
+    const ciiPressureScore = deriveCiiPressureScore(v, scheduleMetrics, biofoulingScore);
+    const candidateProfile = buildCandidateProfile({ ...v, ...scheduleMetrics, risk_score: biofoulingScore, compliance_watch: complianceWatch });
     const isSample = String(v.source_mode || "").includes("sample");
+    const reasonCodes = [
+      ...(v.reason_codes || []),
+      ...reasons,
+      ...(candidateProfile.candidate_reasons || [])
+    ].filter((value, index, arr) => value && arr.indexOf(value) === index);
     const enriched = {
       ...v,
+      ...scheduleMetrics,
       ...candidateProfile,
       version: VERSION,
       contact_priority_rank: candidateProfile.is_immediate_candidate ? 1 : candidateProfile.cleaning_candidate_score >= 65 ? 2 : candidateProfile.cleaning_candidate_score >= 45 ? 3 : 9,
@@ -224,9 +287,13 @@ function enrichSalesSignals(records) {
       is_operating_candidate: !isSample && candidateProfile.is_cleaning_candidate,
       is_operating_immediate_candidate: !isSample && candidateProfile.is_immediate_candidate,
       operating_candidate_score: isSample ? 0 : candidateProfile.cleaning_candidate_score,
-      risk_level: riskLevel(v.risk_score || 0),
-      sales_priority: candidateProfile.is_immediate_candidate ? "Immediate Candidate" : (v.risk_score || 0) >= 85 ? "Critical" : (v.risk_score || 0) >= 70 ? "High" : "Normal",
-      sales_reason: [...reasons, ...(candidateProfile.candidate_reasons || [])].filter((value, index, arr) => arr.indexOf(value) === index),
+      biofouling_score: biofoulingScore,
+      cii_pressure_score: ciiPressureScore,
+      total_sales_priority_score: Math.min(100, Math.round(candidateProfile.cleaning_candidate_score * 0.5 + biofoulingScore * 0.3 + ciiPressureScore * 0.2)),
+      risk_level: riskLevel(biofoulingScore),
+      sales_priority: candidateProfile.is_immediate_candidate ? "Immediate Candidate" : biofoulingScore >= 85 ? "Critical" : biofoulingScore >= 70 ? "High" : "Normal",
+      reason_codes: reasonCodes,
+      sales_reason: reasonCodes,
       compliance_watch: complianceWatch
     };
     enriched.recommended_action = enriched.candidate_next_action || recommendedAction(enriched);
@@ -249,6 +316,14 @@ function buildDataStrategy(apiSources = []) {
     public_enabled: publicEnabled,
     paid_enabled: paidEnabled,
     priority_ports: PRIORITY_PORTS,
+    vts_architecture: "Integrated VTS / national vessel traffic layer. Yeosu is one monitored area, not the core architecture.",
+    source_priority: [
+      "PORT-MIS / Korean port call APIs",
+      "Major port berth allocation data",
+      "Integrated VTS / national vessel traffic information",
+      "Public vessel specification data",
+      "Manual correction CSV"
+    ],
     next_focus: [
       "Normalize vessel identity across port, berth, VTS and AIS feeds",
       "Accumulate daily snapshots in Supabase for idle-time and port-stay history",

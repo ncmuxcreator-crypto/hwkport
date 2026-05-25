@@ -34,6 +34,16 @@ for (const item of data) {
   if (!item.vessel_id || !item.vessel_name || !item.port) {
     throw new Error("Missing required vessel fields");
   }
+  for (const field of ["eta", "etb", "ata", "atb", "etd", "atd"]) {
+    if (!(field in item)) {
+      throw new Error(`Missing schedule field ${field} for ${item.vessel_name || item.vessel_id}`);
+    }
+  }
+  for (const field of ["stay_hours", "berth_hours", "anchorage_hours", "work_window_hours", "biofouling_score", "cii_pressure_score", "total_sales_priority_score", "reason_codes"]) {
+    if (!(field in item)) {
+      throw new Error(`Missing intelligence field ${field} for ${item.vessel_name || item.vessel_id}`);
+    }
+  }
 }
 
 const priorityPorts = report?.data_strategy?.priority_ports || [];
@@ -42,6 +52,10 @@ for (const port of requiredPriorityPorts) {
   if (!priorityPorts.includes(port)) {
     throw new Error(`Missing priority port in data strategy: ${port}`);
   }
+}
+
+if (!String(report?.data_strategy?.vts_architecture || "").includes("Integrated VTS")) {
+  throw new Error("VTS architecture must be integrated/national, not Yeosu-only");
 }
 
 if (report.data_mode === "sample_only" && report?.candidate_ops?.current_candidate_count !== 0) {

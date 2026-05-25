@@ -1,6 +1,6 @@
 {
   "version": "17.7.0",
-  "generatedAt": "2026-05-25T13:07:18.516Z",
+  "generatedAt": "2026-05-25T13:20:00.706Z",
   "explanations": [
     {
       "rank": 1,
@@ -16,6 +16,7 @@
         "Low speed / near-static movement",
         "Commercially relevant vessel type",
         "Biofouling-sensitive destination",
+        "Workable UWC window available",
         "Critical fouling / performance risk score",
         "Operator identified for outreach"
       ],
@@ -35,6 +36,7 @@
         "Low speed / near-static movement",
         "Commercially relevant vessel type",
         "Biofouling-sensitive destination",
+        "Workable UWC window available",
         "Critical fouling / performance risk score",
         "Operator identified for outreach"
       ],
@@ -50,6 +52,7 @@
       "contact_priority": "No action",
       "reasons": [
         "Commercially relevant vessel type",
+        "Workable UWC window available",
         "Operator identified for outreach"
       ],
       "recommended_action": "Monitor only; wait for stronger port-stay or itinerary signal."

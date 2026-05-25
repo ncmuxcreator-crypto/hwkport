@@ -2,8 +2,8 @@
   "version": "17.7.0",
   "build_name": "Backend Stability Batch",
   "status": "success",
-  "started_at": "2026-05-25T13:05:36.955Z",
-  "completed_at": "2026-05-25T13:05:36.957Z",
+  "started_at": "2026-05-25T13:19:46.588Z",
+  "completed_at": "2026-05-25T13:19:46.594Z",
   "record_count": 3,
   "critical_count": 2,
   "high_risk_count": 2,
@@ -28,6 +28,7 @@
           "Low speed / near-static movement",
           "Commercially relevant vessel type",
           "Biofouling-sensitive destination",
+          "Workable UWC window available",
           "Critical fouling / performance risk score",
           "Operator identified for outreach"
         ]
@@ -45,6 +46,7 @@
           "Low speed / near-static movement",
           "Commercially relevant vessel type",
           "Biofouling-sensitive destination",
+          "Workable UWC window available",
           "Critical fouling / performance risk score",
           "Operator identified for outreach"
         ]
@@ -468,6 +470,14 @@
       "Pyeongtaek-Dangjin",
       "Hadong/Samcheonpo",
       "Pohang"
+    ],
+    "vts_architecture": "Integrated VTS / national vessel traffic layer. Yeosu is one monitored area, not the core architecture.",
+    "source_priority": [
+      "PORT-MIS / Korean port call APIs",
+      "Major port berth allocation data",
+      "Integrated VTS / national vessel traffic information",
+      "Public vessel specification data",
+      "Manual correction CSV"
     ],
     "next_focus": [
       "Normalize vessel identity across port, berth, VTS and AIS feeds",
@@ -921,13 +931,13 @@
     "version": "17.7.0",
     "build_name": "Backend Stability Batch",
     "backend_stage": "actual_collector_backend_ready",
-    "generated_at": "2026-05-25T13:05:36.960Z",
+    "generated_at": "2026-05-25T13:19:46.597Z",
     "collector_execution_mode": "fallback_sample_snapshot",
     "supabase_status": "not_configured",
     "record_count": 3,
     "candidate_count": 2,
     "immediate_candidate_count": 2,
-    "changed_candidate_count": 0,
+    "changed_candidate_count": 1,
     "collector_tiers": [
       {
         "tier": "base",
@@ -1005,7 +1015,7 @@
     ]
   },
   "candidate_changes": {
-    "generated_at": "2026-05-25T13:05:36.960Z",
+    "generated_at": "2026-05-25T13:19:46.597Z",
     "tracker_version": "candidate-change-tracker-v16.5",
     "total_tracked": 3,
     "changed_count": 0,
@@ -1032,12 +1042,13 @@
           "Low speed / near-static movement",
           "Commercially relevant vessel type",
           "Biofouling-sensitive destination",
+          "Workable UWC window available",
           "Critical fouling / performance risk score",
           "Operator identified for outreach"
         ],
         "recommended_action": "Prepare UWC outreach now: confirm hull condition, port window, and compliance route.",
         "first_seen_at": "2026-05-25T00:30:45.030Z",
-        "last_seen_at": "2026-05-25T13:05:36.956Z"
+        "last_seen_at": "2026-05-25T13:19:46.590Z"
       },
       {
         "snapshot_key": "IMO-7000001|YEOSU",
@@ -1057,12 +1068,13 @@
           "Low speed / near-static movement",
           "Commercially relevant vessel type",
           "Biofouling-sensitive destination",
+          "Workable UWC window available",
           "Critical fouling / performance risk score",
           "Operator identified for outreach"
         ],
         "recommended_action": "Prepare UWC outreach now: confirm hull condition, port window, and compliance route.",
         "first_seen_at": "2026-05-25T00:30:45.030Z",
-        "last_seen_at": "2026-05-25T13:05:36.956Z"
+        "last_seen_at": "2026-05-25T13:19:46.590Z"
       }
     ]
   },

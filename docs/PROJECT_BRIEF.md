@@ -86,6 +86,44 @@ The backend should work primarily with:
 
 MarineTraffic and VesselFinder must not become core dependencies. They are optional future enrichment layers only.
 
+## Integrated VTS Rule
+
+Do not make the architecture Yeosu-only. Earlier notes that say "Yeosu VTS" should be interpreted as integrated VTS / national VTS-based vessel traffic.
+
+Yeosu is one monitored area. The VTS layer should support multiple Korean ports and coverage areas, including Yeosu, Gwangyang, Busan, Ulsan, Pyeongtaek-Dangjin, Pohang, Hadong, Masan / Jinhae, and Incheon.
+
+Recommended source priority:
+
+1. PORT-MIS / Korean port call APIs
+2. Berth allocation data from major Korean ports
+3. Integrated VTS / national vessel traffic information
+4. Public vessel specification data
+5. Manual correction CSV
+6. Future optional enrichment: AISHub / Global Fishing Watch
+7. Future optional environment layer: Copernicus / NOAA
+
+## Frontend Schedule Intelligence
+
+The frontend and normalized vessel records should support these schedule fields:
+
+- `eta`: Estimated Time of Arrival
+- `etb`: Estimated Time of Berthing
+- `ata`: Actual Time of Arrival
+- `atb`: Actual Time of Berthing
+- `etd`: Estimated Time of Departure
+- `atd`: Actual Time of Departure
+
+These fields drive:
+
+- Port stay duration
+- Berth stay duration
+- Anchorage / waiting duration
+- Workable UWC window
+- Long-stay candidate detection
+- Schedule confidence
+
+Frontend work should answer: which vessel should HullWiper Korea contact now, and why?
+
 ## Candidate Engine
 
 Score vessels using:

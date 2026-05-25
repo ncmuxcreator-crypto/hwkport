@@ -135,9 +135,16 @@
     <input id="searchBox" placeholder="Search vessel / operator / port">
     <select id="riskFilter"><option value="all">All Risk</option><option value="critical">Critical only</option><option value="high">High + Critical</option><option value="candidate">Cleaning Candidate</option><option value="immediate">Immediate Candidate</option><option value="compliance">Compliance Watch</option></select>
     <select id="portFilter"><option value="all">All Ports</option></select>
+    <select id="priorityFilter"><option value="all">All Priority</option><option value="immediate">Immediate</option><option value="strong">Strong</option><option value="watch">Watch</option></select>
+    <select id="statusFilter"><option value="all">All Status</option><option value="waiting">Waiting / Anchorage</option><option value="berth">At Berth</option><option value="expected">Expected</option></select>
     <button id="exportCsv">Export CSV</button>
   </div>
   <p class="small" id="resultCount">Loading targets...</p>
+  <table class="port-table">
+    <thead><tr><th>Vessel</th><th>Port</th><th>Status</th><th>ETA</th><th>ETB</th><th>ETD</th><th>Stay</th><th>Work</th><th>Bio</th><th>CII</th><th>Priority</th></tr></thead>
+    <tbody id="candidateRows"><tr><td colspan="11">Loading...</td></tr></tbody>
+  </table>
+  <div class="card" id="vesselDetail" style="margin-top:14px;"><b>Vessel detail</b><div class="small">Select a row to inspect schedule, work window, and reason codes.</div></div>
   <div id="grid" class="grid"></div>
 </div>
 
@@ -376,6 +383,9 @@ function passesFilters(v){
   const q = document.getElementById("searchBox").value.trim().toLowerCase();
   const risk = document.getElementById("riskFilter").value;
   const port = document.getElementById("portFilter").value;
+  const priority = document.getElementById("priorityFilter").value;
+  const status = document.getElementById("statusFilter").value;
+  const statusText = String(v.status || "").toLowerCase();
   const haystack = [v.vessel_name, v.operator, v.port, v.destination, v.vessel_type].join(" ").toLowerCase();
   if (q && !haystack.includes(q)) return false;
   if (port !== "all" && v.port !== port) return false;
@@ -384,6 +394,12 @@ function passesFilters(v){
   if (risk === "candidate" && !v.is_cleaning_candidate) return false;
   if (risk === "immediate" && !v.is_immediate_candidate) return false;
   if (risk === "compliance" && !v.compliance_watch) return false;
+  if (priority === "immediate" && !v.is_immediate_candidate) return false;
+  if (priority === "strong" && !((v.cleaning_candidate_score || 0) >= 65 && (v.cleaning_candidate_score || 0) < 82)) return false;
+  if (priority === "watch" && !((v.cleaning_candidate_score || 0) >= 45 && (v.cleaning_candidate_score || 0) < 65)) return false;
+  if (status === "waiting" && !/waiting|anchorage|anchor|idle|drifting/.test(statusText)) return false;
+  if (status === "berth" && !/berth|alongside|moored/.test(statusText)) return false;
+  if (status === "expected" && !/expected|scheduled|planned/.test(statusText)) return false;
   return true;
 }
 
@@ -391,7 +407,7 @@ function currentFiltered(){ return vesselsCache.filter(passesFilters); }
 
 function exportCsv(){
   const rows = currentFiltered();
-  const headers = ["vessel_name","vessel_id","port","status","operator","destination","vessel_type","cleaning_candidate_score","cleaning_candidate_level","contact_window","candidate_confidence","risk_score","risk_level","recommended_action","opportunity_usd","updated_at"];
+  const headers = ["vessel_name","vessel_id","port","berth","anchorage_zone","status","eta","etb","ata","atb","etd","atd","stay_hours","berth_hours","anchorage_hours","work_window_hours","biofouling_score","cii_pressure_score","total_sales_priority_score","reason_codes","operator","destination","vessel_type","cleaning_candidate_score","cleaning_candidate_level","contact_window","candidate_confidence","risk_score","risk_level","recommended_action","opportunity_usd","updated_at"];
   const csv = [headers.join(",")].concat(rows.map(v => headers.map(h => `"${String(v[h] ?? "").replaceAll('"','""')}"`).join(","))).join("\n");
   const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
   const url = URL.createObjectURL(blob);
@@ -406,14 +422,42 @@ function copyAction(name, action){
   navigator.clipboard?.writeText(`${name}: ${action}`).catch(()=>{});
 }
 
+function renderDetail(v){
+  const reasons = (v.reason_codes || v.sales_reason || []).map(r => `<li>${safe(r)}</li>`).join("");
+  document.getElementById("vesselDetail").innerHTML = `
+    <b>${safe(v.vessel_name || "Unknown vessel")}</b>
+    <div class="small">${safe(v.port)} · ${safe(v.berth || v.anchorage_zone || "-")} · ${safe(v.status || "-")}</div>
+    <p><b>Schedule:</b> ETA ${safe(v.eta || "-")} · ETB ${safe(v.etb || "-")} · ATA ${safe(v.ata || "-")} · ATB ${safe(v.atb || "-")} · ETD ${safe(v.etd || "-")} · ATD ${safe(v.atd || "-")}</p>
+    <p><b>Durations:</b> stay ${safe(v.stay_hours ?? "-")}h · berth ${safe(v.berth_hours ?? "-")}h · anchorage ${safe(v.anchorage_hours ?? "-")}h · work window ${safe(v.work_window_hours ?? "-")}h</p>
+    <p><b>Scores:</b> biofouling ${safe(v.biofouling_score ?? v.risk_score ?? "-")} · CII ${safe(v.cii_pressure_score ?? "-")} · sales priority ${safe(v.total_sales_priority_score ?? v.cleaning_candidate_score ?? "-")}</p>
+    <p><b>Next action:</b> ${safe(v.recommended_action || "Monitor")}</p>
+    <ul class="reason">${reasons || "<li>No reason code available</li>"}</ul>
+  `;
+}
+
+function renderCandidateTable(rows){
+  document.getElementById("candidateRows").innerHTML = rows.map((v, index) => `
+    <tr onclick="renderDetail(currentFiltered()[${index}])" style="cursor:pointer;">
+      <td>${safe(v.vessel_name)}</td><td>${safe(v.port)}</td><td>${safe(v.status)}</td>
+      <td>${safe(v.eta || "-")}</td><td>${safe(v.etb || "-")}</td><td>${safe(v.etd || "-")}</td>
+      <td>${safe(v.stay_hours ?? "-")}h</td><td>${safe(v.work_window_hours ?? "-")}h</td>
+      <td>${safe(v.biofouling_score ?? v.risk_score ?? "-")}</td><td>${safe(v.cii_pressure_score ?? "-")}</td>
+      <td>${safe(v.total_sales_priority_score ?? v.cleaning_candidate_score ?? "-")}</td>
+    </tr>
+  `).join("") || '<tr><td colspan="11">No matching candidates</td></tr>';
+}
+
 function renderData(){
   const grid = document.getElementById("grid");
   const filtered = currentFiltered();
   document.getElementById("resultCount").textContent = `${filtered.length} of ${vesselsCache.length} targets shown · auto-refresh ${statusCache.refresh_interval_seconds || 30}s`;
   if (!filtered.length) {
     grid.innerHTML = '<div class="empty">No matching targets. Try a broader filter.</div>';
+    renderCandidateTable(filtered);
     return;
   }
+  renderCandidateTable(filtered);
+  renderDetail(filtered[0]);
   grid.innerHTML = filtered.map(v => {
     const score = v.risk_score || 0;
     const critical = score >= 85;
@@ -431,6 +475,9 @@ function renderData(){
         <p><b>Port:</b> ${safe(v.port)} · <b>Status:</b> ${safe(v.status)}</p>
         <p><b>Operator:</b> ${safe(v.operator)}</p>
         <p><b>Destination:</b> ${safe(v.destination)} · <b>Type:</b> ${safe(v.vessel_type)}</p>
+        <p><b>Schedule:</b> ETA ${safe(v.eta || "-")} · ETB ${safe(v.etb || "-")} · ETD ${safe(v.etd || "-")}</p>
+        <p><b>Stay:</b> ${safe(v.stay_hours ?? "-")}h · <b>Berth:</b> ${safe(v.berth_hours ?? "-")}h · <b>Work window:</b> ${safe(v.work_window_hours ?? "-")}h</p>
+        <p><b>Biofouling:</b> ${safe(v.biofouling_score ?? score)} · <b>CII:</b> ${safe(v.cii_pressure_score ?? "-")} · <b>Sales priority:</b> ${safe(v.total_sales_priority_score ?? v.cleaning_candidate_score ?? score)}</p>
         <p><b>Contact window:</b> ${safe(v.contact_window || "Monitor weekly")} · <b>Confidence:</b> ${safe(v.candidate_confidence ?? "-")}%</p>
         <p><b>Estimated opportunity:</b> <span class="money">${money(v.opportunity_usd)}</span></p>
         <p><b>Snapshot:</b> seen ${safe(v.observation_count || 1)}x · score delta ${Number(v.candidate_score_delta || 0) > 0 ? "+" : ""}${safe(v.candidate_score_delta || 0)}</p>
@@ -457,6 +504,8 @@ async function refresh(){
 document.getElementById("searchBox").addEventListener("input", renderData);
 document.getElementById("riskFilter").addEventListener("change", renderData);
 document.getElementById("portFilter").addEventListener("change", renderData);
+document.getElementById("priorityFilter").addEventListener("change", renderData);
+document.getElementById("statusFilter").addEventListener("change", renderData);
 document.getElementById("exportCsv").addEventListener("click", exportCsv);
 refresh();
 setInterval(refresh, 30000);
