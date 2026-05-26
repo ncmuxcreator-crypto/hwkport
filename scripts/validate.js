@@ -13,7 +13,9 @@ const required = [
   "dashboard/api/candidates.json",
   "dashboard/api/backend-ops.json",
   "dashboard/api/candidate-changes.json",
-  ".github/workflows/longterm-update.yml"
+  ".github/workflows/longterm-update.yml",
+  "wrangler.jsonc",
+  "src/worker.js"
 ];
 
 for (const file of required) {
@@ -96,13 +98,32 @@ if (!status.collector_diagnostics || typeof status.collector_diagnostics.attempt
 if (!status.commercial_command_center || !Array.isArray(status.port_congestion_heatmap) || !Array.isArray(status.biofouling_timeline)) {
   throw new Error("Missing commercial command-center frontend outputs");
 }
+if (typeof status.actionable_rows !== "number" || typeof status.collector_diagnostics?.actionable_row_count !== "number") {
+  throw new Error("Missing actionable_rows collector metric");
+}
 
 const workflow = fs.readFileSync(".github/workflows/longterm-update.yml", "utf8");
 if (!/on:\s*[\s\S]*workflow_dispatch:/.test(workflow) || !/schedule:/.test(workflow)) {
   throw new Error("Workflow trigger configuration is incomplete");
 }
-if (!workflow.includes("ULSAN_BERTH_DETAIL_API_KEY") || workflow.includes("YGPA_ARRIVAL_API_KEY") || workflow.includes("YGPA_SERVICE_KEY")) {
+if (!workflow.includes("SOURCE_CSV_URL") || !workflow.includes("ULSAN_BERTH_DETAIL_API_KEY") || workflow.includes("YGPA_ARRIVAL_API_KEY") || workflow.includes("YGPA_SERVICE_KEY")) {
   throw new Error("Workflow public API secret coverage is incomplete");
+}
+const secretsFile = fs.readFileSync("scripts/lib/secrets.js", "utf8");
+if (!secretsFile.includes("SOURCE_CSV_URL") || /YGPA_|ygpa/.test(secretsFile)) {
+  throw new Error("Secret catalog must include SOURCE_CSV_URL and ignore YGPA-specific sources");
+}
+if (/git push origin HEAD:main|git commit -m "auto: refresh/.test(workflow)) {
+  throw new Error("Longterm workflow must not auto-commit generated files to main");
+}
+
+const wrangler = JSON.parse(fs.readFileSync("wrangler.jsonc", "utf8"));
+if (wrangler.assets?.directory !== "./dashboard" || wrangler.assets?.binding !== "ASSETS") {
+  throw new Error("Cloudflare Workers assets must point to ./dashboard with ASSETS binding");
+}
+const worker = fs.readFileSync("src/worker.js", "utf8");
+if (!worker.includes("vessel_snapshots") || !worker.includes("SUPABASE_URL") || !worker.includes("env.ASSETS.fetch")) {
+  throw new Error("Worker must serve dashboard assets and live Supabase API routes");
 }
 
 console.log("[HWK] validation success");

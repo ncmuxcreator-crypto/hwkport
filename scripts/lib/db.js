@@ -32,6 +32,7 @@ export async function saveToSupabase(records) {
     operator: r.operator || null,
     risk_score: r.risk_score || 0,
     sales_reason: r.sales_reason || r.reason_codes || [],
+    payload: r,
     updated_at: r.updated_at || now,
     collected_at: now,
     source: r.source || r.source_mode || "korea-port-hull-intelligence"

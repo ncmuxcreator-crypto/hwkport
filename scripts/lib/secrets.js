@@ -1,5 +1,13 @@
 const SECRET_CATALOG = [
   {
+    key: "source_csv",
+    label: "Core External Snapshot CSV",
+    type: "external_snapshot",
+    requiredAny: ["SOURCE_CSV_URL"],
+    optional: [],
+    use: "Optional external CSV snapshot for manual corrections or interim source consolidation before full API normalization."
+  },
+  {
     key: "supabase",
     label: "Supabase Database",
     type: "database",

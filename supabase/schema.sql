@@ -40,6 +40,7 @@ create table if not exists vessel_snapshots (
   source text,
   risk_score int default 0,
   sales_reason jsonb default '[]'::jsonb,
+  payload jsonb default '{}'::jsonb,
   updated_at timestamptz,
   collected_at timestamptz not null,
   unique(snapshot_date, vessel_id, port)
@@ -64,3 +65,4 @@ alter table vessel_snapshots add column if not exists vessel_name text;
 alter table vessel_snapshots add column if not exists operator text;
 alter table vessel_snapshots add column if not exists source text;
 alter table vessel_snapshots add column if not exists updated_at timestamptz;
+alter table vessel_snapshots add column if not exists payload jsonb default '{}'::jsonb;

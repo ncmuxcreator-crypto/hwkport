@@ -35,6 +35,7 @@ jobs:
       UPDATE_TIMEOUT_MS: 600000
       SOURCE_TIMEOUT_MS: 25000
       MAX_OUTPUT_ROWS: 1000
+      SOURCE_CSV_URL: ${{ secrets.SOURCE_CSV_URL }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -128,10 +129,11 @@ jobs:
           console.log(`failed=${diag.failed_count || 0}`);
           console.log(`skipped=${diag.skipped_count || 0}`);
           console.log(`real_rows=${diag.real_row_count || 0}`);
+          console.log(`actionable_rows=${diag.actionable_row_count || status.actionable_rows || 0}`);
           console.log(`fallback_used=${Boolean(diag.fallback_used)}`);
           for (const source of diag.sources || []) {
             const state = source.success ? "success" : source.skipped ? `skipped:${source.reason || "unknown"}` : source.error ? `failed:${source.error}` : "pending";
-            console.log(`${source.key}: ${state}; rows=${source.row_count || 0}; normalized=${source.normalized_count || 0}`);
+            console.log(`${source.key}: ${state}; rows=${source.row_count || 0}; normalized=${source.normalized_count || 0}; actionable=${source.actionable_count || 0}; profile=${source.source_profile || "unknown"}`);
           }
           console.log("storage.supabase=", status.storage_status?.supabase?.status || status.supabase_write?.status || "unknown");
           console.log("storage.gdrive=", status.storage_status?.gdrive?.status || status.gdrive_archive?.status || "unknown");

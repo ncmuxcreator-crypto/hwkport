@@ -229,6 +229,7 @@ function candidateSignals(v) {
   const speed = Number(v.speed || 0);
   const risk = Number(v.risk_score || 0);
 
+  if (v.actionable_source_row === false) return reasons;
   if (/waiting|anchorage|anchor|idle|drifting/.test(status)) reasons.push({ key: "waiting", points: 22, label: "Waiting/anchorage condition" });
   if (days >= 21) reasons.push({ key: "long_idle_21", points: 24, label: "21+ days Korea stay / idle exposure" });
   else if (days >= 14) reasons.push({ key: "long_idle_14", points: 18, label: "14+ days Korea stay / idle exposure" });
@@ -392,11 +393,11 @@ function enrichSalesSignals(records) {
       version: VERSION,
       contact_priority_rank: candidateProfile.is_immediate_candidate ? 1 : candidateProfile.cleaning_candidate_score >= 65 ? 2 : candidateProfile.cleaning_candidate_score >= 45 ? 3 : 9,
       stale_guard: isSample ? "sample_data_do_not_sell_as_live" : "verify_latest_signal_before_outreach",
-      data_confidence: isSample ? "sample" : "source_configured",
-      commercial_use_status: isSample ? "do_not_use_for_outreach" : "sales_review_ready",
-      is_operating_candidate: !isSample && candidateProfile.is_cleaning_candidate,
-      is_operating_immediate_candidate: !isSample && candidateProfile.is_immediate_candidate,
-      operating_candidate_score: isSample ? 0 : candidateProfile.cleaning_candidate_score,
+      data_confidence: isSample ? "sample" : v.actionable_source_row === false ? "movement_only_not_sales_ready" : "source_configured",
+      commercial_use_status: isSample ? "do_not_use_for_outreach" : v.actionable_source_row === false ? "not_sales_ready_movement_only" : "sales_review_ready",
+      is_operating_candidate: !isSample && v.actionable_source_row !== false && candidateProfile.is_cleaning_candidate,
+      is_operating_immediate_candidate: !isSample && v.actionable_source_row !== false && candidateProfile.is_immediate_candidate,
+      operating_candidate_score: isSample || v.actionable_source_row === false ? 0 : candidateProfile.cleaning_candidate_score,
       biofouling_score: biofoulingScore,
       cii_pressure_score: ciiPressureScore,
       total_sales_priority_score: Math.min(100, Math.round(candidateProfile.cleaning_candidate_score * 0.5 + biofoulingScore * 0.3 + ciiPressureScore * 0.2)),
@@ -410,6 +411,18 @@ function enrichSalesSignals(records) {
       sales_reason: reasonCodes,
       compliance_watch: complianceWatch
     };
+    if (v.actionable_source_row === false) {
+      enriched.is_cleaning_candidate = false;
+      enriched.is_immediate_candidate = false;
+      enriched.cleaning_candidate_score = 0;
+      enriched.cleaning_candidate_level = "Monitor";
+      enriched.sales_priority = "Movement Only";
+      enriched.contact_urgency = "Low";
+      enriched.contact_window = "Movement-only; wait for schedule/identity enrichment";
+      enriched.reason_codes = [...reasonCodes, "Movement-only AIS/VTS row; not sales-ready without vessel identity and port-call context"];
+      enriched.sales_reason = enriched.reason_codes;
+      enriched.total_sales_priority_score = 0;
+    }
     Object.assign(enriched, deriveOperationalRisk(enriched, scheduleMetrics, biofoulingScore));
     enriched.operator_fleet_badges = deriveFleetBadges(enriched);
     enriched.recommended_action = enriched.candidate_next_action || recommendedAction(enriched);
@@ -519,7 +532,7 @@ function buildBiofoulingTimeline(records) {
 
 function buildDataStrategy(apiSources = []) {
   const enabled = new Set(apiSources.filter(s => s.enabled).map(s => s.key));
-  const publicGroups = ["vessel_spec", "pilot_sources", "berth_sources", "port_facility", "port_operation", "ulsan_core", "mof_vts", "mof_ais_dynamic", "mof_ais_info", "mof_ais_stat", "korea_public_data"];
+  const publicGroups = ["source_csv", "vessel_spec", "pilot_sources", "berth_sources", "port_facility", "port_operation", "ulsan_core", "mof_vts", "mof_ais_dynamic", "mof_ais_info", "mof_ais_stat", "korea_public_data"];
   const paidGroups = ["marine_traffic", "vesselfinder", "aisstream"];
   const publicEnabled = publicGroups.filter(k => enabled.has(k));
   const paidEnabled = paidGroups.filter(k => enabled.has(k));
@@ -601,6 +614,7 @@ function buildDataQuality(records, apiSources = []) {
 function buildDataMode(records, apiSources = [], supabaseStatus = "not_configured") {
   const enabledSources = apiSources.filter(s => s.enabled);
   const sampleRows = records.filter(v => String(v.source_mode || "").includes("sample")).length;
+  const actionableRows = records.filter(v => v.actionable_source_row && !String(v.source_mode || "").includes("sample")).length;
   const apiReadyRows = records.filter(v => Array.isArray(v.api_ready) && v.api_ready.length > 0).length;
   const mode = sampleRows === records.length ? "sample_only" : apiReadyRows > 0 ? "api_ready_snapshot" : "static_snapshot";
   const label = mode === "sample_only" ? "SAMPLE DATA" : mode === "api_ready_snapshot" ? "API READY SNAPSHOT" : "STATIC SNAPSHOT";
@@ -611,6 +625,7 @@ function buildDataMode(records, apiSources = [], supabaseStatus = "not_configure
     live_ready: liveReady,
     sample_rows: sampleRows,
     real_rows: Math.max(0, records.length - sampleRows),
+    actionable_rows: actionableRows,
     enabled_source_groups: enabledSources.map(s => s.key),
     supabase_status: supabaseStatus,
     message: mode === "sample_only"
@@ -1120,6 +1135,8 @@ try {
   const completedAt = new Date().toISOString();
   const today = completedAt.slice(0, 10);
   const portSummary = buildPortSummary(vessels);
+  const collectorDiagnostics = getCollectorDiagnostics();
+  const actionableRows = vessels.filter(v => v.actionable_source_row && !String(v.source_mode || "").includes("sample")).length;
   const baseReport = {
     version: VERSION,
     build_name: BUILD_NAME,
@@ -1127,6 +1144,7 @@ try {
     started_at: startedAt,
     completed_at: completedAt,
     record_count: vessels.length,
+    actionable_rows: actionableRows,
     critical_count: vessels.filter(v => (v.risk_score || 0) >= 85).length,
     high_risk_count: vessels.filter(v => (v.risk_score || 0) >= 70).length,
     compliance_watch_count: vessels.filter(v => v.compliance_watch).length,
@@ -1151,7 +1169,7 @@ try {
     api_sources: detectSecrets(),
     api_registry_version: "korea-port-secret-registry-v12-backend-stability",
     data_strategy: buildDataStrategy(detectSecrets()),
-    collector_diagnostics: getCollectorDiagnostics(),
+    collector_diagnostics: { ...collectorDiagnostics, actionable_row_count: collectorDiagnostics.actionable_row_count ?? actionableRows },
     data_quality: buildDataQuality(vessels, detectSecrets()),
     collector_readiness: buildCollectorReadiness(detectSecrets()),
     collector_manifest: buildCollectorManifest(detectSecrets()),
@@ -1179,6 +1197,7 @@ try {
     supabaseStatus
   });
   vessels = snapshotOutputs.merged;
+  const mergedActionableRows = vessels.filter(v => v.actionable_source_row && !String(v.source_mode || "").includes("sample")).length;
   const hotVessels = buildHotVessels(vessels);
   const commercialCommandCenter = buildCommercialCommandCenter(vessels);
   const portCongestionHeatmap = buildPortCongestionHeatmap(vessels);
@@ -1187,11 +1206,12 @@ try {
   const report = {
     ...baseReport,
     record_count: vessels.length,
+    actionable_rows: mergedActionableRows,
     candidate_summary: buildCandidateSummary(vessels),
     immediate_candidate_count: vessels.filter(v => v.is_immediate_candidate).length,
     cleaning_candidate_count: vessels.filter(v => v.is_cleaning_candidate).length,
     backend_ops: snapshotOutputs.backendOps,
-    collector_diagnostics: getCollectorDiagnostics(),
+    collector_diagnostics: { ...getCollectorDiagnostics(), actionable_row_count: getCollectorDiagnostics().actionable_row_count ?? mergedActionableRows },
     candidate_changes: snapshotOutputs.candidateChanges,
     supabase_write: supabaseWrite,
     gdrive_archive: gdriveArchive,
