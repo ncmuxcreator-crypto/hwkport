@@ -169,5 +169,8 @@ if (/paths:|paths-ignore:/.test(workflowV2)) {
 if (/git push origin HEAD:main|git commit -m "auto: refresh|runs-on: self-hosted/.test(workflowV2)) {
   throw new Error("Longterm Update V2 must not use self-hosted runners or auto-commit generated files");
 }
+if (!workflowV2.includes("continue-on-error: true") || !workflowV2.includes("Skip Cloudflare deploy notice")) {
+  throw new Error("Longterm Update V2 must keep bypass diagnostics running even when optional checks fail");
+}
 
 console.log("[HWK] validation success");
