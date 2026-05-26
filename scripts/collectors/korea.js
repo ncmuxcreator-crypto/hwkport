@@ -15,8 +15,8 @@ let diagnostics = {
 
 const FIELD_ALIASES = {
   vessel_name: ["vessel_name", "ship_name", "shipNm", "shipname", "shipName", "vsslNm", "vslNm", "vesselNm", "VSL_NM", "VSSL_NM", "선박명", "선명", "선박명칭"],
-  imo: ["imo", "imo_no", "imoNo", "IMO", "IMO_NO", "imo번호", "IMO번호"],
-  mmsi: ["mmsi", "MMSI", "mmsiNo", "mmsi_no"],
+  imo: ["imo", "imo_no", "imoNo", "IMO", "IMO_NO", "imo번호", "IMO번호", "선박번호(IMO)", "선박번호IMO"],
+  mmsi: ["mmsi", "MMSI", "mmsiNo", "mmsi_no", "선박번호", "선박식별번호"],
   call_sign: ["call_sign", "callSign", "callsign", "CALL_SIGN", "clsgn", "호출부호", "콜사인"],
   port: ["port", "port_name", "portNm", "prtNm", "PORT_NM", "portName", "portCode", "항만", "항명", "항구명", "입항항", "출항항"],
   berth: ["berth", "berth_name", "berthNm", "brthNm", "BERTH_NM", "facilityNm", "terminalNm", "계선장", "계선장소", "선석", "부두", "접안지"],
@@ -26,7 +26,7 @@ const FIELD_ALIASES = {
   destination: ["destination", "dest", "next_port_country", "DEST", "destNm", "destinationPort", "목적지", "차항지", "다음항"],
   previous_port: ["previous_port", "prevPort", "last_port", "prevPortNm", "전항", "이전항", "최초출항지"],
   next_port: ["next_port", "nextPort", "nextPortNm", "차항", "다음항", "예정항"],
-  vessel_type: ["vessel_type", "ship_type", "shipType", "vsslKnd", "shipKnd", "TYPE", "vesselType", "선종", "선박종류"],
+  vessel_type: ["vessel_type", "ship_type", "shipType", "vsslKnd", "shipKnd", "TYPE", "vesselType", "선종", "선박종류", "선박용도"],
   gt: ["gt", "gross_tonnage", "grt", "grossTon", "GT", "총톤수", "총톤수톤", "GRT"],
   eta: ["eta", "ETA", "etaDate", "estimatedArrival", "arrPlanDt", "arrivalPlanDt", "etaDt", "입항예정일시", "입항예정일", "입항예정"],
   etb: ["etb", "ETB", "estimatedBerthing", "berthPlanDt", "etbDt", "접안예정일시", "계선예정일시"],
@@ -34,11 +34,12 @@ const FIELD_ALIASES = {
   atb: ["atb", "ATB", "actualBerthing", "berthDt", "접안일시", "계선일시"],
   etd: ["etd", "ETD", "estimatedDeparture", "depPlanDt", "departurePlanDt", "etdDt", "출항예정일시", "출항예정일"],
   atd: ["atd", "ATD", "actualDeparture", "depDt", "departureDt", "출항일시", "출항일자"],
-  speed: ["speed", "sog", "SOG", "속력", "대지속력"],
+  speed: ["speed", "sog", "SOG", "속력", "대지속력", "속도"],
   lat: ["lat", "latitude", "LAT", "위도"],
   lon: ["lon", "lng", "longitude", "LON", "LONGITUDE", "경도"],
   course: ["course", "cog", "COG", "침로"],
-  heading: ["heading", "hdg", "HDG", "선수방위"]
+  heading: ["heading", "hdg", "HDG", "HEDING", "선수방위", "헤딩"],
+  received_at: ["received_at", "receivedAt", "수신시각", "수신시간"]
 };
 
 function env(name) {
@@ -165,14 +166,31 @@ function buildUrl(source) {
   return url;
 }
 
+function decodeResponse(buffer, contentType = "") {
+  const declared = String(contentType || "").toLowerCase();
+  const candidates = declared.includes("euc-kr") || declared.includes("ks_c_5601") || declared.includes("cp949")
+    ? ["euc-kr", "utf-8"]
+    : ["utf-8", "euc-kr"];
+  for (const encoding of candidates) {
+    try {
+      const text = new TextDecoder(encoding).decode(buffer);
+      if (!text.includes("�")) return text;
+    } catch {
+      // Try the next encoding.
+    }
+  }
+  return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+}
+
 async function fetchText(source) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SOURCE_TIMEOUT_MS);
   try {
     const url = buildUrl(source);
     const started = Date.now();
-    const res = await fetch(url, { signal: controller.signal, headers: { accept: "application/json, text/xml, */*" } });
-    const text = await res.text();
+    const res = await fetch(url, { signal: controller.signal, headers: { accept: "application/json, text/csv, text/xml, */*" } });
+    const buffer = await res.arrayBuffer();
+    const text = decodeResponse(buffer, res.headers.get("content-type") || "");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return { text, url, latency_ms: Date.now() - started };
   } finally {
@@ -198,6 +216,19 @@ function parseXmlRows(text) {
       row[field[1]] = field[2].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
     }
     if (Object.keys(row).length) rows.push(row);
+  }
+  if (rows.length) return rows;
+  const containers = ["row", "list", "data", "record"];
+  for (const tag of containers) {
+    for (const match of text.matchAll(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "gi"))) {
+      const row = {};
+      for (const field of match[1].matchAll(/<([^!?\/][^>\s]*)[^>]*>([\s\S]*?)<\/\1>/g)) {
+        const value = field[2].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
+        if (!/<[^>]+>/.test(value)) row[field[1]] = value;
+      }
+      if (Object.keys(row).length) rows.push(row);
+    }
+    if (rows.length) return rows;
   }
   return rows;
 }
@@ -244,6 +275,7 @@ function parseRows(text) {
   const trimmed = text.trim();
   if (!trimmed) return [];
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) return flattenJson(JSON.parse(trimmed)).filter(row => row && typeof row === "object");
+  if (trimmed.startsWith("<")) return parseXmlRows(trimmed);
   if (/^[^\n,]+,/.test(trimmed) || trimmed.includes("\n")) {
     const csvRows = parseCsvRows(trimmed);
     if (csvRows.length) return csvRows;
