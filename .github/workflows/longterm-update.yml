@@ -134,6 +134,8 @@ jobs:
           for (const source of diag.sources || []) {
             const state = source.success ? "success" : source.skipped ? `skipped:${source.reason || "unknown"}` : source.error ? `failed:${source.error}` : "pending";
             console.log(`${source.key}: ${state}; rows=${source.row_count || 0}; normalized=${source.normalized_count || 0}; actionable=${source.actionable_count || 0}; profile=${source.source_profile || "unknown"}`);
+            if (source.warning) console.log(`  warning=${source.warning}`);
+            if (source.sample_keys?.length) console.log(`  sample_keys=${source.sample_keys.join(",")}`);
           }
           console.log("storage.supabase=", status.storage_status?.supabase?.status || status.supabase_write?.status || "unknown");
           console.log("storage.gdrive=", status.storage_status?.gdrive?.status || status.gdrive_archive?.status || "unknown");

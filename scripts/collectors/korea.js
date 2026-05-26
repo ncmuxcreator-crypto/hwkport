@@ -370,6 +370,7 @@ async function collectRealRows() {
       diag.latency_ms = latency_ms;
       diag.row_count = rows.length;
       diag.url_host = url.host;
+      diag.sample_keys = rows[0] && typeof rows[0] === "object" ? Object.keys(rows[0]).slice(0, 30) : [];
       for (const row of rows) {
         const normalized = normalizeRow(row, source, now);
         if (normalized) records.push(normalized);
@@ -377,6 +378,9 @@ async function collectRealRows() {
       const sourceRecords = records.filter(record => record.source === source.key);
       diag.normalized_count = sourceRecords.length;
       diag.actionable_count = sourceRecords.filter(record => record.actionable_source_row).length;
+      if (diag.row_count > 0 && diag.normalized_count === 0) {
+        diag.warning = "source_returned_rows_but_no_vessel_identity_fields_matched";
+      }
       diagnostics.success_count += 1;
     } catch (error) {
       diag.error = error?.message || String(error);
