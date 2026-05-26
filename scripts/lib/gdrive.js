@@ -3,8 +3,44 @@ import crypto from "crypto";
 function serviceAccountJson() {
   const raw = process.env.GDRIVE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!raw) return null;
+  const value = String(raw).trim();
+  const candidates = [
+    value,
+    value.replace(/^['"]|['"]$/g, ""),
+    value.replace(/\\n/g, "\n")
+  ];
   try {
-    return JSON.parse(raw);
+    const decoded = Buffer.from(value, "base64").toString("utf8").trim();
+    if (decoded.startsWith("{")) candidates.push(decoded, decoded.replace(/\\n/g, "\n"));
+  } catch {
+    // Not base64; fall through to normal JSON parsing.
+  }
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed?.client_email && parsed?.private_key) return parsed;
+    } catch {
+      // Try the next common secret format.
+    }
+  }
+  return null;
+}
+
+function normalizeFolderId(value) {
+  if (!value) return "";
+  const text = String(value).trim();
+  const foldersMatch = text.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (foldersMatch) return foldersMatch[1];
+  const idMatch = text.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idMatch) return idMatch[1];
+  return text;
+}
+
+function accountHint(account) {
+  if (!account?.client_email) return null;
+  try {
+    const [name, domain] = String(account.client_email).split("@");
+    return `${name?.slice(0, 4) || "svc"}***@${domain || "serviceaccount"}`;
   } catch {
     return null;
   }
@@ -51,7 +87,7 @@ async function getAccessToken(account) {
 
 export async function archiveRawToGDrive(payload, { namePrefix = "hwk-raw" } = {}) {
   const account = serviceAccountJson();
-  const folderId = process.env.GDRIVE_FOLDER_ID || process.env.GOOGLE_DRIVE_FOLDER_ID;
+  const folderId = normalizeFolderId(process.env.GDRIVE_FOLDER_ID || process.env.GOOGLE_DRIVE_FOLDER_ID);
   const archiveEnabled = String(process.env.ARCHIVE_TO_DRIVE || "true").toLowerCase() !== "false";
 
   if (!archiveEnabled) return { status: "disabled" };
@@ -79,7 +115,7 @@ export async function archiveRawToGDrive(payload, { namePrefix = "hwk-raw" } = {
     ""
   ].join("\r\n");
 
-  const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink", {
+  const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink", {
     method: "POST",
     headers: {
       authorization: `Bearer ${token}`,
@@ -89,7 +125,11 @@ export async function archiveRawToGDrive(payload, { namePrefix = "hwk-raw" } = {
   });
   const json = await res.json();
   if (!res.ok) {
-    throw new Error(json.error?.message || `Google Drive upload HTTP ${res.status}`);
+    const message = json.error?.message || `Google Drive upload HTTP ${res.status}`;
+    if (res.status === 403 || res.status === 404) {
+      throw new Error(`${message}. Check that the Drive folder is shared with service account ${accountHint(account) || "client_email"} and that Google Drive API is enabled.`);
+    }
+    throw new Error(message);
   }
   return { status: "uploaded", file_id: json.id, name: json.name, webViewLink: json.webViewLink };
 }
