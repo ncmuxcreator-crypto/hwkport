@@ -149,6 +149,13 @@ jobs:
         timeout-minutes: 7
         run: npm run health
 
+      - name: Deploy Cloudflare Worker
+        timeout-minutes: 5
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Upload generated snapshot artifact
         if: always()
         uses: actions/upload-artifact@v4

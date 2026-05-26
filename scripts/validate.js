@@ -116,6 +116,9 @@ if (!secretsFile.includes("SOURCE_CSV_URL") || /YGPA_|ygpa/.test(secretsFile)) {
 if (/git push origin HEAD:main|git commit -m "auto: refresh/.test(workflow)) {
   throw new Error("Longterm workflow must not auto-commit generated files to main");
 }
+if (!workflow.includes("npx wrangler deploy") || !workflow.includes("CLOUDFLARE_API_TOKEN") || !workflow.includes("CLOUDFLARE_ACCOUNT_ID")) {
+  throw new Error("Workflow must deploy the Cloudflare Worker with Cloudflare GitHub secrets");
+}
 
 const wrangler = JSON.parse(fs.readFileSync("wrangler.jsonc", "utf8"));
 if (wrangler.assets?.directory !== "./dashboard" || wrangler.assets?.binding !== "ASSETS") {
