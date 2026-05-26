@@ -1,7 +1,21 @@
 name: Longterm Update V2
+run-name: Longterm Update V2 / ${{ github.ref_name }} / ${{ github.run_id }}
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/**"
+      - "scripts/**"
+      - "src/**"
+      - "dashboard/**"
+      - "supabase/**"
+      - "wrangler.jsonc"
+      - ".assetsignore"
+      - "package.json"
+      - "package-lock.json"
   schedule:
     - cron: "23 */6 * * *"
 
