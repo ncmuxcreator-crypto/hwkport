@@ -1,0 +1,15 @@
+node_modules/**
+.git/**
+.github/**
+scripts/**
+supabase/**
+docs/**
+data/**
+public/**
+*.log
+.env
+.env.*
+package-lock.json
+package.json
+netlify.toml
+wrangler.jsonc
