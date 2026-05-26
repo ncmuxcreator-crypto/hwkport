@@ -1,5 +1,7 @@
 const SOURCE_TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 25000);
 const MAX_OUTPUT_ROWS = Number(process.env.MAX_OUTPUT_ROWS || 500);
+const DEFAULT_PORT_OPERATION_API_URL = "http://apis.data.go.kr/1192000/VsslEtrynd5/Info5";
+const DEFAULT_CARGO_HARBOR_USE_API_URL = "http://apis.data.go.kr/1192000/CargHarborUse2/Info";
 
 let diagnostics = {
   generated_at: null,
@@ -71,6 +73,10 @@ function firstValue(row, aliases) {
   return "";
 }
 
+function rawValue(row, keys) {
+  return String(firstValue(row, keys) || "").trim();
+}
+
 function normalizeDate(value) {
   if (!value) return "";
   const text = String(value).trim();
@@ -137,8 +143,7 @@ function allSourceConfigs() {
 
   return [
     { key: "source_csv", label: "Core external snapshot CSV", url: env("SOURCE_CSV_URL"), serviceKey: null, noKeyRequired: true },
-    { key: "port_operation", label: "PORT-MIS port operation", url: env("PORT_OPERATION_API_URL"), serviceKey: env("PORT_OPERATION_SERVICE_KEY") },
-    { key: "port_facility", label: "Port facility", url: env("PORT_FACILITY_API_URL"), serviceKey: env("PORT_FACILITY_SERVICE_KEY") },
+    { key: "port_operation", label: "PORT-MIS VsslEtrynd5 port entry/departure", url: DEFAULT_PORT_OPERATION_API_URL, serviceKey: env("PORT_OPERATION_SERVICE_KEY") },
     { key: "ulsan_core", label: "Ulsan core", url: env("ULSAN_API_URL"), serviceKey: env("ULSAN_API_KEY") },
     { key: "ulsan_berth_detail", label: "Ulsan berth detail", url: env("ULSAN_BERTH_DETAIL_API_URL"), serviceKey: env("ULSAN_BERTH_DETAIL_API_KEY") },
     { key: "ulsan_cargo_plan", label: "Ulsan cargo plan", url: env("ULSAN_CARGO_PLAN_API_URL"), serviceKey: env("ULSAN_CARGO_PLAN_API_KEY") },
@@ -152,7 +157,7 @@ function allSourceConfigs() {
   ];
 }
 
-function buildUrl(source) {
+function buildUrl(source, extraParams = {}) {
   const url = new URL(source.url);
   if (source.serviceKey && !["serviceKey", "ServiceKey", "service_key", "key", "apiKey", "api_key"].some(key => url.searchParams.has(key))) {
     url.searchParams.set("serviceKey", source.serviceKey);
@@ -162,6 +167,9 @@ function buildUrl(source) {
     if (!url.searchParams.has("pageNo")) url.searchParams.set("pageNo", "1");
     if (!url.searchParams.has("numOfRows")) url.searchParams.set("numOfRows", String(Math.min(MAX_OUTPUT_ROWS, 100)));
     if (source.portCode && !url.searchParams.has("portCode")) url.searchParams.set("portCode", source.portCode);
+  }
+  for (const [key, value] of Object.entries(extraParams)) {
+    if (value !== undefined && value !== null && String(value).trim() !== "") url.searchParams.set(key, String(value).trim());
   }
   return url;
 }
@@ -182,11 +190,11 @@ function decodeResponse(buffer, contentType = "") {
   return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
 }
 
-async function fetchText(source) {
+async function fetchText(source, extraParams = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SOURCE_TIMEOUT_MS);
   try {
-    const url = buildUrl(source);
+    const url = buildUrl(source, extraParams);
     const started = Date.now();
     const res = await fetch(url, { signal: controller.signal, headers: { accept: "application/json, text/csv, text/xml, */*" } });
     const buffer = await res.arrayBuffer();
@@ -350,6 +358,9 @@ function normalizeRow(row, source, now) {
     source_mode: "real_public_api_snapshot",
     data_confidence: "source_configured",
     raw_source_keys: Object.keys(row).slice(0, 80),
+    prt_ag_cd: rawValue(row, ["prtAgCd", "prt_ag_cd", "PRT_AG_CD"]),
+    etrypt_year: rawValue(row, ["etryptYear", "etrypt_year", "ETRYPT_YEAR"]),
+    etrypt_co: rawValue(row, ["etryptCo", "etrypt_co", "ETRYPT_CO"]),
     updated_at: now
   };
   record.actionable_source_row = isActionableRecord(record);
@@ -370,6 +381,60 @@ function dedupe(records) {
     output.push(record);
   }
   return output.slice(0, MAX_OUTPUT_ROWS);
+}
+
+function cargoHarborUseParams(row = {}, record = {}) {
+  const prtAgCd = rawValue(row, ["prtAgCd", "prt_ag_cd", "PRT_AG_CD"]) || record.prt_ag_cd;
+  const etryptYear = rawValue(row, ["etryptYear", "etrypt_year", "ETRYPT_YEAR"]) || record.etrypt_year;
+  const etryptCo = rawValue(row, ["etryptCo", "etrypt_co", "ETRYPT_CO"]) || record.etrypt_co;
+  const clsgn = rawValue(row, ["clsgn", "callSign", "call_sign", "CALL_SIGN"]) || record.call_sign;
+  if (!prtAgCd || !etryptYear || !etryptCo || !clsgn) return null;
+  return { prtAgCd, etryptYear, etryptCo, clsgn };
+}
+
+function mergeCargoHarborUse(record, rows = []) {
+  const detail = rows.find(row => row && typeof row === "object") || {};
+  if (!Object.keys(detail).length) return record;
+  return {
+    ...record,
+    berth: record.berth || String(firstValue(detail, FIELD_ALIASES.berth)).trim(),
+    status: record.status === "Observed" ? normalizeStatus(firstValue(detail, FIELD_ALIASES.status)) : record.status,
+    eta: record.eta || normalizeDate(firstValue(detail, FIELD_ALIASES.eta)),
+    etb: record.etb || normalizeDate(firstValue(detail, FIELD_ALIASES.etb)),
+    ata: record.ata || normalizeDate(firstValue(detail, FIELD_ALIASES.ata)),
+    atb: record.atb || normalizeDate(firstValue(detail, FIELD_ALIASES.atb)),
+    etd: record.etd || normalizeDate(firstValue(detail, FIELD_ALIASES.etd)),
+    atd: record.atd || normalizeDate(firstValue(detail, FIELD_ALIASES.atd)),
+    operator: record.operator || String(firstValue(detail, FIELD_ALIASES.operator)).trim(),
+    destination: record.destination || String(firstValue(detail, FIELD_ALIASES.destination)).trim(),
+    source_children: [...(record.source_children || []), "carg_harbor_use"],
+    cargo_harbor_use_count: rows.length,
+    cargo_harbor_use_enriched: true,
+    raw_cargo_harbor_use_keys: Object.keys(detail).slice(0, 80)
+  };
+}
+
+async function enrichWithCargoHarborUse(rawRow, record, now) {
+  const params = cargoHarborUseParams(rawRow, record);
+  if (!params) return { record, status: "missing_parent_keys", row_count: 0, normalized_count: 0 };
+  const source = {
+    key: "port_facility_enrichment",
+    label: "CargHarborUse2 child enrichment",
+    url: DEFAULT_CARGO_HARBOR_USE_API_URL,
+    serviceKey: env("PORT_FACILITY_SERVICE_KEY") || env("PORT_OPERATION_SERVICE_KEY")
+  };
+  if (!canAttempt(source)) return { record, status: "missing_service_key_or_embedded_key", row_count: 0, normalized_count: 0 };
+  try {
+    const { text } = await fetchText(source, params);
+    const rows = parseRows(text);
+    const enriched = mergeCargoHarborUse(record, rows);
+    enriched.actionable_source_row = isActionableRecord(enriched);
+    enriched.sales_ready_input = enriched.actionable_source_row;
+    enriched.updated_at = enriched.updated_at || now;
+    return { record: enriched, status: "success", row_count: rows.length, normalized_count: rows.length ? 1 : 0 };
+  } catch (error) {
+    return { record, status: `failed:${error?.message || String(error)}`, row_count: 0, normalized_count: 0 };
+  }
 }
 
 async function collectRealRows() {
@@ -403,13 +468,38 @@ async function collectRealRows() {
       diag.row_count = rows.length;
       diag.url_host = url.host;
       diag.sample_keys = rows[0] && typeof rows[0] === "object" ? Object.keys(rows[0]).slice(0, 30) : [];
+      let childAttempted = 0;
+      let childSuccess = 0;
+      let childRows = 0;
+      let childNormalized = 0;
+      const childStatuses = new Map();
       for (const row of rows) {
-        const normalized = normalizeRow(row, source, now);
+        let normalized = normalizeRow(row, source, now);
+        if (normalized && source.key === "port_operation") {
+          childAttempted += 1;
+          const child = await enrichWithCargoHarborUse(row, normalized, now);
+          normalized = child.record;
+          childRows += child.row_count || 0;
+          childNormalized += child.normalized_count || 0;
+          if (child.status === "success") childSuccess += 1;
+          childStatuses.set(child.status, (childStatuses.get(child.status) || 0) + 1);
+        }
         if (normalized) records.push(normalized);
       }
       const sourceRecords = records.filter(record => record.source === source.key);
       diag.normalized_count = sourceRecords.length;
       diag.actionable_count = sourceRecords.filter(record => record.actionable_source_row).length;
+      if (source.key === "port_operation") {
+        diag.child_enrichment = {
+          key: "port_facility_enrichment",
+          rule: "CargHarborUse2 is called only with parent prtAgCd + etryptYear + etryptCo + clsgn from VsslEtrynd5.",
+          attempted: childAttempted,
+          success: childSuccess,
+          rows: childRows,
+          normalized: childNormalized,
+          statuses: Object.fromEntries(childStatuses)
+        };
+      }
       if (diag.row_count > 0 && diag.normalized_count === 0) {
         diag.warning = "source_returned_rows_but_no_vessel_identity_fields_matched";
       }

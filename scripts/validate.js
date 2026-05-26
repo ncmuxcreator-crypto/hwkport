@@ -109,6 +109,16 @@ if (!/on:\s*[\s\S]*workflow_dispatch:/.test(workflow) || !/schedule:/.test(workf
 if (!workflow.includes("SOURCE_CSV_URL") || !workflow.includes("ULSAN_BERTH_DETAIL_API_KEY") || workflow.includes("YGPA_ARRIVAL_API_KEY") || workflow.includes("YGPA_SERVICE_KEY")) {
   throw new Error("Workflow public API secret coverage is incomplete");
 }
+const koreaCollector = fs.readFileSync("scripts/collectors/korea.js", "utf8");
+if (!koreaCollector.includes("VsslEtrynd5/Info5") || !koreaCollector.includes("CargHarborUse2/Info")) {
+  throw new Error("Collector must use VsslEtrynd5 parent records and CargHarborUse2 enrichment endpoint");
+}
+if (/key:\s*["']port_facility["']/.test(koreaCollector)) {
+  throw new Error("CargHarborUse2 must not be used as a standalone port_facility collector");
+}
+if (!koreaCollector.includes("prtAgCd") || !koreaCollector.includes("etryptYear") || !koreaCollector.includes("etryptCo") || !koreaCollector.includes("clsgn")) {
+  throw new Error("CargHarborUse2 enrichment must use prtAgCd, etryptYear, etryptCo and clsgn parent keys");
+}
 const secretsFile = fs.readFileSync("scripts/lib/secrets.js", "utf8");
 if (!secretsFile.includes("SOURCE_CSV_URL") || /YGPA_|ygpa/.test(secretsFile)) {
   throw new Error("Secret catalog must include SOURCE_CSV_URL and ignore YGPA-specific sources");
