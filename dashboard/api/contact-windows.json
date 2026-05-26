@@ -1,32 +1,23 @@
 {
   "version": "17.7.0",
-  "generatedAt": "2026-05-25T14:38:17.763Z",
+  "generatedAt": "2026-05-26T02:09:43.249Z",
   "windows": {
     "0-24h": [],
     "24-72h": [],
     "Next snapshot": [],
     "Archive": [],
-    "Contact within 24 hours": [
+    "Monitor weekly": [
       {
-        "vessel_name": "MV HF ZHOUSHAN",
+        "vessel_name": "440******",
         "imo": null,
-        "port": "Busan",
+        "port": "Korea",
         "score": 0,
         "tier": "Low"
       },
       {
-        "vessel_name": "YEOSU TARGET",
+        "vessel_name": "667******",
         "imo": null,
-        "port": "Yeosu",
-        "score": 0,
-        "tier": "Low"
-      }
-    ],
-    "Monitor weekly": [
-      {
-        "vessel_name": "MAERSK DEMO",
-        "imo": null,
-        "port": "Ulsan",
+        "port": "Korea",
         "score": 0,
         "tier": "Low"
       }

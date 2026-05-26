@@ -1,6 +1,6 @@
 {
   "version": "17.7.0",
-  "generatedAt": "2026-05-25T14:38:16.733Z",
+  "generatedAt": "2026-05-26T02:09:42.795Z",
   "required": [
     "dashboard/api/vessels.json",
     "dashboard/api/candidate-summary.json",

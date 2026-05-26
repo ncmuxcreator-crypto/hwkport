@@ -1,25 +1,9 @@
 {
   "version": "17.7.0",
-  "generatedAt": "2026-05-25T14:38:17.124Z",
+  "generatedAt": "2026-05-26T02:09:42.946Z",
   "tracked": 15,
-  "configured": 0,
-  "missing": [
-    "SUPABASE_URL",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "SUPABASE_ANON_KEY",
-    "MOF_AIS_DYNAMIC_API_URL",
-    "MOF_AIS_DYNAMIC_SERVICE_KEY",
-    "MOF_VTS_API_BASE",
-    "MOF_VTS_SERVICE_KEY",
-    "VESSEL_SPEC_SERVICE_KEY",
-    "PORT_OPERATION_SERVICE_KEY",
-    "PORT_FACILITY_SERVICE_KEY",
-    "PILOT_SOURCE_URLS",
-    "BERTH_SOURCE_URLS",
-    "ULSAN_API_KEY",
-    "GDRIVE_SERVICE_ACCOUNT_JSON",
-    "GDRIVE_FOLDER_ID"
-  ],
-  "realDataReady": false,
+  "configured": 15,
+  "missing": [],
+  "realDataReady": true,
   "note": "Secret presence check only; no external API call."
 }

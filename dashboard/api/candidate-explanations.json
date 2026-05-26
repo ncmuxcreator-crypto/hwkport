@@ -1,60 +1,27 @@
 {
   "version": "17.7.0",
-  "generatedAt": "2026-05-25T14:38:16.427Z",
+  "generatedAt": "2026-05-26T02:09:42.640Z",
   "explanations": [
     {
       "rank": 1,
-      "vessel_name": "MV HF ZHOUSHAN",
+      "vessel_name": "440******",
       "imo": null,
-      "port": "Busan",
+      "port": "Korea",
       "score": 0,
       "tier": "Low",
       "contact_priority": "No action",
-      "reasons": [
-        "Waiting/anchorage condition",
-        "21+ days Korea stay / idle exposure",
-        "Low speed / near-static movement",
-        "Commercially relevant vessel type",
-        "Biofouling-sensitive destination",
-        "Workable UWC window available",
-        "Critical fouling / performance risk score",
-        "Operator identified for outreach"
-      ],
-      "recommended_action": "Prepare UWC outreach now: confirm hull condition, port window, and compliance route."
+      "reasons": [],
+      "recommended_action": "Monitor only; wait for stronger port-stay or itinerary signal."
     },
     {
       "rank": 2,
-      "vessel_name": "YEOSU TARGET",
+      "vessel_name": "667******",
       "imo": null,
-      "port": "Yeosu",
+      "port": "Korea",
       "score": 0,
       "tier": "Low",
       "contact_priority": "No action",
-      "reasons": [
-        "Waiting/anchorage condition",
-        "14+ days Korea stay / idle exposure",
-        "Low speed / near-static movement",
-        "Commercially relevant vessel type",
-        "Biofouling-sensitive destination",
-        "Workable UWC window available",
-        "Critical fouling / performance risk score",
-        "Operator identified for outreach"
-      ],
-      "recommended_action": "Prepare UWC outreach now: confirm hull condition, port window, and compliance route."
-    },
-    {
-      "rank": 3,
-      "vessel_name": "MAERSK DEMO",
-      "imo": null,
-      "port": "Ulsan",
-      "score": 0,
-      "tier": "Low",
-      "contact_priority": "No action",
-      "reasons": [
-        "Commercially relevant vessel type",
-        "Workable UWC window available",
-        "Operator identified for outreach"
-      ],
+      "reasons": [],
       "recommended_action": "Monitor only; wait for stronger port-stay or itinerary signal."
     }
   ]

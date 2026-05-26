@@ -1,13 +1,13 @@
 {
   "version": "17.7.0",
-  "generatedAt": "2026-05-25T14:38:15.372Z",
+  "generatedAt": "2026-05-26T02:09:42.169Z",
   "counts": {
-    "total": 3,
+    "total": 2,
     "immediate": 0,
     "strong": 0,
     "watch": 0,
-    "low": 3,
-    "missingImo": 3,
+    "low": 2,
+    "missingImo": 0,
     "missingPort": 0
   },
   "status": "ok"

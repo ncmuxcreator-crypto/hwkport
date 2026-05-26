@@ -1,10 +1,10 @@
 {
   "version": "17.7.0",
-  "generatedAt": "2026-05-25T14:38:19.184Z",
-  "total": 3,
-  "salesReady": 0,
-  "blockedSample": 3,
-  "sampleImmediateBlocked": 2,
+  "generatedAt": "2026-05-26T02:09:43.861Z",
+  "total": 2,
+  "salesReady": 2,
+  "blockedSample": 0,
+  "sampleImmediateBlocked": 0,
   "operatingImmediate": 0,
   "ok": true,
   "note": "This gate prevents sample records from being treated as real candidates."
