@@ -91,16 +91,36 @@ function normalizeSnapshot(row = {}) {
     opportunity_usd: Number(merged.opportunity_usd || 0),
     source: merged.source || "supabase",
     source_mode: sourceMode,
+    run_id: merged.run_id || row.run_id || "",
+    master_vessel_id: merged.master_vessel_id || merged.hybrid_entity_key || merged.vessel_id,
+    data_quality_tier: merged.data_quality_tier || "",
+    candidate_band: merged.candidate_band || merged.sales_priority_band || "low_priority",
     updated_at: merged.updated_at || merged.collected_at || row.collected_at || new Date().toISOString()
   };
+}
+
+async function fetchActivePointer(env) {
+  const url = env.SUPABASE_URL;
+  const key = env.SUPABASE_ANON_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return { configured: false, active_run_id: null, error: "missing_supabase_binding" };
+  const endpoint = `${url.replace(/\/$/, "")}/rest/v1/active_dataset_pointer?select=*&id=eq.current&limit=1`;
+  const res = await fetch(endpoint, {
+    headers: { apikey: key, authorization: `Bearer ${key}`, accept: "application/json" }
+  });
+  if (!res.ok) return { configured: true, active_run_id: null, error: `active_pointer_http_${res.status}` };
+  const rows = await res.json();
+  const pointer = Array.isArray(rows) ? rows[0] : null;
+  return { configured: true, ...(pointer || {}), error: null };
 }
 
 async function fetchSupabaseRows(env) {
   const url = env.SUPABASE_URL;
   const key = env.SUPABASE_ANON_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return { rows: [], configured: false, error: "missing_supabase_binding" };
+  const pointer = await fetchActivePointer(env);
+  if (!pointer.active_run_id) return { rows: [], configured: pointer.configured, error: pointer.error || "missing_active_dataset", pointer };
 
-  const endpoint = `${url.replace(/\/$/, "")}/rest/v1/vessel_snapshots?select=*&order=collected_at.desc&limit=1000`;
+  const endpoint = `${url.replace(/\/$/, "")}/rest/v1/vessel_snapshots?select=*&run_id=eq.${encodeURIComponent(pointer.active_run_id)}&order=collected_at.desc&limit=5000`;
   const res = await fetch(endpoint, {
     headers: {
       apikey: key,
@@ -108,9 +128,9 @@ async function fetchSupabaseRows(env) {
       accept: "application/json"
     }
   });
-  if (!res.ok) return { rows: [], configured: true, error: `supabase_http_${res.status}` };
+  if (!res.ok) return { rows: [], configured: true, error: `supabase_http_${res.status}`, pointer };
   const rows = await res.json();
-  return { rows: Array.isArray(rows) ? rows.map(normalizeSnapshot) : [], configured: true, error: null };
+  return { rows: Array.isArray(rows) ? rows.map(normalizeSnapshot) : [], configured: true, error: null, pointer };
 }
 
 function latestPerVesselPort(records) {
@@ -209,6 +229,22 @@ function buildCommandCenter(records) {
   };
 }
 
+function buildUnknownImo(records) {
+  return sortCommercialPriority(records.filter(v => !v.imo || v.imo_status !== "present"))
+    .map(v => ({
+      vessel_name: v.vessel_name,
+      port_code: v.port_code || portCodeFromName(v.port),
+      port_name: v.port_name || v.port,
+      call_sign: v.call_sign || "",
+      mmsi: v.mmsi || "",
+      gt: v.gt || 0,
+      hybrid_entity_key: v.hybrid_entity_key,
+      master_vessel_id: v.master_vessel_id || v.hybrid_entity_key,
+      confidence_band: (v.total_sales_priority_score || 0) >= 80 ? "high_priority_review" : (v.gt || 0) >= 5000 ? "probable" : "unresolved",
+      score: v.total_sales_priority_score || 0
+    }));
+}
+
 function portCodeFromName(port = "") {
   const text = String(port || "").toLowerCase();
   if (/busan|부산/.test(text)) return "020";
@@ -298,7 +334,11 @@ function buildStatus(records, source) {
       provider: "supabase",
       configured: source.configured,
       error: source.error,
-      row_count: records.length
+      row_count: records.length,
+      active_run_id: source.pointer?.active_run_id || null,
+      active_collected_at: source.pointer?.active_collected_at || null,
+      promoted_at: source.pointer?.promoted_at || null,
+      is_stale: Boolean(source.pointer?.is_stale)
     },
     commercial_command_center: buildCommandCenter(records),
     port_intelligence: buildPorts(records),
@@ -314,6 +354,7 @@ async function apiResponse(pathname, env) {
   if (pathname.endsWith("/vessels.json")) return json(records, { headers: corsHeaders() });
   if (pathname.endsWith("/candidates.json")) return json(buildHot(records).filter(v => v.is_cleaning_candidate || (v.total_sales_priority_score || 0) >= 60), { headers: corsHeaders() });
   if (pathname.endsWith("/hot-candidates.json")) return json(buildHot(records), { headers: corsHeaders() });
+  if (pathname.endsWith("/master/unknown-imo.json")) return json(buildUnknownImo(records), { headers: corsHeaders() });
   if (pathname.endsWith("/ports.json")) return json(buildPorts(records), { headers: corsHeaders() });
   const portMatch = pathname.match(new RegExp("^/api/ports/([^/]+)/(vessels|candidates|berths|congestion|anchorage)\\.json$"));
   if (portMatch) {

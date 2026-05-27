@@ -1,6 +1,6 @@
 {
   "version": "17.7.0",
-  "generated_at": "2026-05-27T04:03:03.517Z",
+  "generated_at": "2026-05-27T04:43:34.698Z",
   "mode": "readiness_registry",
   "required_for_real_data": [
     "SUPABASE_URL",

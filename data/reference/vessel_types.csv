@@ -1,0 +1,9 @@
+vessel_type,alias,vessel_type_group
+Bulk Carrier,bulk,bulk
+Bulk Carrier,bulker,bulk
+Tanker,tanker,tanker
+Tanker,vlcc,tanker
+Container Ship,container,container
+LNG Carrier,lng,lng_lpg
+LPG Carrier,lpg,lng_lpg
+Cruise Ship,cruise,passenger

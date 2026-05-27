@@ -1,0 +1,4 @@
+port_code,berth_name,alias,berth_class
+020,Busan Berth,busan berth,general
+620,Yeosu/Gwangyang Berth,yeosu berth,general
+820,Ulsan Berth,ulsan berth,industrial

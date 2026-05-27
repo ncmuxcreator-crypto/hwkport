@@ -1,9 +1,10 @@
 ﻿import fs from "fs";
 import { collectKoreaData, getCollectorDiagnostics } from "./collectors/korea.js";
-import { saveToSupabase } from "./lib/db.js";
+import { createRunId, saveToSupabase } from "./lib/db.js";
 import { archiveRawToGDrive } from "./lib/gdrive.js";
 import { detectSecrets } from "./lib/secrets.js";
 import { writeSnapshotOutputs, buildBackendOpsReport } from "./lib/snapshot-store.js";
+import { enrichWithReferenceDictionaries, loadReferenceDictionaries } from "./lib/reference-dictionaries.js";
 
 const VERSION = "17.7.0";
 const BUILD_NAME = "Backend Stability Batch";
@@ -226,6 +227,7 @@ function stayDaysGroup(hours) {
 console.log(`[HWK] v${VERSION} ${BUILD_NAME} pipeline started`);
 
 const startedAt = new Date().toISOString();
+const runId = createRunId();
 let status = "success";
 let errorMessage = null;
 let supabaseStatus = "not_configured";
@@ -453,6 +455,14 @@ function buildPortIntelligence(records) {
   })).sort((a, b) => b.immediate_target_count - a.immediate_target_count || b.candidate_count - a.candidate_count || b.vessel_count - a.vessel_count);
 }
 
+function dataQualityTier(v) {
+  const hasSchedule = Boolean(v.eta || v.ata || v.etb || v.atb || v.etd || v.atd || v.berth || v.berth_name);
+  if ((v.imo || v.mmsi) && Number(v.gt || 0) > 0 && hasSchedule) return "A";
+  if (v.vessel_name && v.call_sign && (v.port_code || v.port) && hasSchedule) return "B";
+  if (v.vessel_name && (v.port_code || v.port)) return "C";
+  return "D";
+}
+
 function buildCandidateList(records = []) {
   return records
     .filter(v => v.actionable_source_row !== false && (v.is_cleaning_candidate || (v.total_sales_priority_score || 0) >= 60))
@@ -534,6 +544,8 @@ function enrichSalesSignals(records) {
       risk_level: riskLevel(biofoulingScore),
       sales_priority: candidateProfile.is_immediate_candidate ? "Immediate Candidate" : biofoulingScore >= 85 ? "Critical" : biofoulingScore >= 70 ? "High" : "Normal",
       ...identity,
+      master_vessel_id: identity.hybrid_entity_key,
+      data_quality_tier: dataQualityTier({ ...v, ...scheduleMetrics }),
       compliance_band: complianceWatch ? "biosecurity_watch" : "standard",
       port_code: v.port_code || portCodeFromName(v.port),
       port_name: v.port_name || v.port,
@@ -1298,12 +1310,19 @@ function buildDeploymentReadiness(reportBase, records, apiSources = []) {
 try {
   const apiSources = detectSecrets();
   console.log(`[HWK] API groups enabled: ${apiSources.filter(s => s.enabled).map(s => s.key).join(", ") || "none"}`);
-  vessels = enrichSalesSignals(await collectKoreaData({ apiSources }));
+  const dictionaries = loadReferenceDictionaries();
+  const collectedRows = await collectKoreaData({ apiSources });
+  vessels = enrichSalesSignals(enrichWithReferenceDictionaries(collectedRows, dictionaries));
   vessels.sort((a, b) => (b.cleaning_candidate_score || 0) - (a.cleaning_candidate_score || 0) || (b.risk_score || 0) - (a.risk_score || 0));
 
   if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     supabaseWrite = { status: "syncing" };
-    const result = await saveToSupabase(vessels);
+    const result = await saveToSupabase(vessels, {
+      runId,
+      startedAt,
+      diagnostics: getCollectorDiagnostics(),
+      status
+    });
     supabaseWrite = { status: "synced", ...result };
     supabaseStatus = "synced";
   }
@@ -1325,6 +1344,7 @@ try {
     version: VERSION,
     build_name: BUILD_NAME,
     status,
+    run_id: runId,
     started_at: startedAt,
     completed_at: completedAt,
     record_count: vessels.length,
