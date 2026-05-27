@@ -32,7 +32,6 @@ const required = [
   "dashboard/api/backend-ops.json",
   "dashboard/api/candidate-changes.json",
   ".github/workflows/longterm-update.yml",
-  ".github/workflows/longterm-update-v2.yml",
   ".github/workflows/actions-health-check.yml",
   ".github/workflows/push-smoke-test.yml",
   "wrangler.jsonc",
@@ -180,7 +179,7 @@ const longtermJobTimeouts = workflow.match(/^\s{4}timeout-minutes:\s*30\s*$/gm) 
 if (!longtermJobTimeouts.length) {
   throw new Error("Longterm workflow job timeout must be 30 minutes");
 }
-if (!workflow.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflow.includes("MAX_SOURCE_ROWS") || !workflow.includes("MAX_OUTPUT_ROWS: 2700") || !workflow.includes("MAX_SOURCE_ROWS: 720") || !workflow.includes("MAX_CHILD_ENRICHMENT_ROWS: 24") || !workflow.includes("PORT_OPERATION_NUM_OF_ROWS: 150") || !workflow.includes("PORT_OPERATION_MAX_PAGES: 10") || !workflow.includes('PORT_OPERATION_DEGB_VALUES: "I,O"') || !workflow.includes("ENABLE_SOURCE_CSV") || !workflow.includes("COLLECTOR_DEBUG_VERBOSE") || workflow.includes("COLLECTOR_DEBUG_ONLY: port_operation_busan") || !workflow.includes("SOURCE_TIMEOUT_MS: 8000") || !workflow.includes("timeout-minutes: 7")) {
+if (!workflow.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflow.includes("MAX_SOURCE_ROWS") || !workflow.includes("MAX_OUTPUT_ROWS: 2700") || !workflow.includes("MAX_SOURCE_ROWS: 720") || !workflow.includes("MAX_CHILD_ENRICHMENT_ROWS: 24") || !workflow.includes("PORT_OPERATION_NUM_OF_ROWS: 50") || !workflow.includes("PORT_OPERATION_MAX_PAGES: 20") || !workflow.includes('PORT_OPERATION_DEGB_VALUES: "I,O"') || !workflow.includes("ENABLE_SOURCE_CSV") || !workflow.includes("COLLECTOR_DEBUG_VERBOSE") || workflow.includes("COLLECTOR_DEBUG_ONLY: port_operation_busan") || !workflow.includes("SOURCE_TIMEOUT_MS: 60000") || !workflow.includes("COLLECTOR_RUNTIME_BUDGET_MS: 900000") || !workflow.includes("timeout-minutes: 15")) {
   throw new Error("Longterm workflow must bound collector runtime and child enrichment");
 }
 for (const marker of ["github.run_id", "github.ref", "runner.os", "github.workflow", "timestamp=$(date -u"]) {
@@ -231,8 +230,8 @@ if (!koreaCollector.includes("MAX_CHILD_ENRICHMENT_ROWS") || !koreaCollector.inc
 if (!koreaCollector.includes("MAX_SOURCE_ROWS") || !koreaCollector.includes("COLLECTOR_RUNTIME_BUDGET_MS") || !koreaCollector.includes("ENABLE_SOURCE_CSV")) {
   throw new Error("Collector must bound per-source rows, runtime, and optional CSV ingestion");
 }
-if (!koreaCollector.includes("PORT_OPERATION_NUM_OF_ROWS") || !koreaCollector.includes('"150"') || !koreaCollector.includes("PORT_OPERATION_MAX_PAGES") || !koreaCollector.includes("PORT_OPERATION_DEGB_VALUES") || !koreaCollector.includes("addDaysCompact(-3)") || !koreaCollector.includes("addDaysCompact(7)") || !koreaCollector.includes("grtg") || !koreaCollector.includes("intrlGrtg")) {
-  throw new Error("Port Operation collector must support expanded 150-row page size");
+if (!koreaCollector.includes("PORT_OPERATION_NUM_OF_ROWS") || !koreaCollector.includes('"50"') || !koreaCollector.includes("PORT_OPERATION_MAX_PAGES") || !koreaCollector.includes("PORT_OPERATION_DEGB_VALUES") || !koreaCollector.includes("addDaysCompact(-3)") || !koreaCollector.includes("addDaysCompact(7)") || !koreaCollector.includes("grtg") || !koreaCollector.includes("intrlGrtg")) {
+  throw new Error("Port Operation collector must support official-safe 50-row paging");
 }
 if (!koreaCollector.includes("noTypeParam")) {
   throw new Error("PORT-MIS XML-capable APIs must not force _type=json");
@@ -301,29 +300,6 @@ if (!healthWorkflow.includes("runs-on: ubuntu-latest") || !healthWorkflow.includ
 const pushSmokeWorkflow = fs.readFileSync(".github/workflows/push-smoke-test.yml", "utf8");
 if (!pushSmokeWorkflow.includes("name: Push Smoke Test") || !pushSmokeWorkflow.includes("push:") || !pushSmokeWorkflow.includes("runs-on: ubuntu-latest")) {
   throw new Error("Push smoke test workflow is incomplete");
-}
-const workflowV2 = fs.readFileSync(".github/workflows/longterm-update-v2.yml", "utf8");
-if (!workflowV2.includes("name: Longterm Update V2") || !workflowV2.includes("runs-on: ubuntu-latest") || !workflowV2.includes("group: ${{ github.workflow }}-${{ github.ref }}")) {
-  throw new Error("Longterm Update V2 bypass workflow is incomplete");
-}
-const longtermV2JobTimeouts = workflowV2.match(/^\s{4}timeout-minutes:\s*30\s*$/gm) || [];
-if (!longtermV2JobTimeouts.length) {
-  throw new Error("Longterm Update V2 job timeout must be 30 minutes");
-}
-if (!workflowV2.includes("push:") || !workflowV2.includes("branches:") || !workflowV2.includes("- main")) {
-  throw new Error("Longterm Update V2 must support push-triggered bypass runs on main");
-}
-if (/paths:|paths-ignore:/.test(workflowV2)) {
-  throw new Error("Longterm Update V2 push bypass must not use path filters");
-}
-if (/git push origin HEAD:main|git commit -m "auto: refresh|runs-on: self-hosted/.test(workflowV2)) {
-  throw new Error("Longterm Update V2 must not use self-hosted runners or auto-commit generated files");
-}
-if (!workflowV2.includes("continue-on-error: true") || !workflowV2.includes("Skip Cloudflare deploy notice")) {
-  throw new Error("Longterm Update V2 must keep bypass diagnostics running even when optional checks fail");
-}
-if (!workflowV2.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflowV2.includes("MAX_SOURCE_ROWS") || !workflowV2.includes("MAX_OUTPUT_ROWS: 2700") || !workflowV2.includes("MAX_SOURCE_ROWS: 720") || !workflowV2.includes("MAX_CHILD_ENRICHMENT_ROWS: 24") || !workflowV2.includes("PORT_OPERATION_NUM_OF_ROWS: 150") || !workflowV2.includes("PORT_OPERATION_MAX_PAGES: 10") || !workflowV2.includes('PORT_OPERATION_DEGB_VALUES: "I,O"') || !workflowV2.includes("ENABLE_SOURCE_CSV") || !workflowV2.includes("COLLECTOR_DEBUG_VERBOSE") || workflowV2.includes("COLLECTOR_DEBUG_ONLY: port_operation_busan") || !workflowV2.includes("SOURCE_TIMEOUT_MS: 8000") || !workflowV2.includes("timeout-minutes: 7")) {
-  throw new Error("Longterm Update V2 must bound collector runtime and child enrichment");
 }
 
 console.log("[HWK] validation success");

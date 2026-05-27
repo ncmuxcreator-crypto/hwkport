@@ -289,7 +289,7 @@ function allSourceConfigs() {
       ede,
       deGb,
       pageNo: "1",
-      numOfRows: env("PORT_OPERATION_NUM_OF_ROWS") || "150"
+      numOfRows: env("PORT_OPERATION_NUM_OF_ROWS") || "50"
     }
   })));
   const vtsCodes = (env("MOF_VTS_PORT_CODES") || "BUSAN,YEOSU,GWANGYANG,ULSAN,PYEONGTAEK,POHANG,HADONG,MASAN,INCHEON")
@@ -476,7 +476,7 @@ async function fetchPagedRows(source, rowLimit) {
   const rows = parseRows(firstPage.text, rowLimit);
   const pageSize = Number(source.defaultParams?.numOfRows || 0) || rowLimit;
   const totalCount = Number(firstPage.result_meta?.totalCount || rows.length || 0);
-  const maxPages = Math.max(1, Number(env("PORT_OPERATION_MAX_PAGES") || 10));
+  const maxPages = Math.max(1, Number(env("PORT_OPERATION_MAX_PAGES") || 20));
   const shouldPage = String(source.key || "").startsWith("port_operation_") && totalCount > rows.length && rowLimit > rows.length;
   const pageSummaries = [{
     pageNo: Number(source.defaultParams?.pageNo || 1),
