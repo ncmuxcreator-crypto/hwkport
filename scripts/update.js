@@ -120,12 +120,71 @@ function deriveBiofoulingScore(v, metrics) {
 function deriveCiiPressureScore(v, metrics, biofoulingScore) {
   const type = String(v.vessel_type || "").toLowerCase();
   const route = [v.destination, v.previous_port, v.next_port].join(" ").toLowerCase();
+  const routeProfile = deriveRouteCommercialProfile(v);
   let score = Math.round(biofoulingScore * 0.42);
   if (Number(v.gt || 0) >= 5000) score += 18;
   if (/container|bulk|bulker|tanker|vlcc|lng|lpg|cruise/.test(type)) score += 12;
   if ((metrics.stay_hours || 0) >= 72) score += 8;
   if (/australia|brazil|usa|california|canada|singapore|china/.test(route)) score += 8;
+  score += Math.round((routeProfile.esg_sensitivity_score + routeProfile.fuel_efficiency_sensitivity_score) / 10);
   return Math.max(0, Math.min(100, score));
+}
+
+function routeSourceText(v = {}) {
+  return [
+    v.previous_port,
+    v.next_port,
+    v.destination_port,
+    v.destination,
+    v.route_region,
+    v.voyage_pattern,
+    v.commercial_segment
+  ].filter(Boolean).join(" ").normalize("NFKC").toLowerCase();
+}
+
+function deriveRouteCommercialProfile(v = {}) {
+  const route = routeSourceText(v);
+  const type = String([v.vessel_type, v.vessel_type_group, v.commercial_segment].filter(Boolean).join(" ")).toLowerCase();
+  const profile = {
+    route_region: v.route_region || "unknown",
+    route_commercial_weight: 0,
+    biosecurity_exposure_score: 0,
+    esg_sensitivity_score: 0,
+    fuel_efficiency_sensitivity_score: 0,
+    hull_performance_sensitivity_score: 0,
+    high_regulation_route: false,
+    compliance_priority: "standard",
+    route_reason_codes: []
+  };
+
+  const setProfile = (region, weight, biosecurity, esg, fuel, hull, reasons) => {
+    profile.route_region = region;
+    profile.route_commercial_weight = weight;
+    profile.biosecurity_exposure_score = biosecurity;
+    profile.esg_sensitivity_score = esg;
+    profile.fuel_efficiency_sensitivity_score = fuel;
+    profile.hull_performance_sensitivity_score = hull;
+    profile.high_regulation_route = weight >= 8;
+    profile.compliance_priority = weight >= 15 ? "very_high" : weight >= 10 ? "high" : weight >= 6 ? "medium" : "standard";
+    profile.route_reason_codes = reasons;
+  };
+
+  if (/australia|port hedland|newcastle|brisbane|melbourne|sydney|fremantle|adelaide|darwin|오스트레일리아|호주/.test(route)) {
+    setProfile("australia", 18, 100, 85, 85, 90, ["AUSTRALIA_ROUTE", "HIGH_BIOSECURITY_PRESSURE", "HIGH_ESG_PRESSURE"]);
+  } else if (/new zealand|newzealand|auckland|tauranga|wellington|lyttelton|뉴질랜드/.test(route)) {
+    setProfile("new_zealand", 18, 100, 85, 85, 90, ["NZ_ROUTE", "HIGH_BIOSECURITY_PRESSURE", "HIGH_ESG_PRESSURE"]);
+  } else if (/brazil|brasil|ponta da madeira|tubarao|santos|rio de janeiro|브라질/.test(route)) {
+    setProfile("brazil", /bulk|bulker|bulk_carrier|ore|tanker|vlcc|commodity/.test(type) ? 15 : 12, 85, 70, 75, 85, ["BRAZIL_ROUTE", "HIGH_BIOSECURITY_PRESSURE"]);
+  } else if (/north america|usa|u\.s\.a|united states|canada|california|los angeles|long beach|oakland|seattle|tacoma|vancouver|great lakes|미국|캐나다|북미/.test(route)) {
+    setProfile("north_america", 10, 60, 85, 85, 80, ["NORTH_AMERICA_ROUTE", "HIGH_ESG_PRESSURE"]);
+  } else if (/europe|north europe|mediterranean|rotterdam|hamburg|antwerp|felixstowe|algeciras|valencia|piraeus|유럽|지중해/.test(route)) {
+    setProfile("europe", 8, 50, 80, 80, 75, ["EUROPE_ROUTE", "HIGH_ESG_PRESSURE"]);
+  }
+
+  if (profile.high_regulation_route && ["arrived_staying", "berthed", "anchorage_waiting"].includes(v.status_bucket)) {
+    profile.route_reason_codes.push("PRE_ARRIVAL_COMPLIANCE_WINDOW");
+  }
+  return { ...profile, route_reason_codes: [...new Set(profile.route_reason_codes)] };
 }
 
 function normalizeIdentityToken(value) {
@@ -353,25 +412,29 @@ function deriveOperationalRisk(v, metrics, biofoulingScore) {
 function deriveCommercialScoreParts(v, metrics) {
   const type = String([v.vessel_type, v.vessel_type_group].filter(Boolean).join(" ")).toLowerCase();
   const route = [v.destination, v.previous_port, v.next_port].join(" ").toLowerCase();
+  const routeProfile = deriveRouteCommercialProfile(v);
   const status = String(v.status || "").toLowerCase();
   const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
   const meetsCommercialGtThreshold = gt >= COMMERCIAL_GT_THRESHOLD;
   const anchorageDays = Number(metrics.anchorage_hours || 0) / 24;
   const stayDays = Number(metrics.stay_hours || 0) / 24;
   const isCommercialType = /vlcc|cape|capesize|bulk|bulker|bulk_carrier|tanker|pctc|lng|lpg|cruise|container/.test(type);
-  const sensitiveRoute = /australia|brazil|new zealand|california|usa|canada|port hedland|ponta da madeira/.test(route);
+  const sensitiveRoute = routeProfile.high_regulation_route || /australia|brazil|new zealand|california|usa|canada|port hedland|ponta da madeira/.test(route);
   const isAnchorageWaiting = Boolean(v.is_anchorage_waiting) || anchorageDays >= 0.5 || hasAnchorageSignal(v) || /waiting|anchorage|anchor|idle|drifting/.test(status);
   const isLongIdle = stayDays >= 7 || anchorageDays >= 3;
   const isHighGt = gt >= 30000;
   const isVeryHighGt = gt >= 80000;
   const isBulkTankerPctc = /bulk|bulker|bulk_carrier|tanker|vlcc|pctc|car carrier/.test(type);
-  const biofoulingRiskScore = Math.min(30, Math.round(Math.min(14, stayDays * 1.4) + Math.min(8, anchorageDays * 2) + (isBulkTankerPctc ? 5 : isCommercialType ? 3 : 0) + (sensitiveRoute ? 4 : 0) + (isVeryHighGt ? 2 : 0)));
-  const performanceProxyScore = Math.min(20, Math.round(Math.min(9, anchorageDays * 2) + Math.min(6, stayDays * 0.7) + (Number(v.speed || 0) > 0 && Number(v.speed || 0) < 1.5 ? 3 : 0) + (isHighGt ? 3 : meetsCommercialGtThreshold ? 2 : 0)));
+  const biofoulingRiskScore = Math.min(30, Math.round(Math.min(14, stayDays * 1.4) + Math.min(8, anchorageDays * 2) + (isBulkTankerPctc ? 5 : isCommercialType ? 3 : 0) + Math.round(routeProfile.biosecurity_exposure_score / 20) + (isVeryHighGt ? 2 : 0)));
+  const performanceProxyScore = Math.min(20, Math.round(Math.min(9, anchorageDays * 2) + Math.min(6, stayDays * 0.7) + (Number(v.speed || 0) > 0 && Number(v.speed || 0) < 1.5 ? 3 : 0) + (isHighGt ? 3 : meetsCommercialGtThreshold ? 2 : 0) + Math.round(routeProfile.fuel_efficiency_sensitivity_score / 25)));
   const congestionExposureScore = Math.min(20, Math.round((isAnchorageWaiting ? 10 : 0) + Math.min(8, anchorageDays * 2) + (isLongIdle ? 4 : 0) + (v.berth_class === "anchorage" ? 2 : 0)));
   const cleaningWindowScore = Math.min(15, Math.round(Math.min(9, Number(metrics.work_window_hours || 0) / 4) + (isAnchorageWaiting ? 4 : 0) + (v.berth || v.berth_name ? 2 : 0)));
-  const compliancePressureScore = Math.min(10, Math.round((sensitiveRoute ? 5 : 0) + (isHighGt ? 4 : meetsCommercialGtThreshold ? 3 : 0) + (isBulkTankerPctc ? 2 : isCommercialType ? 1 : 0)));
+  const compliancePressureScore = Math.min(10, Math.round(Math.round(routeProfile.biosecurity_exposure_score / 20) + Math.round(routeProfile.esg_sensitivity_score / 35) + (isHighGt ? 3 : meetsCommercialGtThreshold ? 2 : 0) + (isBulkTankerPctc ? 1 : 0)));
   const commercialFitScore = Math.min(5, Math.round((isBulkTankerPctc ? 3 : isCommercialType ? 2 : 0) + (isHighGt ? 1 : 0) + (v.operator || v.agent ? 1 : 0) + (v.port_code ? 1 : 0)));
-  const total = biofoulingRiskScore + performanceProxyScore + congestionExposureScore + cleaningWindowScore + compliancePressureScore + commercialFitScore;
+  const routeMultiplierBonus = routeProfile.high_regulation_route && (isAnchorageWaiting || isLongIdle || isHighGt || isCommercialType)
+    ? Math.round(routeProfile.route_commercial_weight * 0.45)
+    : Math.round(routeProfile.route_commercial_weight * 0.25);
+  const total = biofoulingRiskScore + performanceProxyScore + congestionExposureScore + cleaningWindowScore + compliancePressureScore + commercialFitScore + routeMultiplierBonus;
   const reasonCodes = [];
   if (anchorageDays >= 1) reasonCodes.push("LONG_ANCHORAGE_WAIT");
   if (congestionExposureScore >= 14) reasonCodes.push("PORT_CONGESTION_HIGH");
@@ -383,6 +446,7 @@ function deriveCommercialScoreParts(v, metrics) {
   if (v.berth_class === "anchorage") reasonCodes.push("ANCHORAGE_CLASSIFIED");
   if (stayDays >= 7) reasonCodes.push("LONG_PORT_STAY");
   if (/australia|brazil/.test(route)) reasonCodes.push("AUSTRALIA_BRAZIL_EXPOSURE");
+  reasonCodes.push(...routeProfile.route_reason_codes);
   if (Number(metrics.work_window_hours || 0) >= 24) reasonCodes.push("BERTH_WINDOW_AVAILABLE");
   return {
     vessel_value_score: Math.min(20, Math.round((isHighGt ? 8 : meetsCommercialGtThreshold ? 5 : 0) + (isVeryHighGt ? 4 : 0) + (isBulkTankerPctc ? 5 : isCommercialType ? 3 : 0) + (v.operator || v.agent ? 2 : 0) + (sensitiveRoute ? 1 : 0))),
@@ -406,8 +470,9 @@ function deriveCommercialScoreParts(v, metrics) {
     anchorage_density_score: Math.min(100, Math.round(anchorageDays * 12 + (isAnchorageWaiting ? 20 : 0))),
     idle_risk_score: Math.min(100, Math.round(stayDays * 8 + anchorageDays * 10)),
     high_value_target: Boolean(isHighGt && isBulkTankerPctc),
-    commercial_signal_strength: Math.min(100, Math.round(total + (isHighGt ? 8 : 0) + (isAnchorageWaiting ? 8 : 0) + (isBulkTankerPctc ? 5 : 0))),
-    score_reason_codes: reasonCodes
+    commercial_signal_strength: Math.min(100, Math.round(total + routeProfile.route_commercial_weight + (isHighGt ? 8 : 0) + (isAnchorageWaiting ? 8 : 0) + (isBulkTankerPctc ? 5 : 0))),
+    ...routeProfile,
+    score_reason_codes: [...new Set(reasonCodes)]
   };
 }
 
@@ -427,7 +492,8 @@ function deriveCommercialValue(v = {}, scoreParts = {}) {
     Number(scoreParts.cleaning_window_score || 0) +
     Number(scoreParts.performance_proxy_score || 0) +
     Number(scoreParts.compliance_pressure_score || 0) +
-    Number(scoreParts.sales_accessibility_score || 0)
+    Number(scoreParts.sales_accessibility_score || 0) +
+    Number(scoreParts.route_commercial_weight || 0)
   ));
   return {
     commercial_value_score: commercialValueScore,
@@ -535,6 +601,7 @@ function isMainCommercialVessel(v = {}) {
 function buildCommercialSignals(v = {}, metrics = {}) {
   const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
   const typeGroup = String(v.vessel_type_group || v.vessel_type || "").toLowerCase();
+  const routeProfile = deriveRouteCommercialProfile(v);
   const flags = [];
   if (gt >= 30000) flags.push("GT_30000_PLUS");
   if (gt >= 80000) flags.push("GT_80000_PLUS");
@@ -552,10 +619,18 @@ function buildCommercialSignals(v = {}, metrics = {}) {
   if (v.agent) flags.push("AGENT_IDENTIFIED");
   if (v.operator) flags.push("OPERATOR_IDENTIFIED");
   if (v.reference_enriched) flags.push("KNOWN_COMMERCIAL_SEGMENT");
+  flags.push(...routeProfile.route_reason_codes);
   return {
     commercial_signal_flags: [...new Set(flags)],
     high_value_target: flags.includes("GT_30000_PLUS") && flags.includes("HIGH_VALUE_VESSEL_TYPE"),
-    congestion_exposed_target: flags.includes("ANCHORAGE_WAITING_CLASSIFIED") || flags.includes("CONGESTION_EXPOSED")
+    congestion_exposed_target: flags.includes("ANCHORAGE_WAITING_CLASSIFIED") || flags.includes("CONGESTION_EXPOSED"),
+    route_region: routeProfile.route_region,
+    biosecurity_exposure_score: routeProfile.biosecurity_exposure_score,
+    esg_sensitivity_score: routeProfile.esg_sensitivity_score,
+    fuel_efficiency_sensitivity_score: routeProfile.fuel_efficiency_sensitivity_score,
+    hull_performance_sensitivity_score: routeProfile.hull_performance_sensitivity_score,
+    high_regulation_route: routeProfile.high_regulation_route,
+    compliance_priority: routeProfile.compliance_priority
   };
 }
 
@@ -879,7 +954,8 @@ function enrichSalesSignals(records) {
   return records.map(v => {
     const reasons = [];
     const destination = String(v.destination || "").toLowerCase();
-    const complianceWatch = regulatedDestinations.some(d => destination.includes(d));
+    const routeProfile = deriveRouteCommercialProfile(v);
+    const complianceWatch = routeProfile.high_regulation_route || regulatedDestinations.some(d => destination.includes(d));
     if ((v.risk_score || 0) >= 85) reasons.push("Critical hull-performance risk");
     else if ((v.risk_score || 0) >= 70) reasons.push("High fouling watchlist");
     if ((v.days_in_korea || 0) >= 14) reasons.push("Long Korea stay / idle exposure");
