@@ -23,7 +23,10 @@ const IMMEDIATE_TARGET_THRESHOLD = Number(process.env.IMMEDIATE_TARGET_THRESHOLD
 
 function parseScheduleTime(value) {
   if (!value) return null;
-  const parsed = new Date(String(value).replace(" ", "T"));
+  const raw = String(value).trim();
+  const isoish = raw.replace(" ", "T");
+  const withZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(isoish) ? isoish : `${isoish}+09:00`;
+  const parsed = new Date(withZone);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
@@ -53,32 +56,50 @@ function hasAnchorageSignal(v = {}) {
 }
 
 function deriveScheduleMetrics(v) {
+  const nowDate = new Date();
+  const now = nowDate.toISOString();
+  const ataDate = parseScheduleTime(v.ata);
+  const atdDate = parseScheduleTime(v.atd);
+  const etaDate = parseScheduleTime(v.eta);
+  const etdDate = parseScheduleTime(v.etd);
   const arrival = v.ata || v.eta;
   const berthStart = v.atb || v.etb;
   const departure = v.atd || v.etd;
-  const now = new Date().toISOString();
   const plannedStayHours = hoursBetween(v.eta, v.etd);
-  const activeDeparture = v.atd ? v.atd : v.ata ? now : departure;
-  const stayHours = hoursBetween(arrival, activeDeparture);
+  const stayHours = ataDate && atdDate
+    ? hoursBetween(v.ata, v.atd)
+    : ataDate && !atdDate
+      ? hoursBetween(v.ata, now)
+      : null;
   const berthEnd = v.atd ? v.atd : berthStart ? now : departure;
   const berthHours = hoursBetween(berthStart || arrival, berthEnd);
   const anchorageDetected = hasAnchorageSignal(v);
   const waitingHours = berthStart
     ? hoursBetween(arrival, berthStart)
     : anchorageDetected
-      ? (stayHours ?? plannedStayHours ?? 0)
-      : 0;
-  const workWindowHours = Math.max(0, Math.min(96, berthHours ?? plannedStayHours ?? stayHours ?? 0));
+      ? (stayHours ?? plannedStayHours ?? null)
+      : null;
+  const workWindowHours = etdDate && nowDate.getTime() < etdDate.getTime()
+    ? Math.round(((etdDate.getTime() - nowDate.getTime()) / 36e5) * 10) / 10
+    : null;
+  const workWindowStatus = atdDate
+    ? "closed"
+    : ataDate
+      ? "open_or_ongoing"
+      : workWindowHours !== null
+        ? "scheduled"
+        : "unknown";
 
   return {
-    stay_hours: stayHours ?? Math.round(Number(v.days_in_korea || 0) * 24),
-    planned_stay_hours: plannedStayHours ?? 0,
-    current_call_stay_hours: stayHours ?? Math.round(Number(v.days_in_korea || 0) * 24),
+    stay_hours: stayHours,
+    planned_stay_hours: plannedStayHours,
+    current_call_stay_hours: stayHours,
     cumulative_stay_hours: Number(v.cumulative_stay_hours || 0),
     cumulative_stay_days: Math.round((Number(v.cumulative_stay_hours || 0) / 24) * 10) / 10,
-    berth_hours: berthHours ?? 0,
-    anchorage_hours: waitingHours ?? 0,
+    berth_hours: berthHours,
+    anchorage_hours: waitingHours,
     work_window_hours: workWindowHours,
+    work_window_status: workWindowStatus,
     schedule_confidence: [v.eta, v.etb, v.ata, v.atb, v.etd, v.atd].filter(Boolean).length
   };
 }
@@ -182,7 +203,7 @@ function shouldPrioritizeVesselSpecEnrichment(record = {}) {
     record.gt_status === "unknown_gt_review" ||
     (record.commercial_value_score || record.total_sales_priority_score || 0) >= REVIEW_TARGET_THRESHOLD ||
     record.is_anchorage_waiting ||
-    record.status_bucket === "staying_vessels" ||
+    ["arrived_staying", "berthed", "anchorage_waiting"].includes(record.status_bucket) ||
     /bulk|tanker|container|pctc|cruise|passenger/.test(type) ||
     (record.vessel_basic_info_completeness_score || 0) < 65;
 }
@@ -486,21 +507,20 @@ function deriveStatusBucket(v = {}, metrics = {}) {
   const now = new Date();
   const eta = parseScheduleTime(v.eta);
   const ata = parseScheduleTime(v.ata);
-  const etd = parseScheduleTime(v.etd);
   const atd = parseScheduleTime(v.atd);
   const status = String(v.status || "").toLowerCase();
-  if (atd && atd.getTime() < now.getTime() && !hasAnchorageSignal(v) && !/waiting|anchorage|anchor|berth|moored|alongside|idle/.test(status)) return "completed_departure";
-  if (ata && !atd) return "staying_vessels";
-  if (hasAnchorageSignal(v) || /waiting|anchorage|anchor|idle|drifting/.test(status) || (metrics.anchorage_hours || 0) > 0) return "staying_vessels";
-  if (/berth|moored|alongside/.test(status) || v.berth || v.berth_name || v.atb) return "staying_vessels";
-  if (eta && eta.getTime() >= now.getTime()) return "arrival_pipeline";
-  if (etd && etd.getTime() >= now.getTime()) return "staying_vessels";
-  return "port_call_review";
+  const facilityType = String(v.facility_type || v.berth_class || "").toLowerCase();
+  if ((facilityType === "anchorage" || hasAnchorageSignal(v) || /waiting|anchorage|anchor|idle|drifting/.test(status) || (metrics.anchorage_hours || 0) > 0) && !atd) return "anchorage_waiting";
+  if ((facilityType === "berth" || /berth|moored|alongside/.test(status) || v.berth || v.berth_name || v.atb) && !atd) return "berthed";
+  if (ata && !atd) return "arrived_staying";
+  if (eta && !ata && eta.getTime() >= now.getTime()) return "arriving_soon";
+  if (atd) return "departed";
+  return "unknown";
 }
 
 function commercialRelevanceStatus(v = {}) {
   if (v.excluded_commercial_type) return "excluded_non_commercial_type";
-  if (v.status_bucket === "completed_departure") return "excluded_departure_only";
+  if (v.status_bucket === "departed") return "excluded_departure_only";
   if (v.gt_status === "target_vessel") return "target_vessel";
   if (v.gt_status === "unknown_gt_review") return "unknown_gt_review";
   return "non_target_small_vessel";
@@ -994,7 +1014,7 @@ function sortCommercialPriority(records) {
 
 function buildHotVessels(records) {
   return sortCommercialPriority(records)
-    .filter(v => isMainCommercialVessel(v) && (v.is_cleaning_candidate || v.status_bucket === "staying_vessels" || v.status_bucket === "arrival_pipeline" || (v.biofouling_score || 0) >= 65 || (v.operational_risk_score || 0) >= 60))
+    .filter(v => isMainCommercialVessel(v) && (v.is_cleaning_candidate || ["arrived_staying", "berthed", "anchorage_waiting", "arriving_soon"].includes(v.status_bucket) || (v.biofouling_score || 0) >= 65 || (v.operational_risk_score || 0) >= 60))
     .slice(0, 40);
 }
 
@@ -1193,6 +1213,15 @@ function buildScoringDiagnostics(records = []) {
     missing_imo_count: records.filter(v => !v.imo).length,
     anchorage_detected_count: records.filter(v => v.is_anchorage_waiting || hasAnchorageSignal(v) || Number(v.anchorage_hours || 0) > 0).length,
     stay_hours_detected_count: records.filter(v => Number(v.stay_hours || v.current_call_stay_hours || v.planned_stay_hours || 0) > 0).length,
+    work_window_detected_count: records.filter(v => Number(v.work_window_hours || 0) > 0 || v.work_window_status === "open_or_ongoing").length,
+    eta_detected_count: records.filter(v => v.eta).length,
+    etb_detected_count: records.filter(v => v.etb).length,
+    ata_detected_count: records.filter(v => v.ata).length,
+    atb_detected_count: records.filter(v => v.atb).length,
+    etd_detected_count: records.filter(v => v.etd).length,
+    atd_detected_count: records.filter(v => v.atd).length,
+    detail_rows_flattened_count: records.filter(v => v.detail_rows_flattened).length,
+    detail_rows_missing_time_count: records.filter(v => v.detail_rows_flattened && !v.eta && !v.etd && !v.ata && !v.atd && !v.etb && !v.atb).length,
     vessel_type_group_detected_count: records.filter(v => v.vessel_type_group && v.vessel_type_group !== "unknown").length
   };
 }
@@ -2023,8 +2052,8 @@ try {
   });
   const allCollectedVessels = snapshotOutputs.merged;
   const targetVessels = allCollectedVessels.filter(isMainCommercialVessel);
-  const stayingVessels = targetVessels.filter(v => v.status_bucket === "staying_vessels");
-  const arrivalPipeline = targetVessels.filter(v => v.status_bucket === "arrival_pipeline");
+  const stayingVessels = targetVessels.filter(v => ["arrived_staying", "berthed", "anchorage_waiting"].includes(v.status_bucket));
+  const arrivalPipeline = targetVessels.filter(v => v.status_bucket === "arriving_soon");
   vessels = targetVessels;
   const mergedActionableRows = vessels.filter(v => v.actionable_source_row && !String(v.source_mode || "").includes("sample")).length;
   const hotVessels = buildHotVessels(vessels);

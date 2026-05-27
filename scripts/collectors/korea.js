@@ -46,7 +46,7 @@ const FIELD_ALIASES = {
   status: ["status", "movement_status", "shipStatus", "sttus", "statusNm", "vsslStatus", "상태", "입출항상태"],
   operator: ["operator", "company", "shippingCompany", "carrierNm", "shipCompany", "owner", "선사", "운항사", "선박회사"],
   agent: ["agent", "agentNm", "agency", "shipAgent", "대리점", "선박대리점"],
-  destination: ["destination", "dest", "next_port_country", "DEST", "destNm", "destinationPort", "목적지", "차항지", "다음항"],
+  destination: ["destination", "dest", "next_port_country", "DEST", "destNm", "destinationPort", "dstnPrtNm", "목적지", "차항지", "다음항"],
   previous_port: ["previous_port", "prevPort", "last_port", "prevPortNm", "전항", "이전항"],
   next_port: ["next_port", "nextPort", "nextPortNm", "차항", "다음항", "예정항"],
   vessel_type: ["vessel_type", "ship_type", "shipType", "vsslKnd", "shipKnd", "TYPE", "vesselType", "선종", "선박종류"],
@@ -59,10 +59,11 @@ const FIELD_ALIASES = {
   flag: ["flag", "flagState", "nationality", "shipNationality", "국적", "선적국"],
   eta: ["eta", "ETA", "etaDate", "estimatedArrival", "arrPlanDt", "arrivalPlanDt", "etaDt", "입항예정일시", "입항예정"],
   etb: ["etb", "ETB", "estimatedBerthing", "berthPlanDt", "etbDt", "접안예정일시", "계선예정일시"],
-  ata: ["ata", "ATA", "actualArrival", "arrDt", "arrivalDt", "입항일시", "입항일자", "입항시간"],
+  ata: ["ata", "ATA", "actualArrival", "arrDt", "arrivalDt", "etryptDt", "ETRYPT_DT", "입항일시", "입항일자", "입항시간"],
   atb: ["atb", "ATB", "actualBerthing", "berthDt", "접안일시", "계선일시"],
-  etd: ["etd", "ETD", "estimatedDeparture", "depPlanDt", "departurePlanDt", "etdDt", "출항예정일시", "출항예정"],
-  atd: ["atd", "ATD", "actualDeparture", "depDt", "departureDt", "출항일시", "출항일자"],
+  etd: ["etd", "ETD", "estimatedDeparture", "depPlanDt", "departurePlanDt", "etdDt", "tkoffPrrrnDt", "TKOFF_PRRRN_DT", "출항예정일시", "출항예정"],
+  atd: ["atd", "ATD", "actualDeparture", "depDt", "departureDt", "tkoffDt", "TKOFF_DT", "출항일시", "출항일자"],
+  next_port_eta: ["next_port_eta", "destination_eta", "dstnEtryptDt", "DSTN_ETRYPT_DT", "차항입항예정일시", "목적항입항예정일시"],
   speed: ["speed", "sog", "SOG", "속력", "속도"],
   lat: ["lat", "latitude", "LAT", "위도"],
   lon: ["lon", "lng", "longitude", "LON", "LONGITUDE", "경도"],
@@ -396,14 +397,56 @@ function flattenJson(value) {
   return [value];
 }
 
+function asArray(value) {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function expandDetailRows(row = {}) {
+  const details = row.details?.detail ?? row.detail ?? row.details;
+  const detailRows = asArray(details).filter(detail => detail && typeof detail === "object" && !Array.isArray(detail));
+  if (!detailRows.length) return [row];
+  const { details: _details, detail: _detail, ...parent } = row;
+  return detailRows.map((detail, index) => ({
+    ...parent,
+    ...detail,
+    _detail_rows_flattened: true,
+    _detail_row_index: index + 1,
+    _detail_row_count: detailRows.length
+  }));
+}
+
+function expandRowsWithDetails(rows = []) {
+  return rows.flatMap(row => row && typeof row === "object" ? expandDetailRows(row) : []);
+}
+
 function parseXmlRows(text) {
   const rows = [];
   for (const match of text.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
     const row = {};
-    for (const field of match[1].matchAll(/<([^!?\/][^>\s]*)[^>]*>([\s\S]*?)<\/\1>/g)) {
-      row[field[1]] = field[2].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
+    const body = match[1];
+    const detailRows = [];
+    for (const detailMatch of body.matchAll(/<detail\b[^>]*>([\s\S]*?)<\/detail>/gi)) {
+      const detail = {};
+      for (const field of detailMatch[1].matchAll(/<([^!?\/][^>\s]*)[^>]*>([\s\S]*?)<\/\1>/g)) {
+        const value = field[2].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
+        if (!/<[^>]+>/.test(value)) detail[field[1]] = value;
+      }
+      if (Object.keys(detail).length) detailRows.push(detail);
     }
-    if (Object.keys(row).length) rows.push(row);
+    for (const field of body.matchAll(/<([^!?\/][^>\s]*)[^>]*>([\s\S]*?)<\/\1>/g)) {
+      const value = field[2].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
+      if (!/<[^>]+>/.test(value)) row[field[1]] = value;
+    }
+    if (detailRows.length) {
+      detailRows.forEach((detail, index) => rows.push({
+        ...row,
+        ...detail,
+        _detail_rows_flattened: true,
+        _detail_row_index: index + 1,
+        _detail_row_count: detailRows.length
+      }));
+    } else if (Object.keys(row).length) rows.push(row);
   }
   if (rows.length) return rows;
   const containers = ["row", "list", "data", "record"];
@@ -462,7 +505,7 @@ function parseCsvRows(text, limit = MAX_SOURCE_ROWS) {
 function parseRows(text, limit = MAX_SOURCE_ROWS) {
   const trimmed = text.trim();
   if (!trimmed) return [];
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return flattenJson(JSON.parse(trimmed)).filter(row => row && typeof row === "object").slice(0, limit);
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return expandRowsWithDetails(flattenJson(JSON.parse(trimmed)).filter(row => row && typeof row === "object")).slice(0, limit);
   if (trimmed.startsWith("<")) return parseXmlRows(trimmed).slice(0, limit);
   if (/^[^\n,]+,/.test(trimmed) || trimmed.includes("\n")) {
     const csvRows = parseCsvRows(trimmed, limit);
@@ -615,6 +658,8 @@ function normalizeRow(row, source, now) {
     atb: normalizeDate(firstValue(adapted, FIELD_ALIASES.atb)),
     etd: normalizeDate(firstValue(adapted, FIELD_ALIASES.etd)),
     atd: normalizeDate(firstValue(adapted, FIELD_ALIASES.atd)),
+    next_port_eta: normalizeDate(firstValue(adapted, FIELD_ALIASES.next_port_eta)),
+    destination_eta: normalizeDate(firstValue(adapted, FIELD_ALIASES.next_port_eta)),
     speed: toNumber(firstValue(adapted, FIELD_ALIASES.speed)),
     lat: toNumber(firstValue(adapted, FIELD_ALIASES.lat)),
     lon: toNumber(firstValue(adapted, FIELD_ALIASES.lon)),
@@ -624,6 +669,9 @@ function normalizeRow(row, source, now) {
     source: source.key,
     source_label: source.label,
     source_profile: sourceProfile,
+    detail_rows_flattened: Boolean(adapted._detail_rows_flattened),
+    detail_row_index: adapted._detail_row_index || null,
+    detail_row_count: adapted._detail_row_count || null,
     source_mode: "real_public_api_snapshot",
     data_confidence: "source_configured",
     raw_source_keys: Object.keys(row).slice(0, 80),
@@ -820,6 +868,12 @@ async function collectRealRows() {
       const sourceRecords = records.filter(record => record.source === source.key);
       diag.normalized_count = sourceRecords.length;
       diag.actionable_count = sourceRecords.filter(record => record.actionable_source_row).length;
+      diag.detail_rows_flattened_count = sourceRecords.filter(record => record.detail_rows_flattened).length;
+      diag.detail_rows_missing_time_count = sourceRecords.filter(record => record.detail_rows_flattened && !record.eta && !record.etd && !record.ata && !record.atd && !record.etb && !record.atb).length;
+      diag.ata_detected_count = sourceRecords.filter(record => record.ata).length;
+      diag.atd_detected_count = sourceRecords.filter(record => record.atd).length;
+      diag.etd_detected_count = sourceRecords.filter(record => record.etd).length;
+      diag.eta_detected_count = sourceRecords.filter(record => record.eta).length;
       if (String(source.key || "").startsWith("port_operation_")) {
         diag.child_enrichment = {
           key: "port_facility_enrichment",
