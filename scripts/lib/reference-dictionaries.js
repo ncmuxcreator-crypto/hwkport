@@ -5,11 +5,19 @@ const REFERENCE_DIR = "data/reference";
 
 function normalize(value) {
   return String(value || "")
+    .normalize("NFKC")
     .trim()
     .toUpperCase()
-    .replace(/[^A-Z0-9가-힣]+/g, " ")
+    .replace(/[^A-Z0-9\uAC00-\uD7A3]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeCompact(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toUpperCase()
+    .replace(/[^A-Z0-9\uAC00-\uD7A3]+/g, "");
 }
 
 function parseCsv(text) {
@@ -50,11 +58,11 @@ function loadCsv(name) {
   return parseCsv(fs.readFileSync(file, "utf8"));
 }
 
-function indexBy(rows, keys) {
+function indexBy(rows, keys, normalizer = normalize) {
   const map = new Map();
   for (const row of rows) {
     for (const key of keys) {
-      const value = normalize(row[key]);
+      const value = normalizer(row[key]);
       if (value) map.set(value, row);
     }
   }
@@ -67,16 +75,20 @@ function classifyAnchorage(record = {}) {
     record.berth,
     record.anchorage_name,
     record.anchorage_zone,
+    record.laidupFcltyNm,
+    record.facility_name_raw,
+    record.facility_name_normalized,
     record.status
   ].filter(Boolean).join(" "));
   if (!text) return null;
   const patterns = [
-    /묘박/,
-    /정박/,
-    /박지/,
-    /외항/,
-    /남외항/,
-    /북외항/,
+    /\uBB18\uBC15/,
+    /\uC815\uBC15/,
+    /\uBC15\uC9C0/,
+    /\uC678\uD56D/,
+    /\uB0A8\uC678\uD56D/,
+    /\uBD81\uC678\uD56D/,
+    /\uB300\uAE30/,
     /\bANCH\b/,
     /\bANCHORAGE\b/,
     /\bO A\b/,
@@ -86,7 +98,7 @@ function classifyAnchorage(record = {}) {
   ];
   if (!patterns.some(pattern => pattern.test(text))) return null;
   return {
-    anchorage_name: record.anchorage_name || record.anchorage_zone || record.berth_name || record.berth || "Anchorage",
+    anchorage_name: record.anchorage_name || record.anchorage_zone || record.berth_name || record.berth || record.laidupFcltyNm || "Anchorage",
     anchorage_class: "anchorage_waiting",
     berth_class: "anchorage",
     is_anchorage_waiting: true
@@ -94,12 +106,12 @@ function classifyAnchorage(record = {}) {
 }
 
 function classifyBerth(record = {}) {
-  const text = normalize([record.berth_name, record.berth, record.status].filter(Boolean).join(" "));
+  const text = normalize([record.berth_name, record.berth, record.laidupFcltyNm, record.status].filter(Boolean).join(" "));
   if (!text) return null;
-  if (/컨테이너|CONTAINER|PNC|HPNT|HJNC|BPT|KBCT/.test(text)) return "container_terminal";
-  if (/원유|유류|돌핀|DOLPHIN|OIL|TANK|LNG|LPG|부이|BUOY/.test(text)) return "tanker_energy_berth";
-  if (/벌크|석탄|광석|시멘트|BULK|COAL|ORE|CEMENT/.test(text)) return "bulk_berth";
-  if (/수리|조선|DOCK|YARD|REPAIR/.test(text)) return "repair_yard";
+  if (/\uCEE8\uD14C\uC774\uB108|CONTAINER|PNC|HPNT|HJNC|BPT|KBCT/.test(text)) return "container_terminal";
+  if (/\uC6D0\uC720|\uC720\uC870|\uC11D\uC720|\uCF00\uBBF8\uCEEC|DOLPHIN|OIL|TANK|LNG|LPG|BUOY/.test(text)) return "tanker_energy_berth";
+  if (/\uBC8C\uD06C|\uC0B0\uBB3C|\uAD11\uC11D|BULK|COAL|ORE|CEMENT/.test(text)) return "bulk_berth";
+  if (/\uC218\uB9AC|\uC870\uC120|DOCK|YARD|REPAIR/.test(text)) return "repair_yard";
   return null;
 }
 
@@ -107,15 +119,25 @@ function normalizeVesselType(record = {}) {
   const text = normalize([record.vessel_type, record.vessel_type_group].filter(Boolean).join(" "));
   if (!text) return null;
   const rules = [
-    { vessel_type: "Bulk Carrier", vessel_type_group: "bulk_carrier", pattern: /산물|벌크|BULK|BULKER|CAPE|CAPESIZE|ORE|광석/ },
-    { vessel_type: "Tanker", vessel_type_group: "tanker", pattern: /원유|유조|석유|케미컬|제품|TANKER|VLCC|CRUDE|CHEMICAL|PRODUCT/ },
-    { vessel_type: "PCTC", vessel_type_group: "pctc", pattern: /자동차|차량|PCTC|PCC|CAR CARRIER|RO RO|RORO/ },
-    { vessel_type: "Container Ship", vessel_type_group: "container", pattern: /컨테이너|CONTAINER/ },
-    { vessel_type: "Gas Carrier", vessel_type_group: "lng_lpg", pattern: /LNG|LPG|가스|GAS/ },
-    { vessel_type: "Passenger/Cruise", vessel_type_group: "passenger", pattern: /CRUISE|PASSENGER|여객|크루즈/ },
-    { vessel_type: record.vessel_type || "Non-commercial small craft", vessel_type_group: "excluded_small_craft", pattern: /어선|예선|TUG|FISH|관공선|작업선|WORKBOAT|PATROL|준설|DREDGER/ }
+    { vessel_type: "Bulk Carrier", vessel_type_group: "bulk_carrier", pattern: /\uC0B0\uBB3C|\uBC8C\uD06C|BULK|BULKER|CAPE|CAPESIZE|ORE|\uAD11\uC11D/ },
+    { vessel_type: "Tanker", vessel_type_group: "tanker", pattern: /\uC6D0\uC720|\uC720\uC870|\uC11D\uC720|\uCF00\uBBF8\uCEEC|\uC81C\uD488|TANKER|VLCC|CRUDE|CHEMICAL|PRODUCT/ },
+    { vessel_type: "PCTC", vessel_type_group: "pctc", pattern: /\uC790\uB3D9\uCC28|\uCC28\uB7C9|PCTC|PCC|CAR CARRIER|RO RO|RORO/ },
+    { vessel_type: "Container Ship", vessel_type_group: "container", pattern: /\uCEE8\uD14C\uC774\uB108|CONTAINER/ },
+    { vessel_type: "Gas Carrier", vessel_type_group: "lng_lpg", pattern: /LNG|LPG|\uAC00\uC2A4|GAS/ },
+    { vessel_type: "Passenger/Cruise", vessel_type_group: "passenger", pattern: /CRUISE|PASSENGER|\uC5EC\uAC1D|\uD06C\uB8E8\uC988/ },
+    { vessel_type: record.vessel_type || "Non-commercial small craft", vessel_type_group: "excluded_small_craft", pattern: /\uC5B4\uC120|\uC608\uC120|TUG|FISH|\uAD00\uACF5\uC120|\uC791\uC5C5\uC120|WORKBOAT|PATROL|\uC900\uC124|DREDGER/ }
   ];
   return rules.find(rule => rule.pattern.test(text)) || null;
+}
+
+function seedCandidates(record = {}) {
+  return [
+    normalize(record.imo),
+    normalize(record.mmsi),
+    normalize(record.call_sign),
+    normalizeCompact(record.vessel_name),
+    normalize(record.vessel_name)
+  ].filter(Boolean);
 }
 
 export function loadReferenceDictionaries() {
@@ -142,7 +164,10 @@ export function loadReferenceDictionaries() {
       vesselTypes: indexBy(vesselTypes, ["vessel_type", "alias"]),
       operators: indexBy(operators, ["operator", "alias"]),
       agents: indexBy(agents, ["agent", "alias"]),
-      vesselMasterSeed: indexBy(vesselMasterSeed, ["imo", "mmsi", "call_sign", "canonical_name", "alias"])
+      vesselMasterSeed: new Map([
+        ...indexBy(vesselMasterSeed, ["imo", "mmsi", "call_sign"], normalize),
+        ...indexBy(vesselMasterSeed, ["vessel_name", "normalized_name", "canonical_name", "alias"], normalizeCompact)
+      ])
     }
   };
 }
@@ -165,7 +190,7 @@ export function enrichWithReferenceDictionaries(records = [], dictionaries = loa
       enriched.berth_classification_source = "dictionary";
     }
 
-    const anchorageRef = indexes.anchorages?.get(normalize(record.anchorage_name || record.anchorage_zone || record.berth_name || record.berth));
+    const anchorageRef = indexes.anchorages?.get(normalize(record.anchorage_name || record.anchorage_zone || record.berth_name || record.berth || record.laidupFcltyNm));
     if (anchorageRef) {
       enriched.anchorage_name = anchorageRef.anchorage_name || enriched.anchorage_name || enriched.anchorage_zone;
       enriched.anchorage_class = anchorageRef.anchorage_class || "anchorage_waiting";
@@ -215,17 +240,19 @@ export function enrichWithReferenceDictionaries(records = [], dictionaries = loa
       enriched.agent_normalized = agentRef.agent_normalized || normalize(enriched.agent);
     }
 
-    const seedRef = indexes.vesselMasterSeed?.get(normalize(record.imo)) ||
-      indexes.vesselMasterSeed?.get(normalize(record.mmsi)) ||
-      indexes.vesselMasterSeed?.get(normalize(record.call_sign)) ||
-      indexes.vesselMasterSeed?.get(normalize(record.vessel_name));
+    const seedRef = seedCandidates(record).map(key => indexes.vesselMasterSeed?.get(key)).find(Boolean);
     if (seedRef) {
       enriched.imo = enriched.imo || seedRef.imo;
       enriched.mmsi = enriched.mmsi || seedRef.mmsi;
       enriched.call_sign = enriched.call_sign || seedRef.call_sign;
+      enriched.vessel_name = enriched.vessel_name || seedRef.vessel_name || seedRef.canonical_name;
+      enriched.normalized_vessel_name = enriched.normalized_vessel_name || seedRef.normalized_name || normalizeCompact(enriched.vessel_name);
+      enriched.vessel_type = enriched.vessel_type || seedRef.vessel_type;
       enriched.gt = enriched.gt || Number(seedRef.gt || 0);
       enriched.operator = enriched.operator || seedRef.operator;
       enriched.vessel_master_seed_match = true;
+      enriched.imo_recovered_from_seed = Boolean(!record.imo && seedRef.imo);
+      enriched.imo_recovery_source = "vessel_master_seed";
     }
 
     enriched.reference_enriched = Boolean(portRef || berthRef || anchorageRef || anchoragePattern || berthClass || typeRef || typePattern || operatorRef || agentRef || seedRef);

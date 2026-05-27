@@ -1040,6 +1040,8 @@ function buildImoRecoveryQueue(records = []) {
       stay_hours: v.stay_hours || 0,
       anchorage_hours: v.anchorage_hours || 0,
       is_anchorage_waiting: Boolean(v.is_anchorage_waiting),
+      vessel_master_seed_match: Boolean(v.vessel_master_seed_match),
+      imo_recovery_source: v.imo_recovery_source || "",
       hybrid_entity_key: v.hybrid_entity_key,
       identification_method: v.identification_method,
       imo_status: v.imo_status,
@@ -1048,6 +1050,21 @@ function buildImoRecoveryQueue(records = []) {
       commercial_score: v.total_sales_priority_score || 0,
       reason_codes: v.reason_codes || []
     }));
+}
+
+function buildImoRecoveryKpis(records = []) {
+  const target = records.filter(isMainCommercialVessel);
+  const highValue = target.filter(v => (v.commercial_value_score || v.total_sales_priority_score || 0) >= REVIEW_TARGET_THRESHOLD || Number(v.gt || 0) >= COMMERCIAL_GT_THRESHOLD || v.is_anchorage_waiting);
+  return {
+    total_vessels: records.length,
+    target_vessels: target.length,
+    imo_coverage: coverageRatio(target, v => hasValue(v.imo)),
+    high_value_imo_coverage: coverageRatio(highValue, v => hasValue(v.imo)),
+    recovered_imo_count: records.filter(v => v.imo_recovered_from_seed || v.vessel_master_seed_match && v.imo).length,
+    unresolved_high_value_count: highValue.filter(v => !v.imo).length,
+    call_sign_available_count: target.filter(v => hasValue(v.call_sign)).length,
+    recovery_queue_count: buildImoRecoveryQueue(target).length
+  };
 }
 
 function buildHighValueTargets(records = []) {
@@ -2039,6 +2056,7 @@ try {
     immediate_target_count: immediateTargets.length,
     scoring_diagnostics: scoringDiagnostics,
     basic_info_coverage: buildBasicInfoCoverage(vessels),
+    imo_recovery_kpis: buildImoRecoveryKpis(vessels),
     imo_missing_count: vessels.filter(v => !v.imo).length,
     imo_recovered_count: vessels.filter(v => v.vessel_master_seed_match && v.imo).length,
     high_value_low_confidence_count: buildHighValueLowConfidence(vessels).length,
@@ -2086,6 +2104,7 @@ try {
   fs.writeFileSync("dashboard/api/staying-vessels.json", JSON.stringify(stayingVessels, null, 2));
   fs.writeFileSync("dashboard/api/arrival-pipeline.json", JSON.stringify(arrivalPipeline, null, 2));
   fs.writeFileSync("dashboard/api/imo-recovery-queue.json", JSON.stringify(buildImoRecoveryQueue(vessels), null, 2));
+  fs.writeFileSync("dashboard/api/imo-recovery-priority.json", JSON.stringify(buildImoRecoveryQueue(vessels), null, 2));
   fs.writeFileSync("dashboard/api/high-value-targets.json", JSON.stringify(buildHighValueTargets(vessels), null, 2));
   fs.writeFileSync("dashboard/api/unknown-gt-review.json", JSON.stringify(buildUnknownGtReview(vessels), null, 2));
   fs.writeFileSync("dashboard/api/high-value-low-confidence.json", JSON.stringify(buildHighValueLowConfidence(vessels), null, 2));

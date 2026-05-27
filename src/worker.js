@@ -457,6 +457,19 @@ function buildUnknownImo(records) {
     }));
 }
 
+function buildImoRecoveryKpis(records = []) {
+  const target = records.filter(isMainCommercialVessel);
+  const highValue = target.filter(v => (v.commercial_value_score || v.total_sales_priority_score || 0) >= 35 || Number(v.gt || 0) >= 5000 || v.is_anchorage_waiting);
+  return {
+    total_vessels: records.length,
+    target_vessels: target.length,
+    imo_coverage: coverageRatio(target, v => hasValue(v.imo)),
+    high_value_imo_coverage: coverageRatio(highValue, v => hasValue(v.imo)),
+    recovered_imo_count: records.filter(v => v.imo_recovered_from_seed || v.vessel_master_seed_match && v.imo).length,
+    unresolved_high_value_count: highValue.filter(v => !v.imo).length
+  };
+}
+
 function buildHighValueTargets(records) {
   return sortCommercialPriority(records)
     .filter(v => v.high_value_target || (Number(v.gt || 0) >= 30000 && /bulk|bulk_carrier|tanker|pctc/.test(String(v.vessel_type_group || v.vessel_type || "").toLowerCase())))
@@ -689,6 +702,7 @@ function buildStatus(records, source) {
     sales_candidate_count: buckets.target_vessels.filter(v => (v.commercial_value_score || 0) >= SALES_CANDIDATE_THRESHOLD && v.commercial_relevance_status === "target_vessel").length,
     immediate_target_count: buckets.target_vessels.filter(v => (v.commercial_value_score || 0) >= IMMEDIATE_TARGET_THRESHOLD && v.commercial_relevance_status === "target_vessel").length,
     imo_missing_count: buckets.target_vessels.filter(v => !v.imo).length,
+    imo_recovery_kpis: buildImoRecoveryKpis(buckets.target_vessels),
     high_value_low_confidence_count: buildHighValueLowConfidence(buckets.target_vessels).length,
     opportunity_usd: records.reduce((sum, v) => sum + (v.opportunity_usd || 0), 0),
     frontend_poll_interval_seconds: 900,
@@ -732,6 +746,7 @@ async function apiResponse(pathname, env) {
   if (pathname.endsWith("/staying-vessels.json")) return json(buckets.staying_vessels, { headers: corsHeaders() });
   if (pathname.endsWith("/arrival-pipeline.json")) return json(buckets.arrival_pipeline, { headers: corsHeaders() });
   if (pathname.endsWith("/imo-recovery-queue.json")) return json(buildUnknownImo(records), { headers: corsHeaders() });
+  if (pathname.endsWith("/imo-recovery-priority.json")) return json(buildUnknownImo(records), { headers: corsHeaders() });
   if (pathname.endsWith("/high-value-targets.json")) return json(buildHighValueTargets(records), { headers: corsHeaders() });
   if (pathname.endsWith("/review/unknown-gt.json")) return json(buildUnknownGtReview(records), { headers: corsHeaders() });
   if (pathname.endsWith("/review/high-value-low-confidence.json")) return json(buildHighValueLowConfidence(records), { headers: corsHeaders() });

@@ -86,7 +86,7 @@ export async function saveToSupabase(records, options = {}) {
     sales_candidates_count: records.filter(r => (r.commercial_value_score || r.total_sales_priority_score || 0) >= 50 || r.is_cleaning_candidate).length,
     immediate_targets_count: records.filter(r => (r.commercial_value_score || r.total_sales_priority_score || 0) >= 75 || r.is_immediate_candidate).length,
     imo_missing_count: records.filter(r => !r.imo).length,
-    imo_recovered_count: records.filter(r => r.vessel_master_seed_match && r.imo).length,
+    imo_recovered_count: records.filter(r => r.imo_recovered_from_seed || r.vessel_master_seed_match && r.imo).length,
     high_value_low_confidence_count: records.filter(r => (r.commercial_value_score || 0) >= 35 && ((r.data_confidence_score || 0) < 60 || !r.imo)).length,
     actionable_rows: records.filter(r => r.actionable_source_row !== false).length,
     validation_status: promotion.promotable ? "passed" : "not_promoted",

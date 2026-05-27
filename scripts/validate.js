@@ -1,4 +1,4 @@
-import fs from "fs";
+﻿import fs from "fs";
 
 const required = [
   "data/latest-lite.json",
@@ -16,6 +16,7 @@ const required = [
   "dashboard/api/staying-vessels.json",
   "dashboard/api/arrival-pipeline.json",
   "dashboard/api/imo-recovery-queue.json",
+  "dashboard/api/imo-recovery-priority.json",
   "dashboard/api/high-value-targets.json",
   "dashboard/api/unknown-gt-review.json",
   "dashboard/api/high-value-low-confidence.json",
@@ -265,7 +266,7 @@ for (const route of ["/ports.json", "/candidates.json", "/hot-candidates.json", 
   if (!worker.includes(route)) throw new Error(`Worker missing port-first API route marker: ${route}`);
 }
 const referenceDictionaries = fs.readFileSync("scripts/lib/reference-dictionaries.js", "utf8");
-for (const marker of ["classifyAnchorage", "classifyBerth", "normalizeVesselType", "남외항", "ANCH", "O A", "bulk_carrier", "pctc"]) {
+for (const marker of ["classifyAnchorage", "classifyBerth", "normalizeVesselType", "\\uB0A8\\uC678\\uD56D", "ANCH", "O A", "bulk_carrier", "pctc", "vesselMasterSeed"]) {
   if (!referenceDictionaries.includes(marker)) throw new Error(`Reference dictionary enrichment missing marker: ${marker}`);
 }
 const gdriveLib = fs.readFileSync("scripts/lib/gdrive.js", "utf8");
