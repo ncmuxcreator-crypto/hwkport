@@ -130,7 +130,8 @@ if (!workflow.includes("runs-on: ubuntu-latest") || workflow.includes("runs-on: 
 if (!workflow.includes("group: ${{ github.workflow }}-${{ github.ref }}") || !workflow.includes("cancel-in-progress: true")) {
   throw new Error("Longterm workflow concurrency must be isolated by workflow and ref");
 }
-if (!workflow.includes("timeout-minutes: 30")) {
+const longtermJobTimeouts = workflow.match(/^\s{4}timeout-minutes:\s*30\s*$/gm) || [];
+if (!longtermJobTimeouts.length) {
   throw new Error("Longterm workflow job timeout must be 30 minutes");
 }
 if (!workflow.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflow.includes("MAX_SOURCE_ROWS") || !workflow.includes("ENABLE_SOURCE_CSV") || !workflow.includes("COLLECTOR_DEBUG_VERBOSE") || workflow.includes("COLLECTOR_DEBUG_ONLY: port_operation_busan") || !workflow.includes("SOURCE_TIMEOUT_MS: 8000") || !workflow.includes("timeout-minutes: 7")) {
@@ -238,7 +239,8 @@ const workflowV2 = fs.readFileSync(".github/workflows/longterm-update-v2.yml", "
 if (!workflowV2.includes("name: Longterm Update V2") || !workflowV2.includes("runs-on: ubuntu-latest") || !workflowV2.includes("group: ${{ github.workflow }}-${{ github.ref }}")) {
   throw new Error("Longterm Update V2 bypass workflow is incomplete");
 }
-if (!workflowV2.includes("timeout-minutes: 30")) {
+const longtermV2JobTimeouts = workflowV2.match(/^\s{4}timeout-minutes:\s*30\s*$/gm) || [];
+if (!longtermV2JobTimeouts.length) {
   throw new Error("Longterm Update V2 job timeout must be 30 minutes");
 }
 if (!workflowV2.includes("push:") || !workflowV2.includes("branches:") || !workflowV2.includes("- main")) {
