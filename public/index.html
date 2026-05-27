@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HWK ??쭔 ?곸뾽 ?명뀛由ъ쟾??肄섏넄</title>
+<title>HWK 항만 상업 의사결정 콘솔</title>
 <style>
 :root{--bg:#070b13;--panel:#101827;--line:#263347;--text:#edf4ff;--muted:#9aa9bd;--blue:#38bdf8;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--violet:#a78bfa}
 *{box-sizing:border-box}
@@ -50,54 +50,54 @@ th{position:sticky;top:0;background:#0b1220;color:#93c5fd;font-size:12px;z-index
   <header class="top">
     <div>
       <div class="eyebrow">HullWiper Korea Biofouling Intelligence</div>
-      <h1>??쭔 ?곸뾽 ?섏궗寃곗젙 肄섏넄</h1>
-      <div class="sub">吏湲??대뼡 5,000GT+ ?좊컯???곕씫?댁빞 ?섎ŉ, 洹??댁쑀媛 臾댁뾿?몄? ??쭔쨌泥댁꽑쨌臾섎컯쨌?좎쥌쨌?묒뾽 媛?μ꽦 湲곗??쇰줈 ?먮떒?⑸땲??</div>
+      <h1>항만 상업 의사결정 콘솔</h1>
+      <div class="sub">지금 어떤 5,000GT+ 선박에 연락해야 하며, 그 이유가 무엇인지 항만·체선·묘박·선종·작업 가능성 기준으로 판단합니다.</div>
     </div>
-    <div id="statusBadge" class="badge">?곗씠???뺤씤 以?/div>
+    <div id="statusBadge" class="badge">데이터 확인 중</div>
   </header>
   <div id="dataNotice"></div>
 
   <section class="metrics">
-    <div class="metric"><span>????좊컯</span><strong id="mTarget">-</strong></div>
-    <div class="metric"><span>泥대쪟 ?좊컯</span><strong id="mStaying">-</strong></div>
-    <div class="metric"><span>臾섎컯/?湲??좊컯</span><strong id="mCongestion">-</strong></div>
-    <div class="metric"><span>利됱떆 ?곕씫 ?꾨낫</span><strong id="mImmediate">-</strong></div>
-    <div class="metric"><span>?곸뾽 ?꾨낫</span><strong id="mCandidates">-</strong></div>
-    <div class="metric"><span>IMO 蹂듦뎄 ???/span><strong id="mImo">-</strong></div>
-    <div class="metric"><span>怨좉?移샕룹??좊ː ?꾨낫</span><strong id="mLowConfidence">-</strong></div>
-    <div class="metric"><span>理쒖떊??/span><strong id="mFresh" style="font-size:16px">-</strong></div>
+    <div class="metric"><span>대상 선박</span><strong id="mTarget">-</strong></div>
+    <div class="metric"><span>체류 선박</span><strong id="mStaying">-</strong></div>
+    <div class="metric"><span>묘박/대기 선박</span><strong id="mCongestion">-</strong></div>
+    <div class="metric"><span>즉시 연락 후보</span><strong id="mImmediate">-</strong></div>
+    <div class="metric"><span>영업 후보</span><strong id="mCandidates">-</strong></div>
+    <div class="metric"><span>IMO 복구 대상</span><strong id="mImo">-</strong></div>
+    <div class="metric"><span>고가치·저신뢰 후보</span><strong id="mLowConfidence">-</strong></div>
+    <div class="metric"><span>최신성</span><strong id="mFresh" style="font-size:16px">-</strong></div>
   </section>
 
   <section class="section">
-    <h2>??쭔 ?명뀛由ъ쟾??/h2>
-    <div id="portOverview" class="cards"><div class="empty">??쭔 ?곗씠?곕? 遺덈윭?ㅻ뒗 以묒엯?덈떎.</div></div>
+    <h2>항만 인텔리전스</h2>
+    <div id="portOverview" class="cards"><div class="empty">항만 데이터를 불러오는 중입니다.</div></div>
   </section>
 
   <section class="section grid2">
     <div>
-      <h2>?곸뾽 湲고쉶</h2>
-      <div id="opportunityFeed" class="cards"><div class="empty">?곸뾽 湲고쉶瑜?怨꾩궛?섎뒗 以묒엯?덈떎.</div></div>
+      <h2>영업 기회</h2>
+      <div id="opportunityFeed" class="cards"><div class="empty">영업 기회를 계산하는 중입니다.</div></div>
     </div>
     <div>
-      <h2>利됱떆 ?곕씫 ?꾨낫</h2>
-      <div id="immediateTargets" class="cards"><div class="empty">利됱떆 ?곕씫 ?꾨낫瑜??뺤씤?섎뒗 以묒엯?덈떎.</div></div>
+      <h2>즉시 연락 후보</h2>
+      <div id="immediateTargets" class="cards"><div class="empty">즉시 연락 후보를 확인하는 중입니다.</div></div>
     </div>
   </section>
 
   <section class="section">
-    <h2>????좊컯</h2>
+    <h2>대상 선박</h2>
     <div class="toolbar">
-      <input id="searchBox" placeholder="?좊컯紐? ?몄텧遺?? ??쭔, ?由ъ젏 寃??>
-      <select id="portFilter"><option value="">?꾩껜 ??쭔</option></select>
-      <select id="bandFilter"><option value="">?꾩껜 ?곗꽑?쒖쐞</option><option value="immediate">利됱떆 ?곕씫 ?꾨낫</option><option value="high">?곸뾽 ?꾨낫</option><option value="monitor">紐⑤땲?곕쭅</option><option value="review">寃?????/option></select>
-      <select id="statusFilter"><option value="">?꾩껜 ?곹깭</option><option value="staying">泥대쪟 ?좊컯</option><option value="arrival">?낇빆 ?덉젙 ?좊컯</option><option value="anchorage">臾섎컯/?湲??좊컯</option></select>
-      <select id="gtFilter"><option value="">GT ?꾩껜</option><option value="gt5000">5,000GT+</option><option value="gt30000">30,000GT+</option><option value="unknown">GT ?뺤씤 ?꾩슂</option></select>
-      <button id="reloadBtn">?덈줈怨좎묠</button>
+      <input id="searchBox" placeholder="선박명, 호출부호, 항만, 대리점 검색">
+      <select id="portFilter"><option value="">전체 항만</option></select>
+      <select id="bandFilter"><option value="">전체 우선순위</option><option value="immediate">즉시 연락 후보</option><option value="high">영업 후보</option><option value="monitor">모니터링</option><option value="review">검토 대상</option></select>
+      <select id="statusFilter"><option value="">전체 상태</option><option value="staying">체류 선박</option><option value="arrival">입항 예정 선박</option><option value="anchorage">묘박/대기 선박</option></select>
+      <select id="gtFilter"><option value="">GT 전체</option><option value="gt5000">5,000GT+</option><option value="gt30000">30,000GT+</option><option value="unknown">GT 확인 필요</option></select>
+      <button id="reloadBtn">새로고침</button>
     </div>
     <div class="panel">
       <div class="ph">
-        <div><strong id="tableTitle">?곸뾽 ?寃??좊컯</strong><div class="small" id="tableSub">???쒕ぉ???대┃?섎㈃ ?뺣젹?⑸땲?? ?곸뾽 媛移섏? 寃???꾩슂?깆쓣 湲곗??쇰줈 ?먮떒?섏꽭??</div></div>
-        <div id="tableCount" class="chip info">0嫄?/div>
+        <div><strong id="tableTitle">영업 타겟 선박</strong><div class="small" id="tableSub">열 제목을 클릭하면 정렬됩니다. 상업 가치와 검토 필요성을 기준으로 판단하세요.</div></div>
+        <div id="tableCount" class="chip info">0건</div>
       </div>
       <div class="tablewrap">
         <table>
@@ -111,36 +111,36 @@ th{position:sticky;top:0;background:#0b1220;color:#93c5fd;font-size:12px;z-index
 
   <section class="section grid2">
     <div>
-      <h2>泥댁꽑쨌臾섎컯 ?덊듃留?/h2>
+      <h2>체선·묘박 히트맵</h2>
       <div id="congestionHeat" class="heat"></div>
     </div>
     <div>
-      <h2>?낇빆 ?덉젙 ?좊컯</h2>
-      <div id="arrivalPipeline" class="cards"><div class="empty">?낇빆 ?덉젙 ?좊컯??遺덈윭?ㅻ뒗 以묒엯?덈떎.</div></div>
+      <h2>입항 예정 선박</h2>
+      <div id="arrivalPipeline" class="cards"><div class="empty">입항 예정 선박을 불러오는 중입니다.</div></div>
     </div>
   </section>
 
   <section class="section">
-    <h2>寃?????/h2>
+    <h2>검토 대상</h2>
     <div class="grid3">
-      <div class="queue"><strong>IMO 蹂듦뎄 ???/strong><div id="imoQueue" class="queueList"></div></div>
-      <div class="queue"><strong>GT ?뺤씤 ?꾩슂</strong><div id="unknownGtQueue" class="queueList"></div></div>
-      <div class="queue"><strong>怨좉?移샕룹??좊ː ?꾨낫</strong><div id="lowConfidenceQueue" class="queueList"></div></div>
+      <div class="queue"><strong>IMO 복구 대상</strong><div id="imoQueue" class="queueList"></div></div>
+      <div class="queue"><strong>GT 확인 필요</strong><div id="unknownGtQueue" class="queueList"></div></div>
+      <div class="queue"><strong>고가치·저신뢰 후보</strong><div id="lowConfidenceQueue" class="queueList"></div></div>
     </div>
   </section>
 
   <section class="section grid2">
     <div class="panel">
-      <div class="ph"><strong>?섏쭛 吏꾨떒</strong><span id="diagnosticSummary" class="chip info">?뺤씤 以?/span></div>
+      <div class="ph"><strong>수집 진단</strong><span id="diagnosticSummary" class="chip info">확인 중</span></div>
       <div id="diagnostics" class="empty"></div>
     </div>
     <aside class="panel">
-      <div class="ph"><strong>?좊컯 ?곸꽭</strong><span id="detailBand" class="chip info">?좏깮 ?놁쓬</span></div>
-      <div id="detail" class="detail small">???먮뒗 移대뱶瑜??좏깮?섎㈃ ?꾨낫 ?좎젙 ?ъ쑀媛 ?쒖떆?⑸땲??</div>
+      <div class="ph"><strong>선박 상세</strong><span id="detailBand" class="chip info">선택 없음</span></div>
+      <div id="detail" class="detail small">행 또는 카드를 선택하면 후보 선정 사유가 표시됩니다.</div>
     </aside>
   </section>
 
-  <div class="footer">Port Operation API瑜?湲곕낯 ?좊컯 ?먯옣?쇰줈 ?ъ슜?섍퀬, ?섎㉧吏 ?뚯뒪??蹂닿컯 ?뺣낫濡쒕쭔 ?ъ슜?⑸땲?? 蹂닿컯 ?ㅽ뙣??????좊컯 紐⑸줉?먯꽌 ?좊컯???쒓굅?섏? ?딆뒿?덈떎.</div>
+  <div class="footer">Port Operation API를 기본 선박 원장으로 사용하고, 나머지 소스는 보강 정보로만 사용합니다. 보강 실패는 대상 선박 목록에서 선박을 제거하지 않습니다.</div>
 </div>
 
 <script>
