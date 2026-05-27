@@ -605,6 +605,8 @@ let supabaseStatus = "not_configured";
 let supabaseWrite = { status: "not_configured" };
 let gdriveArchive = { status: "not_configured" };
 let vessels = [];
+let collectedRows = [];
+let collectorDiagnosticsAfterCollection = {};
 
 function ensureDirs() {
   fs.mkdirSync("dashboard/api", { recursive: true });
@@ -1988,8 +1990,8 @@ try {
   const apiSources = detectSecrets();
   console.log(`[HWK] API groups enabled: ${apiSources.filter(s => s.enabled).map(s => s.key).join(", ") || "none"}`);
   const dictionaries = loadReferenceDictionaries();
-  const collectedRows = await collectKoreaData({ apiSources });
-  const collectorDiagnosticsAfterCollection = getCollectorDiagnostics();
+  collectedRows = await collectKoreaData({ apiSources });
+  collectorDiagnosticsAfterCollection = getCollectorDiagnostics();
   vessels = enrichSalesSignals(enrichWithReferenceDictionaries(collectedRows, dictionaries));
   vessels.sort((a, b) => (b.cleaning_candidate_score || 0) - (a.cleaning_candidate_score || 0) || (b.risk_score || 0) - (a.risk_score || 0));
 
