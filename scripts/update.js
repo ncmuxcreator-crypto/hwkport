@@ -613,12 +613,13 @@ function buildDataQuality(records, apiSources = []) {
 
 function buildDataMode(records, apiSources = [], supabaseStatus = "not_configured") {
   const enabledSources = apiSources.filter(s => s.enabled);
+  const fallbackUsed = Boolean(getCollectorDiagnostics()?.fallback_used);
   const sampleRows = records.filter(v => String(v.source_mode || "").includes("sample")).length;
   const actionableRows = records.filter(v => v.actionable_source_row && !String(v.source_mode || "").includes("sample")).length;
   const apiReadyRows = records.filter(v => Array.isArray(v.api_ready) && v.api_ready.length > 0).length;
-  const mode = sampleRows === records.length ? "sample_only" : apiReadyRows > 0 ? "api_ready_snapshot" : "static_snapshot";
+  const mode = fallbackUsed || sampleRows === records.length ? "sample_only" : apiReadyRows > 0 ? "api_ready_snapshot" : "static_snapshot";
   const label = mode === "sample_only" ? "SAMPLE DATA" : mode === "api_ready_snapshot" ? "API READY SNAPSHOT" : "STATIC SNAPSHOT";
-  const liveReady = enabledSources.length > 0 && sampleRows < records.length && supabaseStatus === "synced";
+  const liveReady = !fallbackUsed && enabledSources.length > 0 && sampleRows < records.length && supabaseStatus === "synced";
   return {
     mode,
     label,
@@ -628,6 +629,7 @@ function buildDataMode(records, apiSources = [], supabaseStatus = "not_configure
     actionable_rows: actionableRows,
     enabled_source_groups: enabledSources.map(s => s.key),
     supabase_status: supabaseStatus,
+    fallback_used: fallbackUsed,
     message: mode === "sample_only"
       ? "Dashboard is render-ready but currently using sample vessels. Connect public/API collectors to replace sample rows."
       : "Dashboard has at least one configured source group. Verify collector output before treating it as live operating data.",

@@ -2,6 +2,15 @@ const SOURCE_TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 25000);
 const MAX_OUTPUT_ROWS = Number(process.env.MAX_OUTPUT_ROWS || 500);
 const DEFAULT_PORT_OPERATION_API_URL = "http://apis.data.go.kr/1192000/VsslEtrynd5/Info5";
 const DEFAULT_CARGO_HARBOR_USE_API_URL = "http://apis.data.go.kr/1192000/CargHarborUse2/Info";
+const DEFAULT_PORT_OPERATION_CODES = {
+  busan: "020",
+  incheon: "030",
+  yeosu_gwangyang: "620",
+  ulsan: "820",
+  pyeongtaek_dangjin: "031",
+  pohang: "810",
+  masan_jinhae: "622"
+};
 
 let diagnostics = {
   generated_at: null,
@@ -48,6 +57,14 @@ function env(name) {
   return process.env[name] && String(process.env[name]).trim();
 }
 
+function envAny(...names) {
+  for (const name of names) {
+    const value = env(name);
+    if (value) return value;
+  }
+  return "";
+}
+
 function hasEmbeddedKey(urlValue) {
   try {
     const url = new URL(urlValue);
@@ -59,6 +76,55 @@ function hasEmbeddedKey(urlValue) {
 
 function canAttempt(source) {
   return Boolean(source.url && (source.noKeyRequired || source.serviceKey || hasEmbeddedKey(source.url)));
+}
+
+function formatDateCompact(date = new Date()) {
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  return `${yyyy}${mm}${dd}`;
+}
+
+function configuredPortOperationCodes() {
+  const raw = env("PORT_OPERATION_PORT_CODES") || env("PORT_MIS_PORT_CODES");
+  if (!raw) return DEFAULT_PORT_OPERATION_CODES;
+  const mapped = { ...DEFAULT_PORT_OPERATION_CODES };
+  for (const part of raw.split(/[,\n]+/).map(v => v.trim()).filter(Boolean)) {
+    const [name, code] = part.split(/[:=]/).map(v => v?.trim()).filter(Boolean);
+    if (name && code) mapped[name.toLowerCase().replace(/[^a-z0-9]+/g, "_")] = code;
+  }
+  return mapped;
+}
+
+function maskServiceKey(url) {
+  const copy = new URL(url);
+  for (const key of ["serviceKey", "ServiceKey", "service_key", "key", "apiKey", "api_key"]) {
+    if (copy.searchParams.has(key)) copy.searchParams.set(key, "***");
+  }
+  return copy.toString();
+}
+
+function resultMeta(text) {
+  const trimmed = String(text || "").trim();
+  const meta = {};
+  if (trimmed.startsWith("<")) {
+    for (const key of ["resultCode", "resultMsg", "totalCount"]) {
+      const match = trimmed.match(new RegExp(`<${key}\\b[^>]*>([\\s\\S]*?)<\\/${key}>`, "i"));
+      if (match) meta[key] = match[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
+    }
+  } else if (trimmed.startsWith("{")) {
+    try {
+      const json = JSON.parse(trimmed);
+      const header = json.response?.header || json.header || {};
+      const body = json.response?.body || json.body || {};
+      meta.resultCode = header.resultCode || json.resultCode;
+      meta.resultMsg = header.resultMsg || json.resultMsg;
+      meta.totalCount = body.totalCount || json.totalCount;
+    } catch {
+      // Diagnostics only; ignore malformed metadata.
+    }
+  }
+  return meta;
 }
 
 function firstValue(row, aliases) {
@@ -97,6 +163,7 @@ function sourceType(source = {}) {
   if (source.key === "mof_ais_info") return "identity";
   if (source.key === "mof_ais_stat") return "traffic_stat";
   if (String(source.key || "").startsWith("mof_vts_")) return "vts_movement";
+  if (String(source.key || "").startsWith("port_operation_")) return "schedule_or_berth";
   if (/berth|operation|cargo|terminal|port_operation/i.test(source.key || "")) return "schedule_or_berth";
   return "public_api";
 }
@@ -120,6 +187,10 @@ function isActionableRecord(record = {}) {
 function adaptSourceRecord(row, source) {
   const type = sourceType(source);
   const adapted = { ...row };
+  if (String(source.key || "").startsWith("port_operation_")) {
+    adapted.prtAgCd = adapted.prtAgCd || source.prtAgCd;
+    adapted.port = adapted.port || source.portName || source.prtAgCd;
+  }
   if (type === "movement_only" || type === "vts_movement") {
     adapted.status = firstValue(row, FIELD_ALIASES.status) || "Observed movement";
     adapted.port = firstValue(row, FIELD_ALIASES.port) || source.portCode || "";
@@ -136,6 +207,28 @@ function adaptSourceRecord(row, source) {
 function allSourceConfigs() {
   const vtsBase = env("MOF_VTS_API_BASE");
   const vtsKey = env("MOF_VTS_SERVICE_KEY");
+  const today = formatDateCompact();
+  const sde = env("PORT_OPERATION_START_DATE") || today;
+  const ede = env("PORT_OPERATION_END_DATE") || sde;
+  const portOperationUrl = env("PORT_OPERATION_API_URL") || DEFAULT_PORT_OPERATION_API_URL;
+  const portOperationKey = envAny("PORT_OPERATION_SERVICE_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY");
+  const portOperationSources = Object.entries(configuredPortOperationCodes()).map(([name, code]) => ({
+    key: `port_operation_${name}`,
+    label: `PORT-MIS VsslEtrynd5 ${name}`,
+    url: portOperationUrl,
+    serviceKey: portOperationKey,
+    portName: name,
+    prtAgCd: code,
+    noTypeParam: true,
+    defaultParams: {
+      prtAgCd: code,
+      sde,
+      ede,
+      deGb: "I",
+      pageNo: "1",
+      numOfRows: "50"
+    }
+  }));
   const vtsCodes = (env("MOF_VTS_PORT_CODES") || "BUSAN,YEOSU,GWANGYANG,ULSAN,PYEONGTAEK,POHANG,HADONG,MASAN,INCHEON")
     .split(/[,\s]+/)
     .map(code => code.trim())
@@ -143,7 +236,7 @@ function allSourceConfigs() {
 
   return [
     { key: "source_csv", label: "Core external snapshot CSV", url: env("SOURCE_CSV_URL"), serviceKey: null, noKeyRequired: true },
-    { key: "port_operation", label: "PORT-MIS VsslEtrynd5 port entry/departure", url: DEFAULT_PORT_OPERATION_API_URL, serviceKey: env("PORT_OPERATION_SERVICE_KEY") },
+    ...portOperationSources,
     { key: "ulsan_core", label: "Ulsan core", url: env("ULSAN_API_URL"), serviceKey: env("ULSAN_API_KEY") },
     { key: "ulsan_berth_detail", label: "Ulsan berth detail", url: env("ULSAN_BERTH_DETAIL_API_URL"), serviceKey: env("ULSAN_BERTH_DETAIL_API_KEY") },
     { key: "ulsan_cargo_plan", label: "Ulsan cargo plan", url: env("ULSAN_CARGO_PLAN_API_URL"), serviceKey: env("ULSAN_CARGO_PLAN_API_KEY") },
@@ -163,10 +256,13 @@ function buildUrl(source, extraParams = {}) {
     url.searchParams.set("serviceKey", source.serviceKey);
   }
   if (!source.noKeyRequired) {
-    if (!url.searchParams.has("_type")) url.searchParams.set("_type", "json");
+    if (!source.noTypeParam && !url.searchParams.has("_type")) url.searchParams.set("_type", "json");
     if (!url.searchParams.has("pageNo")) url.searchParams.set("pageNo", "1");
     if (!url.searchParams.has("numOfRows")) url.searchParams.set("numOfRows", String(Math.min(MAX_OUTPUT_ROWS, 100)));
     if (source.portCode && !url.searchParams.has("portCode")) url.searchParams.set("portCode", source.portCode);
+  }
+  for (const [key, value] of Object.entries(source.defaultParams || {})) {
+    if (value !== undefined && value !== null && String(value).trim() !== "") url.searchParams.set(key, String(value).trim());
   }
   for (const [key, value] of Object.entries(extraParams)) {
     if (value !== undefined && value !== null && String(value).trim() !== "") url.searchParams.set(key, String(value).trim());
@@ -199,8 +295,13 @@ async function fetchText(source, extraParams = {}) {
     const res = await fetch(url, { signal: controller.signal, headers: { accept: "application/json, text/csv, text/xml, */*" } });
     const buffer = await res.arrayBuffer();
     const text = decodeResponse(buffer, res.headers.get("content-type") || "");
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return { text, url, latency_ms: Date.now() - started };
+    if (!res.ok) {
+      const error = new Error(`HTTP ${res.status}`);
+      error.http_status = res.status;
+      error.response_text = text.slice(0, 500);
+      throw error;
+    }
+    return { text, url, http_status: res.status, latency_ms: Date.now() - started, result_meta: resultMeta(text) };
   } finally {
     clearTimeout(timer);
   }
@@ -302,6 +403,13 @@ function normalizeStatus(value) {
 
 function normalizePort(value, fallback = "") {
   const text = String(value || fallback || "").trim();
+  if (text === "020" || /busan/i.test(text)) return "Busan";
+  if (text === "030" || /incheon/i.test(text)) return "Incheon";
+  if (text === "620" || /yeosu_gwangyang/i.test(text)) return "Yeosu/Gwangyang";
+  if (text === "820" || /ulsan/i.test(text)) return "Ulsan";
+  if (text === "031" || /pyeongtaek_dangjin/i.test(text)) return "Pyeongtaek-Dangjin";
+  if (text === "810" || /pohang/i.test(text)) return "Pohang";
+  if (text === "622" || /masan_jinhae/i.test(text)) return "Masan/Jinhae";
   if (/busan/i.test(text)) return "Busan";
   if (/yeosu/i.test(text)) return "Yeosu";
   if (/gwangyang/i.test(text)) return "Gwangyang";
@@ -420,20 +528,29 @@ async function enrichWithCargoHarborUse(rawRow, record, now) {
   const source = {
     key: "port_facility_enrichment",
     label: "CargHarborUse2 child enrichment",
-    url: DEFAULT_CARGO_HARBOR_USE_API_URL,
-    serviceKey: env("PORT_FACILITY_SERVICE_KEY") || env("PORT_OPERATION_SERVICE_KEY")
+    url: env("PORT_FACILITY_API_URL") || DEFAULT_CARGO_HARBOR_USE_API_URL,
+    serviceKey: envAny("PORT_FACILITY_SERVICE_KEY", "PORT_OPERATION_SERVICE_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY"),
+    noTypeParam: true
   };
   if (!canAttempt(source)) return { record, status: "missing_service_key_or_embedded_key", row_count: 0, normalized_count: 0 };
   try {
-    const { text } = await fetchText(source, params);
+    const { text, http_status, result_meta, url } = await fetchText(source, params);
     const rows = parseRows(text);
     const enriched = mergeCargoHarborUse(record, rows);
     enriched.actionable_source_row = isActionableRecord(enriched);
     enriched.sales_ready_input = enriched.actionable_source_row;
     enriched.updated_at = enriched.updated_at || now;
-    return { record: enriched, status: "success", row_count: rows.length, normalized_count: rows.length ? 1 : 0 };
+    return {
+      record: enriched,
+      status: "success",
+      row_count: rows.length,
+      normalized_count: rows.length ? 1 : 0,
+      http_status,
+      result_meta,
+      requested_url_without_service_key: maskServiceKey(url)
+    };
   } catch (error) {
-    return { record, status: `failed:${error?.message || String(error)}`, row_count: 0, normalized_count: 0 };
+    return { record, status: `failed:${error?.message || String(error)}`, row_count: 0, normalized_count: 0, http_status: error?.http_status || null };
   }
 }
 
@@ -443,7 +560,20 @@ async function collectRealRows() {
   diagnostics = { generated_at: now, attempted_count: 0, success_count: 0, failed_count: 0, skipped_count: 0, real_row_count: 0, actionable_row_count: 0, fallback_used: false, sources: [] };
 
   for (const source of allSourceConfigs()) {
-    const diag = { key: source.key, label: source.label, source_profile: sourceType(source), attempted: false, skipped: false, success: false, row_count: 0, normalized_count: 0, actionable_count: 0 };
+    const diag = {
+      key: source.key,
+      label: source.label,
+      source_profile: sourceType(source),
+      attempted: false,
+      skipped: false,
+      success: false,
+      row_count: 0,
+      normalized_count: 0,
+      actionable_count: 0,
+      prtAgCd: source.prtAgCd || null,
+      sde: source.defaultParams?.sde || null,
+      ede: source.defaultParams?.ede || null
+    };
     if (!source.url) {
       diag.skipped = true;
       diag.reason = "missing_url";
@@ -461,10 +591,15 @@ async function collectRealRows() {
     diag.attempted = true;
     diagnostics.attempted_count += 1;
     try {
-      const { text, url, latency_ms } = await fetchText(source);
+      const { text, url, http_status, latency_ms, result_meta } = await fetchText(source);
       const rows = parseRows(text);
       diag.success = true;
       diag.latency_ms = latency_ms;
+      diag.http_status = http_status;
+      diag.requested_url_without_service_key = maskServiceKey(url);
+      diag.resultCode = result_meta?.resultCode || null;
+      diag.resultMsg = result_meta?.resultMsg || null;
+      diag.totalCount = result_meta?.totalCount !== undefined ? Number(result_meta.totalCount) || result_meta.totalCount : null;
       diag.row_count = rows.length;
       diag.url_host = url.host;
       diag.sample_keys = rows[0] && typeof rows[0] === "object" ? Object.keys(rows[0]).slice(0, 30) : [];
@@ -475,7 +610,7 @@ async function collectRealRows() {
       const childStatuses = new Map();
       for (const row of rows) {
         let normalized = normalizeRow(row, source, now);
-        if (normalized && source.key === "port_operation") {
+        if (normalized && String(source.key || "").startsWith("port_operation_")) {
           childAttempted += 1;
           const child = await enrichWithCargoHarborUse(row, normalized, now);
           normalized = child.record;
@@ -489,7 +624,7 @@ async function collectRealRows() {
       const sourceRecords = records.filter(record => record.source === source.key);
       diag.normalized_count = sourceRecords.length;
       diag.actionable_count = sourceRecords.filter(record => record.actionable_source_row).length;
-      if (source.key === "port_operation") {
+      if (String(source.key || "").startsWith("port_operation_")) {
         diag.child_enrichment = {
           key: "port_facility_enrichment",
           rule: "CargHarborUse2 is called only with parent prtAgCd + etryptYear + etryptCo + clsgn from VsslEtrynd5.",
@@ -506,6 +641,7 @@ async function collectRealRows() {
       diagnostics.success_count += 1;
     } catch (error) {
       diag.error = error?.message || String(error);
+      diag.http_status = error?.http_status || null;
       diagnostics.failed_count += 1;
     }
     diagnostics.sources.push(diag);

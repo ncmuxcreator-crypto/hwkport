@@ -104,6 +104,9 @@ if (!status.commercial_command_center || !Array.isArray(status.port_congestion_h
 if (typeof status.actionable_rows !== "number" || typeof status.collector_diagnostics?.actionable_row_count !== "number") {
   throw new Error("Missing actionable_rows collector metric");
 }
+if (status.collector_diagnostics?.fallback_used && status.data_mode !== "sample_only") {
+  throw new Error("Data mode must be sample_only when collector fallback is used");
+}
 
 const workflow = fs.readFileSync(".github/workflows/longterm-update.yml", "utf8");
 if (!/on:\s*[\s\S]*workflow_dispatch:/.test(workflow) || !/schedule:/.test(workflow)) {
@@ -128,11 +131,23 @@ const koreaCollector = fs.readFileSync("scripts/collectors/korea.js", "utf8");
 if (!koreaCollector.includes("VsslEtrynd5/Info5") || !koreaCollector.includes("CargHarborUse2/Info")) {
   throw new Error("Collector must use VsslEtrynd5 parent records and CargHarborUse2 enrichment endpoint");
 }
+if (!koreaCollector.includes("PORT_OPERATION_API_URL") || !koreaCollector.includes("PORT_FACILITY_API_URL")) {
+  throw new Error("Collector must allow env overrides for PORT_OPERATION_API_URL and PORT_FACILITY_API_URL");
+}
 if (/key:\s*["']port_facility["']/.test(koreaCollector)) {
   throw new Error("CargHarborUse2 must not be used as a standalone port_facility collector");
 }
 if (!koreaCollector.includes("prtAgCd") || !koreaCollector.includes("etryptYear") || !koreaCollector.includes("etryptCo") || !koreaCollector.includes("clsgn")) {
   throw new Error("CargHarborUse2 enrichment must use prtAgCd, etryptYear, etryptCo and clsgn parent keys");
+}
+for (const portCode of ["020", "030", "620", "820", "031", "810", "622"]) {
+  if (!koreaCollector.includes(`"${portCode}"`)) throw new Error(`Missing Korean port authority code: ${portCode}`);
+}
+for (const param of ["sde", "ede", "deGb", "numOfRows", "requested_url_without_service_key", "resultCode", "resultMsg", "totalCount", "http_status"]) {
+  if (!koreaCollector.includes(param)) throw new Error(`Missing PORT-MIS request/diagnostic field: ${param}`);
+}
+if (!koreaCollector.includes("noTypeParam")) {
+  throw new Error("PORT-MIS XML-capable APIs must not force _type=json");
 }
 const secretsFile = fs.readFileSync("scripts/lib/secrets.js", "utf8");
 if (!secretsFile.includes("SOURCE_CSV_URL") || /YGPA_|ygpa/.test(secretsFile)) {
