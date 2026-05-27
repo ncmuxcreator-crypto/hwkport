@@ -86,6 +86,13 @@ function normalizeSnapshot(row = {}) {
     agent: merged.agent || "",
     agent_normalized: merged.agent_normalized || "",
     destination_port: merged.destination_port || merged.destination || merged.next_port || "",
+    route_region: merged.route_region || "unknown",
+    biosecurity_exposure_score: Number(merged.biosecurity_exposure_score || 0),
+    esg_sensitivity_score: Number(merged.esg_sensitivity_score || 0),
+    fuel_efficiency_sensitivity_score: Number(merged.fuel_efficiency_sensitivity_score || 0),
+    hull_performance_sensitivity_score: Number(merged.hull_performance_sensitivity_score || 0),
+    high_regulation_route: Boolean(merged.high_regulation_route),
+    compliance_priority: merged.compliance_priority || "standard",
     grtg: Number(merged.grtg || 0),
     intrlGrtg: Number(merged.intrlGrtg || 0),
     gt_source: merged.gt_source || (Number(merged.grtg || 0) > 0 ? "grtg" : Number(merged.intrlGrtg || 0) > 0 ? "intrlGrtg" : Number(merged.gt || 0) > 0 ? "gt" : "unknown"),
@@ -234,15 +241,15 @@ function isMainCommercialVessel(v = {}) {
 
 function supabaseBase(env) {
   const url = env.SUPABASE_URL;
-  const key = env.SUPABASE_ANON_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY;
   if (!url || !key) return null;
-  return { url: url.replace(/\/$/, ""), key };
+  return { url: url.replace(/\/$/, ""), key, keyType: env.SUPABASE_SERVICE_ROLE_KEY ? "service_role" : "anon" };
 }
 
 async function supabaseGet(env, path) {
   const base = supabaseBase(env);
   if (!base) {
-    return { ok: false, status: 0, rows: [], error: "missing_supabase_binding" };
+    return { ok: false, status: 0, rows: [], error: "missing_supabase_binding", keyType: "missing" };
   }
   const res = await fetch(`${base.url}${path}`, {
     headers: { apikey: base.key, authorization: `Bearer ${base.key}`, accept: "application/json" }
@@ -254,21 +261,22 @@ async function supabaseGet(env, path) {
     } catch {
       detail = "";
     }
-    return { ok: false, status: res.status, rows: [], error: `supabase_http_${res.status}`, detail: detail.slice(0, 240) };
+    return { ok: false, status: res.status, rows: [], error: `supabase_http_${res.status}`, detail: detail.slice(0, 240), keyType: base.keyType };
   }
   const rows = await res.json();
-  return { ok: true, status: res.status, rows: Array.isArray(rows) ? rows : [], error: null };
+  return { ok: true, status: res.status, rows: Array.isArray(rows) ? rows : [], error: null, keyType: base.keyType };
 }
 
 async function fetchActivePointer(env) {
-  if (!supabaseBase(env)) return { configured: false, active_run_id: null, error: "missing_supabase_binding" };
+  const base = supabaseBase(env);
+  if (!base) return { configured: false, active_run_id: null, error: "missing_supabase_binding", auth_key_type: "missing" };
 
   const diagnostics = [];
   const active = await supabaseGet(env, "/rest/v1/active_dataset_pointer?select=*&id=eq.current&limit=1");
   diagnostics.push({ source: "active_dataset_pointer", ok: active.ok, status: active.status, row_count: active.rows.length, error: active.error });
   const pointer = active.rows[0] || null;
   if (pointer?.active_run_id) {
-    return { configured: true, ...pointer, pointer_source: "active_dataset_pointer", pointer_diagnostics: diagnostics, error: null };
+    return { configured: true, ...pointer, auth_key_type: base.keyType, pointer_source: "active_dataset_pointer", pointer_diagnostics: diagnostics, error: null };
   }
 
   const promoted = await supabaseGet(env, "/rest/v1/data_collection_runs?select=run_id,promoted_at,finished_at,status,total_rows,all_vessels_count,candidates_count,immediate_targets_count&status=eq.promoted&order=promoted_at.desc.nullslast&order=finished_at.desc.nullslast&limit=1");
@@ -281,6 +289,7 @@ async function fetchActivePointer(env) {
       active_collected_at: run.finished_at || null,
       promoted_at: run.promoted_at || null,
       is_stale: false,
+      auth_key_type: base.keyType,
       pointer_source: "latest_promoted_run",
       pointer_diagnostics: diagnostics,
       fallback_pointer: true,
@@ -298,6 +307,7 @@ async function fetchActivePointer(env) {
       active_collected_at: snapshotRun.collected_at || null,
       promoted_at: null,
       is_stale: true,
+      auth_key_type: base.keyType,
       pointer_source: "latest_snapshot_run",
       pointer_diagnostics: diagnostics,
       fallback_pointer: true,
@@ -314,6 +324,7 @@ async function fetchActivePointer(env) {
       active_collected_at: legacy.rows[0]?.collected_at || null,
       promoted_at: null,
       is_stale: true,
+      auth_key_type: base.keyType,
       legacy_latest: true,
       pointer_source: "legacy_latest_snapshots",
       pointer_diagnostics: diagnostics,
@@ -327,6 +338,7 @@ async function fetchActivePointer(env) {
     active_run_id: null,
     error: active.error || promoted.error || latestRun.error || legacy.error || "missing_active_dataset",
     pointer_source: "none",
+    auth_key_type: base.keyType,
     pointer_diagnostics: diagnostics
   };
 }
@@ -749,6 +761,7 @@ function buildStatus(records, source) {
       provider: "supabase",
       configured: source.configured,
       error: source.error,
+      auth_key_type: source.pointer?.auth_key_type || (source.configured ? "unknown" : "missing"),
       row_count: records.length,
       active_run_id: source.pointer?.active_run_id || null,
       active_collected_at: source.pointer?.active_collected_at || null,
