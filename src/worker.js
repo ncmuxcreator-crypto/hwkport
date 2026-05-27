@@ -727,13 +727,16 @@ function buildStatus(records, source) {
   const buckets = buildVisibilityBuckets(records);
   const countFunnel = buildCountFunnel(records, buckets);
   const high = records.filter(v => (v.risk_score || 0) >= 70);
-  const dataMode = buckets.target_vessels.length ? "supabase_live_snapshot" : "no_live_data";
+  const displayableRows = buckets.target_vessels.length || records.length;
+  const dataMode = buckets.target_vessels.length ? "supabase_live_snapshot" : records.length ? "supabase_snapshot_no_targets" : "no_live_data";
   const usingSnapshotFallback = Boolean(source.pointer?.fallback_pointer && records.length);
   return {
     version: "worker-live-api-v1",
     status: source.error && !records.length ? "degraded" : "success",
     data_mode: dataMode,
-    commercial_use_status: records.length ? "review_required" : "not_ready",
+    commercial_use_status: displayableRows ? "review_required" : "not_ready",
+    live_data_available: Boolean(displayableRows),
+    displayable_vessel_count: displayableRows,
     completed_at: new Date().toISOString(),
     record_count: buckets.target_vessels.length,
     all_collected_vessel_count: records.length,
