@@ -42,6 +42,9 @@ function deriveScheduleMetrics(v) {
 
   return {
     stay_hours: stayHours ?? Math.round(Number(v.days_in_korea || 0) * 24),
+    current_call_stay_hours: stayHours ?? Math.round(Number(v.days_in_korea || 0) * 24),
+    cumulative_stay_hours: Number(v.cumulative_stay_hours || 0),
+    cumulative_stay_days: Math.round((Number(v.cumulative_stay_hours || 0) / 24) * 10) / 10,
     berth_hours: berthHours ?? 0,
     anchorage_hours: waitingHours ?? 0,
     work_window_hours: workWindowHours,
@@ -140,6 +143,8 @@ function deriveOperationalRisk(v, metrics, biofoulingScore) {
   if ((metrics.work_window_hours || 0) >= 24) flags.push("uwc_window_available");
   if ((metrics.stay_hours || 0) >= 168) flags.push("long_stay_7d");
   if ((metrics.stay_hours || 0) >= 336) flags.push("long_stay_14d");
+  if ((metrics.stay_hours || 0) >= 720) flags.push("long_stay_30d");
+  if ((metrics.stay_hours || 0) >= 2160) flags.push("long_stay_90d");
   if (biofoulingScore >= 85) flags.push("biofouling_critical");
   else if (biofoulingScore >= 70) flags.push("biofouling_high");
   if (/berth|alongside|moored/.test(status)) flags.push("berth_coordination_needed");
@@ -277,7 +282,9 @@ function isMainCommercialVessel(v = {}) {
 
 function stayDaysGroup(hours) {
   const days = Number(hours || 0) / 24;
-  if (days >= 21) return "stay_21d_plus";
+  if (days >= 90) return "stay_90d_plus";
+  if (days >= 30) return "stay_30_89d";
+  if (days >= 21) return "stay_21_29d";
   if (days >= 14) return "stay_14_20d";
   if (days >= 7) return "stay_7_13d";
   if (days >= 3) return "stay_3_6d";
@@ -775,7 +782,9 @@ function buildBiofoulingTimeline(records) {
     { key: "3_7d", label: "3-7 days", min: 72, max: 168 },
     { key: "7_14d", label: "7-14 days", min: 168, max: 336 },
     { key: "14_21d", label: "14-21 days", min: 336, max: 504 },
-    { key: "21d_plus", label: "21+ days", min: 504, max: Infinity }
+    { key: "21_30d", label: "21-30 days", min: 504, max: 720 },
+    { key: "30_90d", label: "30-90 days", min: 720, max: 2160 },
+    { key: "90d_plus", label: "90+ days", min: 2160, max: Infinity }
   ];
   return buckets.map(bucket => {
     const rows = records.filter(v => {
@@ -1586,7 +1595,7 @@ try {
       .filter(p => !PRIORITY_PORTS.includes(p.port_name))
       .map(({ port_code, port_name, vessel_count, candidate_count, immediate_target_count }) => ({ port: port_name, port_code, vessel_count, candidate_count, immediate_target_count })),
     ports: portIntelligence.map(({ port_code, port_name, vessel_count, candidate_count, immediate_target_count }) => ({ port_code, port_name, vessel_count, candidate_count, immediate_target_count })),
-    normalized_fields: ["vessel_name", "imo", "mmsi", "call_sign", "vessel_type", "gt", "operator", "agent", "port_code", "port_name", "berth_name", "anchorage_name", "eta", "ata", "etb", "atb", "etd", "atd", "stay_hours", "berth_hours", "anchorage_hours", "hybrid_entity_key", "identification_method"]
+    normalized_fields: ["vessel_name", "imo", "mmsi", "call_sign", "vessel_type", "gt", "operator", "agent", "port_code", "port_name", "berth_name", "anchorage_name", "eta", "ata", "etb", "atb", "etd", "atd", "stay_hours", "current_call_stay_hours", "cumulative_stay_hours", "cumulative_stay_days", "berth_hours", "anchorage_hours", "hybrid_entity_key", "identification_method"]
   }, null, 2));
   for (const port of portIntelligence) {
     const dir = `dashboard/api/ports/${port.port_code}`;

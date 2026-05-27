@@ -57,7 +57,7 @@ for (const item of data) {
       throw new Error(`Missing schedule field ${field} for ${item.vessel_name || item.vessel_id}`);
     }
   }
-  for (const field of ["stay_hours", "berth_hours", "anchorage_hours", "work_window_hours", "biofouling_score", "cii_pressure_score", "total_sales_priority_score", "reason_codes"]) {
+  for (const field of ["stay_hours", "current_call_stay_hours", "cumulative_stay_hours", "cumulative_stay_days", "berth_hours", "anchorage_hours", "work_window_hours", "biofouling_score", "cii_pressure_score", "total_sales_priority_score", "reason_codes"]) {
     if (!(field in item)) {
       throw new Error(`Missing intelligence field ${field} for ${item.vessel_name || item.vessel_id}`);
     }
@@ -229,6 +229,9 @@ if (!Array.isArray(wrangler.assets?.run_worker_first) || !wrangler.assets.run_wo
 const worker = fs.readFileSync("src/worker.js", "utf8");
 if (!worker.includes("vessel_snapshots") || !worker.includes("SUPABASE_URL") || !worker.includes("env.ASSETS.fetch")) {
   throw new Error("Worker must serve dashboard assets and live Supabase API routes");
+}
+if (!worker.includes("cumulative_stay_hours") || !worker.includes("CUMULATIVE_STAY_90D_PLUS")) {
+  throw new Error("Worker must preserve cumulative stay beyond short port-call windows");
 }
 for (const route of ["/ports.json", "/candidates.json", "/hot-candidates.json", "/target-vessels.json", "/staying-vessels.json", "/arrival-pipeline.json", "/api/ports/", "congestion", "anchorage", "/master/unknown-imo.json", "active_dataset_pointer"]) {
   if (!worker.includes(route)) throw new Error(`Worker missing port-first API route marker: ${route}`);

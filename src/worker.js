@@ -69,6 +69,9 @@ function normalizeSnapshot(row = {}) {
     etd: merged.etd || "",
     atd: merged.atd || "",
     stay_hours: Number(merged.stay_hours || 0),
+    current_call_stay_hours: Number(merged.current_call_stay_hours || merged.stay_hours || 0),
+    cumulative_stay_hours: Number(merged.cumulative_stay_hours || merged.stay_hours || 0),
+    cumulative_stay_days: Number(merged.cumulative_stay_days || Math.round((Number(merged.cumulative_stay_hours || merged.stay_hours || 0) / 24) * 10) / 10),
     berth_hours: Number(merged.berth_hours || 0),
     anchorage_hours: Number(merged.anchorage_hours || 0),
     work_window_hours: Number(merged.work_window_hours || 0),
@@ -99,12 +102,49 @@ function normalizeSnapshot(row = {}) {
     source_mode: sourceMode,
     run_id: merged.run_id || row.run_id || "",
     master_vessel_id: merged.master_vessel_id || merged.hybrid_entity_key || merged.vessel_id,
+    first_seen_at: merged.first_seen_at || row.first_seen_at || "",
+    last_seen_at: merged.last_seen_at || row.last_seen_at || "",
     data_quality_tier: merged.data_quality_tier || "",
     status_bucket: merged.status_bucket || deriveStatusBucket(merged),
     commercial_relevance_status: merged.commercial_relevance_status || deriveCommercialRelevance(merged),
     candidate_band: merged.candidate_band || merged.sales_priority_band || "low_priority",
     updated_at: merged.updated_at || merged.collected_at || row.collected_at || new Date().toISOString()
   };
+}
+
+function enrichCumulativeStay(record = {}) {
+  const parse = value => {
+    const date = value ? new Date(String(value).replace(" ", "T")) : null;
+    return date && !Number.isNaN(date.getTime()) ? date.getTime() : null;
+  };
+  const first = parse(record.first_seen_at);
+  const last = parse(record.last_seen_at || record.updated_at);
+  const observedHours = first && last && last >= first ? Math.round(((last - first) / 36e5) * 10) / 10 : 0;
+  const cumulative = Math.max(Number(record.cumulative_stay_hours || 0), Number(record.stay_hours || 0), observedHours);
+  const reasons = [
+    ...(record.reason_codes || []),
+    cumulative >= 2160 ? "CUMULATIVE_STAY_90D_PLUS" : null,
+    cumulative >= 720 ? "CUMULATIVE_STAY_30D_PLUS" : null
+  ].filter(Boolean);
+  return {
+    ...record,
+    stay_hours: cumulative,
+    cumulative_stay_hours: cumulative,
+    cumulative_stay_days: Math.round((cumulative / 24) * 10) / 10,
+    stay_days_group: stayDaysGroup(cumulative),
+    reason_codes: [...new Set(reasons)]
+  };
+}
+
+function stayDaysGroup(hours) {
+  const days = Number(hours || 0) / 24;
+  if (days >= 90) return "stay_90d_plus";
+  if (days >= 30) return "stay_30_89d";
+  if (days >= 21) return "stay_21_29d";
+  if (days >= 14) return "stay_14_20d";
+  if (days >= 7) return "stay_7_13d";
+  if (days >= 3) return "stay_3_6d";
+  return "stay_under_3d";
 }
 
 function deriveStatusBucket(v = {}) {
@@ -250,7 +290,7 @@ async function fetchSupabaseRows(env) {
     : `/rest/v1/vessel_snapshots?select=*&run_id=eq.${encodeURIComponent(pointer.active_run_id)}&order=collected_at.desc&limit=5000`;
   const response = await supabaseGet(env, query);
   if (!response.ok) return { rows: [], configured: true, error: response.error, pointer };
-  return { rows: response.rows.map(normalizeSnapshot), configured: true, error: null, pointer };
+  return { rows: response.rows.map(normalizeSnapshot).map(enrichCumulativeStay), configured: true, error: null, pointer };
 }
 
 function latestPerVesselPort(records) {
@@ -305,7 +345,9 @@ function buildBioTimeline(records) {
     { key: "3_7d", label: "3-7 days", min: 72, max: 168 },
     { key: "7_14d", label: "7-14 days", min: 168, max: 336 },
     { key: "14_21d", label: "14-21 days", min: 336, max: 504 },
-    { key: "21d_plus", label: "21+ days", min: 504, max: Infinity }
+    { key: "21_30d", label: "21-30 days", min: 504, max: 720 },
+    { key: "30_90d", label: "30-90 days", min: 720, max: 2160 },
+    { key: "90d_plus", label: "90+ days", min: 2160, max: Infinity }
   ];
   return buckets.map(bucket => {
     const rows = records.filter(v => (v.stay_hours || 0) >= bucket.min && (v.stay_hours || 0) < bucket.max);

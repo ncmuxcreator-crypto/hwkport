@@ -25,6 +25,30 @@ export function snapshotKey(record = {}) {
   return `${vesselKey(record)}|${String(record.port || "UNKNOWN").trim().toUpperCase()}`;
 }
 
+function parseTime(value) {
+  if (!value) return null;
+  const date = new Date(String(value).replace(" ", "T"));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function hoursBetween(start, end) {
+  const startDate = parseTime(start);
+  const endDate = parseTime(end);
+  if (!startDate || !endDate || endDate.getTime() < startDate.getTime()) return 0;
+  return Math.round(((endDate.getTime() - startDate.getTime()) / 36e5) * 10) / 10;
+}
+
+function stayDaysGroup(hours) {
+  const days = Number(hours || 0) / 24;
+  if (days >= 90) return "stay_90d_plus";
+  if (days >= 30) return "stay_30_89d";
+  if (days >= 21) return "stay_21_29d";
+  if (days >= 14) return "stay_14_20d";
+  if (days >= 7) return "stay_7_13d";
+  if (days >= 3) return "stay_3_6d";
+  return "stay_under_3d";
+}
+
 export function mergeSnapshots(current = [], previous = []) {
   const previousMap = new Map(previous.map(row => [snapshotKey(row), row]));
   const seen = new Set();
@@ -35,13 +59,33 @@ export function mergeSnapshots(current = [], previous = []) {
     seen.add(key);
     const old = previousMap.get(key) || {};
     const firstSeenAt = old.first_seen_at || row.first_seen_at || row.updated_at || new Date().toISOString();
+    const lastSeenAt = row.updated_at || row.last_seen_at || new Date().toISOString();
     const previousCandidateScore = Number(old.cleaning_candidate_score || 0);
     const currentCandidateScore = Number(row.cleaning_candidate_score || 0);
+    const currentCallStayHours = Number(row.current_call_stay_hours ?? row.stay_hours ?? 0);
+    const cumulativeStayHours = Math.max(
+      Number(old.cumulative_stay_hours || 0),
+      Number(row.cumulative_stay_hours || 0),
+      currentCallStayHours,
+      hoursBetween(firstSeenAt, lastSeenAt)
+    );
+    const cumulativeReasonCodes = [
+      ...(row.reason_codes || []),
+      cumulativeStayHours >= 2160 ? "CUMULATIVE_STAY_90D_PLUS" : null,
+      cumulativeStayHours >= 720 ? "CUMULATIVE_STAY_30D_PLUS" : null
+    ].filter(Boolean);
     merged.push({
       ...old,
       ...row,
       first_seen_at: firstSeenAt,
-      last_seen_at: row.updated_at || new Date().toISOString(),
+      last_seen_at: lastSeenAt,
+      current_call_stay_hours: currentCallStayHours,
+      cumulative_stay_hours: cumulativeStayHours,
+      cumulative_stay_days: Math.round((cumulativeStayHours / 24) * 10) / 10,
+      stay_hours: cumulativeStayHours,
+      stay_days_group: stayDaysGroup(cumulativeStayHours),
+      reason_codes: [...new Set(cumulativeReasonCodes)],
+      sales_reason: [...new Set(cumulativeReasonCodes)],
       previous_candidate_score: previousCandidateScore,
       candidate_score_delta: currentCandidateScore - previousCandidateScore,
       observation_count: Number(old.observation_count || 0) + 1,
