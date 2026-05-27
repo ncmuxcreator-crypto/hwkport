@@ -11,8 +11,11 @@ const required = [
   "dashboard/api/port-congestion-heatmap.json",
   "dashboard/api/biofouling-timeline.json",
   "dashboard/api/candidates.json",
+  "dashboard/api/candidate-summary.json",
+  "dashboard/api/contact-queue.json",
   "dashboard/api/hot-candidates.json",
   "dashboard/api/ports.json",
+  "dashboard/api/coverage-registry.json",
   "dashboard/api/backend-ops.json",
   "dashboard/api/candidate-changes.json",
   ".github/workflows/longterm-update.yml",
@@ -210,7 +213,7 @@ const worker = fs.readFileSync("src/worker.js", "utf8");
 if (!worker.includes("vessel_snapshots") || !worker.includes("SUPABASE_URL") || !worker.includes("env.ASSETS.fetch")) {
   throw new Error("Worker must serve dashboard assets and live Supabase API routes");
 }
-for (const route of ["/ports.json", "/candidates.json", "/hot-candidates.json", "\\/api\\/ports\\/"]) {
+for (const route of ["/ports.json", "/candidates.json", "/hot-candidates.json", "/api/ports/", "congestion", "anchorage"]) {
   if (!worker.includes(route)) throw new Error(`Worker missing port-first API route marker: ${route}`);
 }
 const gdriveLib = fs.readFileSync("scripts/lib/gdrive.js", "utf8");
@@ -228,7 +231,7 @@ if (!dbLib.includes('.from("vessel_entities")') || !dbLib.includes('.from("risk_
   throw new Error("Supabase persistence must update vessel_entities, risk_history, and vessel_events");
 }
 const schema = fs.readFileSync("supabase/schema.sql", "utf8");
-for (const marker of ["vessel_entities", "vessel_events", "risk_history", "payload jsonb", "hybrid_entity_key", "drop constraint if exists vessel_snapshots_snapshot_date_vessel_id_port_key"]) {
+for (const marker of ["vessel_master", "vessel_aliases", "vessel_identity_candidates", "vessel_entities", "vessel_events", "risk_history", "port_congestion_snapshots", "anchorage_clusters", "berth_occupancy_history", "payload jsonb", "hybrid_entity_key", "drop constraint if exists vessel_snapshots_snapshot_date_vessel_id_port_key"]) {
   if (!schema.includes(marker)) throw new Error(`Supabase schema missing historical persistence marker: ${marker}`);
 }
 const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));

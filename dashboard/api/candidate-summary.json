@@ -1,0 +1,9 @@
+{
+  "candidate_count": 0,
+  "immediate_count": 0,
+  "strong_count": 0,
+  "watch_count": 0,
+  "top_candidates": [],
+  "port_candidate_summary": [],
+  "operating_rule": "Candidate score prioritizes immediate sales action: waiting/anchorage + long idle + high-value vessel + regulated destination + known operator."
+}

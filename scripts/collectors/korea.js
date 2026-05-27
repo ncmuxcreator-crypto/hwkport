@@ -1,4 +1,4 @@
-const SOURCE_TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 25000);
+﻿const SOURCE_TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 25000);
 const MAX_OUTPUT_ROWS = Number(process.env.MAX_OUTPUT_ROWS || 500);
 const MAX_SOURCE_ROWS = Number(process.env.MAX_SOURCE_ROWS || 100);
 const MAX_CHILD_ENRICHMENT_ROWS = Number(process.env.MAX_CHILD_ENRICHMENT_ROWS || 10);
@@ -36,34 +36,34 @@ let diagnostics = {
 };
 
 const FIELD_ALIASES = {
-  vessel_name: ["vessel_name", "ship_name", "shipNm", "shipname", "shipName", "vsslNm", "vslNm", "vesselNm", "VSL_NM", "VSSL_NM", "선박명", "선명", "선박명칭"],
-  imo: ["imo", "imo_no", "imoNo", "IMO", "IMO_NO", "imo번호", "IMO번호", "선박번호(IMO)", "선박번호IMO"],
-  mmsi: ["mmsi", "MMSI", "mmsiNo", "mmsi_no", "선박번호", "선박식별번호"],
+  vessel_name: ["vessel_name", "ship_name", "shipNm", "shipname", "shipName", "vsslNm", "vslNm", "vesselNm", "VSL_NM", "VSSL_NM", "vsslEngNm", "vsslKrnNm", "선박명", "선명"],
+  imo: ["imo", "imo_no", "imoNo", "IMO", "IMO_NO", "imoNumber", "imo번호", "IMO번호"],
+  mmsi: ["mmsi", "MMSI", "mmsiNo", "mmsi_no"],
   call_sign: ["call_sign", "callSign", "callsign", "CALL_SIGN", "clsgn", "호출부호", "콜사인"],
-  port: ["port", "port_name", "portNm", "prtNm", "PORT_NM", "portName", "portCode", "항만", "항명", "항구명", "입항항", "출항항"],
-  berth: ["berth", "berth_name", "berthNm", "brthNm", "BERTH_NM", "facilityNm", "terminalNm", "계선장", "계선장소", "선석", "부두", "접안지"],
+  port: ["port", "port_name", "portNm", "prtNm", "PORT_NM", "portName", "portCode", "prtAgCd", "항만", "항명", "입항항", "출항항"],
+  berth: ["berth", "berth_name", "berthNm", "brthNm", "BERTH_NM", "facilityNm", "terminalNm", "계선장", "선석", "부두", "접안지"],
   anchorage_zone: ["anchorage_zone", "anchorage", "anchorZone", "anchorageNm", "정박지", "묘박지", "대기지"],
-  status: ["status", "movement_status", "shipStatus", "sttus", "statusNm", "vsslStatus", "운항상태", "입출항상태", "상태"],
-  operator: ["operator", "company", "shippingCompany", "agent", "agentNm", "carrierNm", "shipCompany", "선사", "대리점", "운항사", "선박회사"],
+  status: ["status", "movement_status", "shipStatus", "sttus", "statusNm", "vsslStatus", "상태", "입출항상태"],
+  operator: ["operator", "company", "shippingCompany", "carrierNm", "shipCompany", "owner", "선사", "운항사", "선박회사"],
+  agent: ["agent", "agentNm", "agency", "shipAgent", "대리점", "선박대리점"],
   destination: ["destination", "dest", "next_port_country", "DEST", "destNm", "destinationPort", "목적지", "차항지", "다음항"],
-  previous_port: ["previous_port", "prevPort", "last_port", "prevPortNm", "전항", "이전항", "최초출항지"],
+  previous_port: ["previous_port", "prevPort", "last_port", "prevPortNm", "전항", "이전항"],
   next_port: ["next_port", "nextPort", "nextPortNm", "차항", "다음항", "예정항"],
-  vessel_type: ["vessel_type", "ship_type", "shipType", "vsslKnd", "shipKnd", "TYPE", "vesselType", "선종", "선박종류", "선박용도"],
-  gt: ["gt", "gross_tonnage", "grt", "grossTon", "GT", "총톤수", "총톤수톤", "GRT"],
-  eta: ["eta", "ETA", "etaDate", "estimatedArrival", "arrPlanDt", "arrivalPlanDt", "etaDt", "입항예정일시", "입항예정일", "입항예정"],
+  vessel_type: ["vessel_type", "ship_type", "shipType", "vsslKnd", "shipKnd", "TYPE", "vesselType", "선종", "선박종류"],
+  gt: ["gt", "gross_tonnage", "grt", "grossTon", "GT", "총톤수", "GRT"],
+  eta: ["eta", "ETA", "etaDate", "estimatedArrival", "arrPlanDt", "arrivalPlanDt", "etaDt", "입항예정일시", "입항예정"],
   etb: ["etb", "ETB", "estimatedBerthing", "berthPlanDt", "etbDt", "접안예정일시", "계선예정일시"],
   ata: ["ata", "ATA", "actualArrival", "arrDt", "arrivalDt", "입항일시", "입항일자", "입항시간"],
   atb: ["atb", "ATB", "actualBerthing", "berthDt", "접안일시", "계선일시"],
-  etd: ["etd", "ETD", "estimatedDeparture", "depPlanDt", "departurePlanDt", "etdDt", "출항예정일시", "출항예정일"],
+  etd: ["etd", "ETD", "estimatedDeparture", "depPlanDt", "departurePlanDt", "etdDt", "출항예정일시", "출항예정"],
   atd: ["atd", "ATD", "actualDeparture", "depDt", "departureDt", "출항일시", "출항일자"],
-  speed: ["speed", "sog", "SOG", "속력", "대지속력", "속도"],
+  speed: ["speed", "sog", "SOG", "속력", "속도"],
   lat: ["lat", "latitude", "LAT", "위도"],
   lon: ["lon", "lng", "longitude", "LON", "LONGITUDE", "경도"],
   course: ["course", "cog", "COG", "침로"],
-  heading: ["heading", "hdg", "HDG", "HEDING", "선수방위", "헤딩"],
+  heading: ["heading", "hdg", "HDG", "HEDING", "헤딩"],
   received_at: ["received_at", "receivedAt", "수신시각", "수신시간"]
 };
-
 function env(name) {
   return process.env[name] && String(process.env[name]).trim();
 }
@@ -326,7 +326,7 @@ function decodeResponse(buffer, contentType = "") {
   for (const encoding of candidates) {
     try {
       const text = new TextDecoder(encoding).decode(buffer);
-      if (!text.includes("�")) return text;
+      return text;
     } catch {
       // Try the next encoding.
     }
@@ -486,6 +486,23 @@ function normalizePort(value, fallback = "") {
   return text || "Korea";
 }
 
+
+function portCodeFromName(port = "") {
+  const text = String(port || "").toLowerCase();
+  if (/busan|부산/.test(text)) return "020";
+  if (/incheon|인천/.test(text)) return "030";
+  if (/yeosu|gwangyang|여수|광양/.test(text)) return "620";
+  if (/ulsan|울산/.test(text)) return "820";
+  if (/pyeongtaek|dangjin|평택|당진/.test(text)) return "031";
+  if (/pohang|포항/.test(text)) return "810";
+  if (/mokpo|목포/.test(text)) return "070";
+  if (/gunsan|군산/.test(text)) return "080";
+  if (/daesan|대산/.test(text)) return "621";
+  if (/donghae|mukho|동해|묵호/.test(text)) return "120";
+  if (/jeju|제주/.test(text)) return "940";
+  if (/masan|jinhae|samcheonpo|hadong|tongyeong|geoje|okpo|마산|진해|삼천포|하동|통영|거제|옥포/.test(text)) return "622";
+  return "";
+}
 function normalizeRow(row, source, now) {
   const adapted = adaptSourceRecord(row, source);
   const sourceProfile = sourceType(source);
@@ -503,10 +520,15 @@ function normalizeRow(row, source, now) {
     mmsi,
     call_sign: callSign,
     port,
+    port_code: source.prtAgCd || rawValue(adapted, ["prtAgCd", "portCode", "prtCd"]) || portCodeFromName(port),
+    port_name: port,
     berth: String(firstValue(adapted, FIELD_ALIASES.berth)).trim(),
+    berth_name: String(firstValue(adapted, FIELD_ALIASES.berth)).trim(),
     anchorage_zone: String(firstValue(adapted, FIELD_ALIASES.anchorage_zone)).trim(),
+    anchorage_name: String(firstValue(adapted, FIELD_ALIASES.anchorage_zone)).trim(),
     status: normalizeStatus(firstValue(adapted, FIELD_ALIASES.status)),
     operator: String(firstValue(adapted, FIELD_ALIASES.operator)).trim(),
+    agent: String(firstValue(adapted, FIELD_ALIASES.agent)).trim(),
     destination: String(firstValue(adapted, FIELD_ALIASES.destination)).trim(),
     previous_port: String(firstValue(adapted, FIELD_ALIASES.previous_port)).trim(),
     next_port: String(firstValue(adapted, FIELD_ALIASES.next_port)).trim(),
@@ -759,3 +781,4 @@ export async function collectKoreaData({ apiSources = [] } = {}) {
 export function getCollectorDiagnostics() {
   return diagnostics;
 }
+

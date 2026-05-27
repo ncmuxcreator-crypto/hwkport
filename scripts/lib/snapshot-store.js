@@ -134,7 +134,7 @@ export function buildBackendOpsReport({ version, buildName, records = [], apiSou
     build_name: buildName,
     backend_stage: "actual_collector_backend_ready",
     generated_at: new Date().toISOString(),
-    collector_execution_mode: enabled.length ? "configured_sources_detected_with_fallback" : "fallback_sample_snapshot",
+    collector_execution_mode: enabled.length ? "configured_sources_detected" : "no_live_data",
     supabase_status: supabaseStatus,
     record_count: records.length,
     candidate_count: candidates.length,
@@ -157,7 +157,7 @@ export function buildBackendOpsReport({ version, buildName, records = [], apiSou
 }
 
 export function writeSnapshotOutputs({ records = [], report = {}, version, buildName, apiSources = [], supabaseStatus }) {
-  const previous = safeReadJson("data/latest-lite.json", []);
+  const previous = report.data_mode === "no_live_data" ? [] : safeReadJson("data/latest-lite.json", []);
   const merged = mergeSnapshots(records, Array.isArray(previous) ? previous : []);
   const today = new Date().toISOString().slice(0, 10);
   const candidateChanges = buildCandidateChanges(merged, Array.isArray(previous) ? previous : []);

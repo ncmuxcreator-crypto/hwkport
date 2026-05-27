@@ -137,11 +137,11 @@ const SECRET_CATALOG = [
   },
   {
     key: "korea_public_data",
-    label: "Korea Public Data Fallback",
+    label: "Korea Public Data Auxiliary",
     type: "public_data",
     requiredAny: ["PORTMIS_API_KEY", "PORT_MIS_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY"],
     optional: ["KOREA_PORTMIS_BASE_URL"],
-    use: "Generic Korean public-data fallback when source-specific keys are not configured."
+    use: "Generic Korean public-data source for additional normalization when source-specific endpoints are configured."
   },
   {
     key: "email_alerts",

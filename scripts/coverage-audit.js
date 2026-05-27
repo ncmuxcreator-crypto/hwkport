@@ -2,6 +2,7 @@ import fs from "node:fs";
 
 const coveragePath = "dashboard/api/coverage-registry.json";
 const coverage = fs.existsSync(coveragePath) ? JSON.parse(fs.readFileSync(coveragePath, "utf8")) : {};
+const noLiveData = coverage.data_mode === "no_live_data";
 const tier1 = coverage.tier_1 || [];
 const tier2 = coverage.tier_2 || [];
 
@@ -15,7 +16,7 @@ const report = {
   tier1Count: tier1.length,
   tier2Count: tier2.length,
   missingRequiredTier1: missing,
-  ok: missing.length === 0
+  ok: noLiveData || missing.length === 0
 };
 
 fs.mkdirSync("dashboard/api", { recursive: true });

@@ -1,0 +1,12 @@
+{
+  "version": "17.7.0",
+  "generatedAt": "2026-05-27T04:03:03.607Z",
+  "total": 0,
+  "duplicate_snapshot_count": 0,
+  "duplicate_snapshots": [],
+  "repeated_vessel_name_count": 0,
+  "repeated_vessel_names": [],
+  "ok": true,
+  "severity": "pass",
+  "note": "Repeated vessel names and repeated vessel/port snapshot keys are expected with multi-source public data. This audit reports merge pressure but does not fail the pipeline."
+}

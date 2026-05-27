@@ -86,6 +86,48 @@ create table if not exists vessel_entities (
   payload jsonb default '{}'::jsonb
 );
 
+create table if not exists vessel_master (
+  master_vessel_id text primary key,
+  imo text,
+  mmsi text,
+  call_sign text,
+  canonical_name text,
+  normalized_name text,
+  vessel_type text,
+  gt numeric,
+  dwt numeric,
+  loa numeric,
+  beam numeric,
+  operator text,
+  flag text,
+  identity_confidence int default 0,
+  first_seen timestamptz default now(),
+  last_seen timestamptz default now(),
+  payload jsonb default '{}'::jsonb
+);
+
+create table if not exists vessel_aliases (
+  id bigserial primary key,
+  alias_name text not null,
+  master_vessel_id text not null,
+  source text,
+  confidence int default 0,
+  created_at timestamptz default now(),
+  unique(alias_name, master_vessel_id, source)
+);
+
+create table if not exists vessel_identity_candidates (
+  id bigserial primary key,
+  hybrid_entity_key text,
+  vessel_id text,
+  vessel_name text,
+  likely_imo_candidates jsonb default '[]'::jsonb,
+  confidence_band text,
+  manual_review_required boolean default false,
+  collected_at timestamptz default now(),
+  payload jsonb default '{}'::jsonb
+);
+
 create table if not exists vessel_events (
   id bigserial primary key,
   hybrid_entity_key text,
@@ -106,3 +148,46 @@ create table if not exists risk_history (
   collected_at timestamptz not null default now(),
   payload jsonb default '{}'::jsonb
 );
+
+create table if not exists port_congestion_snapshots (
+  id bigserial primary key,
+  port_code text,
+  port_name text,
+  total_vessels int default 0,
+  anchorage_vessels int default 0,
+  long_idle_vessels int default 0,
+  average_waiting_time numeric default 0,
+  berth_occupancy numeric default 0,
+  anchorage_density numeric default 0,
+  congestion_score int default 0,
+  collected_at timestamptz not null default now(),
+  payload jsonb default '{}'::jsonb
+);
+
+create table if not exists anchorage_clusters (
+  id bigserial primary key,
+  port_code text,
+  port_name text,
+  anchorage_name text,
+  vessel_count int default 0,
+  average_anchorage_hours numeric default 0,
+  density_score int default 0,
+  collected_at timestamptz not null default now(),
+  payload jsonb default '{}'::jsonb
+);
+
+create table if not exists berth_occupancy_history (
+  id bigserial primary key,
+  port_code text,
+  port_name text,
+  berth_name text,
+  vessel_count int default 0,
+  occupancy_score int default 0,
+  collected_at timestamptz not null default now(),
+  payload jsonb default '{}'::jsonb
+);
+
+create index if not exists idx_vessel_master_imo on vessel_master(imo);
+create index if not exists idx_vessel_master_mmsi on vessel_master(mmsi);
+create index if not exists idx_vessel_identity_candidates_collected_at on vessel_identity_candidates(collected_at desc);
+create index if not exists idx_port_congestion_snapshots_collected_at on port_congestion_snapshots(collected_at desc);

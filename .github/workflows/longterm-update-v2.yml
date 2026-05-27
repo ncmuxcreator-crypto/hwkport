@@ -85,6 +85,18 @@ jobs:
           echo "ref=${{ github.ref }}"
           echo "runner_os=${{ runner.os }}"
           echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          node - <<'NODE'
+          console.log({
+            PORT_OPERATION_API_URL: !!process.env.PORT_OPERATION_API_URL,
+            PORT_OPERATION_SERVICE_KEY: !!process.env.PORT_OPERATION_SERVICE_KEY,
+            PORT_OPERATION_API_KEY: !!process.env.PORT_OPERATION_API_KEY,
+            PORT_FACILITY_API_URL: !!process.env.PORT_FACILITY_API_URL,
+            PORT_FACILITY_SERVICE_KEY: !!process.env.PORT_FACILITY_SERVICE_KEY,
+            PORT_FACILITY_API_KEY: !!process.env.PORT_FACILITY_API_KEY,
+            SUPABASE_URL: !!process.env.SUPABASE_URL,
+            SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY
+          });
+          NODE
 
       - name: Checkout repository
         uses: actions/checkout@v4

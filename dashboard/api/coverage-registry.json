@@ -1,0 +1,83 @@
+{
+  "generated_at": "2026-05-27T04:03:02.899Z",
+  "data_mode": "no_live_data",
+  "record_count": 0,
+  "port_count": 0,
+  "tier_1": [
+    {
+      "port": "Busan",
+      "port_code": "020",
+      "vessel_count": 0,
+      "candidate_count": 0,
+      "immediate_target_count": 0,
+      "coverage_status": "no_live_rows"
+    },
+    {
+      "port": "Yeosu/Gwangyang",
+      "port_code": "620",
+      "vessel_count": 0,
+      "candidate_count": 0,
+      "immediate_target_count": 0,
+      "coverage_status": "no_live_rows"
+    },
+    {
+      "port": "Ulsan",
+      "port_code": "820",
+      "vessel_count": 0,
+      "candidate_count": 0,
+      "immediate_target_count": 0,
+      "coverage_status": "no_live_rows"
+    },
+    {
+      "port": "Pyeongtaek-Dangjin",
+      "port_code": "031",
+      "vessel_count": 0,
+      "candidate_count": 0,
+      "immediate_target_count": 0,
+      "coverage_status": "no_live_rows"
+    },
+    {
+      "port": "Hadong/Samcheonpo",
+      "port_code": "622",
+      "vessel_count": 0,
+      "candidate_count": 0,
+      "immediate_target_count": 0,
+      "coverage_status": "no_live_rows"
+    },
+    {
+      "port": "Pohang",
+      "port_code": "810",
+      "vessel_count": 0,
+      "candidate_count": 0,
+      "immediate_target_count": 0,
+      "coverage_status": "no_live_rows"
+    }
+  ],
+  "tier_2": [],
+  "ports": [],
+  "normalized_fields": [
+    "vessel_name",
+    "imo",
+    "mmsi",
+    "call_sign",
+    "vessel_type",
+    "gt",
+    "operator",
+    "agent",
+    "port_code",
+    "port_name",
+    "berth_name",
+    "anchorage_name",
+    "eta",
+    "ata",
+    "etb",
+    "atb",
+    "etd",
+    "atd",
+    "stay_hours",
+    "berth_hours",
+    "anchorage_hours",
+    "hybrid_entity_key",
+    "identification_method"
+  ]
+}

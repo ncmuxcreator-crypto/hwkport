@@ -157,6 +157,54 @@ function deriveOperationalRisk(v, metrics, biofoulingScore) {
   };
 }
 
+function deriveCommercialScoreParts(v, metrics) {
+  const type = String(v.vessel_type || "").toLowerCase();
+  const route = [v.destination, v.previous_port, v.next_port].join(" ").toLowerCase();
+  const status = String(v.status || "").toLowerCase();
+  const gt = Number(v.gt || 0);
+  const anchorageDays = Number(metrics.anchorage_hours || 0) / 24;
+  const stayDays = Number(metrics.stay_hours || 0) / 24;
+  const isCommercialType = /vlcc|cape|capesize|bulk|bulker|tanker|lng|lpg|cruise|container/.test(type);
+  const sensitiveRoute = /australia|brazil|new zealand|california|usa|canada|port hedland|ponta da madeira/.test(route);
+  const isAnchorageWaiting = anchorageDays >= 0.5 || /waiting|anchorage|anchor|idle|drifting/.test(status);
+  const isLongIdle = stayDays >= 7 || anchorageDays >= 3;
+  const biofoulingRiskScore = Math.min(30, Math.round(Math.min(14, stayDays * 1.4) + Math.min(8, anchorageDays * 2) + (isCommercialType ? 4 : 0) + (sensitiveRoute ? 4 : 0)));
+  const performanceProxyScore = Math.min(20, Math.round(Math.min(9, anchorageDays * 2) + Math.min(6, stayDays * 0.7) + (Number(v.speed || 0) > 0 && Number(v.speed || 0) < 1.5 ? 3 : 0) + (gt >= 5000 ? 2 : 0)));
+  const congestionExposureScore = Math.min(20, Math.round((isAnchorageWaiting ? 8 : 0) + Math.min(8, anchorageDays * 2) + (isLongIdle ? 4 : 0)));
+  const cleaningWindowScore = Math.min(15, Math.round(Math.min(10, Number(metrics.work_window_hours || 0) / 4) + (isAnchorageWaiting ? 3 : 0) + (v.berth || v.berth_name ? 2 : 0)));
+  const compliancePressureScore = Math.min(10, Math.round((sensitiveRoute ? 5 : 0) + (gt >= 5000 ? 3 : 0) + (isCommercialType ? 2 : 0)));
+  const commercialFitScore = Math.min(5, Math.round((isCommercialType ? 2 : 0) + (gt >= 5000 ? 1 : 0) + (v.operator || v.agent ? 1 : 0) + (v.port_code ? 1 : 0)));
+  const total = biofoulingRiskScore + performanceProxyScore + congestionExposureScore + cleaningWindowScore + compliancePressureScore + commercialFitScore;
+  const reasonCodes = [];
+  if (anchorageDays >= 1) reasonCodes.push("LONG_ANCHORAGE_WAIT");
+  if (congestionExposureScore >= 14) reasonCodes.push("PORT_CONGESTION_HIGH");
+  if (isLongIdle) reasonCodes.push("EXTENDED_IDLE_PERIOD");
+  if (isAnchorageWaiting) reasonCodes.push("LOW_SPEED_CONGESTION_PATTERN");
+  if (gt >= 5000) reasonCodes.push("HIGH_GT_VESSEL");
+  if (/bulk|bulker|tanker|vlcc/.test(type)) reasonCodes.push("BULK_OR_TANKER");
+  if (stayDays >= 7) reasonCodes.push("LONG_PORT_STAY");
+  if (/australia|brazil/.test(route)) reasonCodes.push("AUSTRALIA_BRAZIL_EXPOSURE");
+  if (Number(metrics.work_window_hours || 0) >= 24) reasonCodes.push("BERTH_WINDOW_AVAILABLE");
+  return {
+    biofouling_risk_score: biofoulingRiskScore,
+    performance_proxy_score: performanceProxyScore,
+    congestion_exposure_score: congestionExposureScore,
+    cleaning_window_score: cleaningWindowScore,
+    compliance_pressure_score: compliancePressureScore,
+    commercial_fit_score: commercialFitScore,
+    total_sales_priority_score: Math.min(100, total),
+    sales_priority_band: total >= 80 ? "immediate_target" : total >= 60 ? "high_potential" : total >= 40 ? "monitor" : "low_priority",
+    is_anchorage_waiting: isAnchorageWaiting,
+    is_long_idle: isLongIdle,
+    anchorage_days: Math.round(anchorageDays * 10) / 10,
+    estimated_waiting_time: metrics.anchorage_hours || 0,
+    port_congestion_score: congestionExposureScore * 5,
+    anchorage_density_score: Math.min(100, Math.round(anchorageDays * 12 + (isAnchorageWaiting ? 20 : 0))),
+    idle_risk_score: Math.min(100, Math.round(stayDays * 8 + anchorageDays * 10)),
+    score_reason_codes: reasonCodes
+  };
+}
+
 function gtGroup(gt) {
   const value = Number(gt || 0);
   if (value >= 80000) return "gt_80000_plus";
@@ -458,11 +506,13 @@ function enrichSalesSignals(records) {
     const scheduleMetrics = deriveScheduleMetrics(v);
     const biofoulingScore = deriveBiofoulingScore(v, scheduleMetrics);
     const ciiPressureScore = deriveCiiPressureScore(v, scheduleMetrics, biofoulingScore);
+    const scoreParts = deriveCommercialScoreParts(v, scheduleMetrics);
     const candidateProfile = buildCandidateProfile({ ...v, ...scheduleMetrics, risk_score: biofoulingScore, compliance_watch: complianceWatch });
     const identity = deriveIdentity(v);
     const isSample = String(v.source_mode || "").includes("sample");
     const reasonCodes = [
       ...(v.reason_codes || []),
+      ...(scoreParts.score_reason_codes || []),
       ...reasons,
       ...(candidateProfile.candidate_reasons || [])
     ].filter((value, index, arr) => value && arr.indexOf(value) === index);
@@ -480,11 +530,15 @@ function enrichSalesSignals(records) {
       operating_candidate_score: isSample || v.actionable_source_row === false ? 0 : candidateProfile.cleaning_candidate_score,
       biofouling_score: biofoulingScore,
       cii_pressure_score: ciiPressureScore,
-      total_sales_priority_score: Math.min(100, Math.round(candidateProfile.cleaning_candidate_score * 0.5 + biofoulingScore * 0.3 + ciiPressureScore * 0.2)),
+      ...scoreParts,
       risk_level: riskLevel(biofoulingScore),
       sales_priority: candidateProfile.is_immediate_candidate ? "Immediate Candidate" : biofoulingScore >= 85 ? "Critical" : biofoulingScore >= 70 ? "High" : "Normal",
       ...identity,
       compliance_band: complianceWatch ? "biosecurity_watch" : "standard",
+      port_code: v.port_code || portCodeFromName(v.port),
+      port_name: v.port_name || v.port,
+      berth_name: v.berth_name || v.berth || "",
+      anchorage_name: v.anchorage_name || v.anchorage_zone || "",
       gt_group: gtGroup(v.gt),
       stay_days_group: stayDaysGroup(scheduleMetrics.stay_hours),
       reason_codes: reasonCodes,
@@ -502,6 +556,12 @@ function enrichSalesSignals(records) {
       enriched.reason_codes = [...reasonCodes, "Movement-only AIS/VTS row; not sales-ready without vessel identity and port-call context"];
       enriched.sales_reason = enriched.reason_codes;
       enriched.total_sales_priority_score = 0;
+    } else {
+      enriched.is_cleaning_candidate = enriched.total_sales_priority_score >= 60;
+      enriched.is_immediate_candidate = enriched.total_sales_priority_score >= 80;
+      enriched.is_operating_candidate = enriched.is_cleaning_candidate;
+      enriched.is_operating_immediate_candidate = enriched.is_immediate_candidate;
+      enriched.cleaning_candidate_score = enriched.total_sales_priority_score;
     }
     Object.assign(enriched, deriveOperationalRisk(enriched, scheduleMetrics, biofoulingScore));
     enriched.operator_fleet_badges = deriveFleetBadges(enriched);
@@ -562,27 +622,61 @@ function buildPortCongestionHeatmap(records) {
     const port = v.port || "Unknown";
     const current = ports.get(port) || {
       port,
+      port_code: v.port_code || portCodeFromName(port),
       total: 0,
       waiting: 0,
+      anchorage_vessels: 0,
       long_stay: 0,
+      long_idle_vessels: 0,
       high_biofouling: 0,
       immediate: 0,
-      score: 0
+      score: 0,
+      waiting_hours_total: 0,
+      berth_hours_total: 0
     };
     current.total += 1;
-    if ((v.anchorage_hours || 0) >= 12 || /waiting|anchorage|anchor|idle|drifting/i.test(v.status || "")) current.waiting += 1;
-    if ((v.stay_hours || 0) >= 168) current.long_stay += 1;
+    if (v.is_anchorage_waiting || (v.anchorage_hours || 0) >= 12 || /waiting|anchorage|anchor|idle|drifting/i.test(v.status || "")) {
+      current.waiting += 1;
+      current.anchorage_vessels += 1;
+    }
+    if (v.is_long_idle || (v.stay_hours || 0) >= 168) {
+      current.long_stay += 1;
+      current.long_idle_vessels += 1;
+    }
     if ((v.biofouling_score || 0) >= 70) current.high_biofouling += 1;
     if (v.is_immediate_candidate) current.immediate += 1;
-    current.score += Math.min(100, (v.operational_risk_score || 0) + (v.is_immediate_candidate ? 15 : 0));
+    current.waiting_hours_total += Number(v.anchorage_hours || 0);
+    current.berth_hours_total += Number(v.berth_hours || 0);
+    current.score += Math.min(100, (v.port_congestion_score || v.operational_risk_score || 0) + (v.is_immediate_candidate ? 15 : 0));
     ports.set(port, current);
   }
   return [...ports.values()]
     .map(p => ({
       ...p,
+      average_waiting_time: p.waiting ? Math.round((p.waiting_hours_total / p.waiting) * 10) / 10 : 0,
+      berth_occupancy: p.total ? Math.min(100, Math.round((p.berth_hours_total / Math.max(1, p.total * 24)) * 100)) : 0,
+      anchorage_density: p.total ? Math.min(100, Math.round((p.anchorage_vessels / p.total) * 100)) : 0,
       congestion_score: p.total ? Math.min(100, Math.round(p.score / p.total + p.waiting * 4 + p.long_stay * 5 + p.immediate * 8)) : 0
     }))
     .sort((a, b) => b.congestion_score - a.congestion_score || b.immediate - a.immediate || b.high_biofouling - a.high_biofouling);
+}
+
+function buildPortAnchorage(records, portCode) {
+  const rows = records.filter(v => String(v.port_code || portCodeFromName(v.port)) === String(portCode));
+  return sortCommercialPriority(rows.filter(v => v.is_anchorage_waiting || (v.anchorage_hours || 0) > 0 || /waiting|anchorage|anchor|idle|drifting/i.test(v.status || "")))
+    .map(v => ({
+      vessel_id: v.vessel_id,
+      vessel_name: v.vessel_name,
+      port_code: v.port_code || portCode,
+      port_name: v.port_name || v.port,
+      anchorage_name: v.anchorage_name || v.anchorage_zone || "",
+      anchorage_hours: v.anchorage_hours || 0,
+      anchorage_days: v.anchorage_days || 0,
+      anchorage_density_score: v.anchorage_density_score || 0,
+      idle_risk_score: v.idle_risk_score || 0,
+      total_sales_priority_score: v.total_sales_priority_score || 0,
+      reason_codes: v.reason_codes || []
+    }));
 }
 
 function buildBiofoulingTimeline(records) {
@@ -1335,15 +1429,53 @@ try {
   };
 
   fs.writeFileSync("dashboard/api/candidates.json", JSON.stringify(candidateList, null, 2));
+  fs.writeFileSync("dashboard/api/candidate-summary.json", JSON.stringify(buildCandidateSummary(vessels), null, 2));
+  fs.writeFileSync("dashboard/api/contact-queue.json", JSON.stringify(candidateList.slice(0, 50).map((v, index) => ({
+    rank: index + 1,
+    vessel_name: v.vessel_name,
+    port: v.port,
+    port_code: v.port_code,
+    operator: v.operator || null,
+    agent: v.agent || null,
+    score: v.total_sales_priority_score || 0,
+    band: v.sales_priority_band || "low_priority",
+    contact_window: v.contact_window,
+    next_action: v.candidate_next_action || v.recommended_action,
+    reason_codes: v.reason_codes || []
+  })), null, 2));
   fs.writeFileSync("dashboard/api/hot-candidates.json", JSON.stringify(candidateList.filter(v => v.is_immediate_candidate || (v.total_sales_priority_score || 0) >= 80).slice(0, 40), null, 2));
   fs.writeFileSync("dashboard/api/hot-vessels.json", JSON.stringify(hotVessels, null, 2));
   fs.writeFileSync("dashboard/api/ports.json", JSON.stringify(portIntelligence.map(({ all_vessels, scored_vessels, sales_candidates, immediate_targets, berths, ...port }) => port), null, 2));
+  fs.writeFileSync("dashboard/api/coverage-registry.json", JSON.stringify({
+    generated_at: completedAt,
+    data_mode: report.data_mode,
+    record_count: vessels.length,
+    port_count: portIntelligence.length,
+    tier_1: PRIORITY_PORTS.map(port => {
+      const found = portIntelligence.find(p => p.port_name === port || p.port_code === portCodeFromName(port));
+      return {
+        port,
+        port_code: found?.port_code || portCodeFromName(port),
+        vessel_count: found?.vessel_count || 0,
+        candidate_count: found?.candidate_count || 0,
+        immediate_target_count: found?.immediate_target_count || 0,
+        coverage_status: found ? "observed" : "no_live_rows"
+      };
+    }),
+    tier_2: portIntelligence
+      .filter(p => !PRIORITY_PORTS.includes(p.port_name))
+      .map(({ port_code, port_name, vessel_count, candidate_count, immediate_target_count }) => ({ port: port_name, port_code, vessel_count, candidate_count, immediate_target_count })),
+    ports: portIntelligence.map(({ port_code, port_name, vessel_count, candidate_count, immediate_target_count }) => ({ port_code, port_name, vessel_count, candidate_count, immediate_target_count })),
+    normalized_fields: ["vessel_name", "imo", "mmsi", "call_sign", "vessel_type", "gt", "operator", "agent", "port_code", "port_name", "berth_name", "anchorage_name", "eta", "ata", "etb", "atb", "etd", "atd", "stay_hours", "berth_hours", "anchorage_hours", "hybrid_entity_key", "identification_method"]
+  }, null, 2));
   for (const port of portIntelligence) {
     const dir = `dashboard/api/ports/${port.port_code}`;
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(`${dir}/vessels.json`, JSON.stringify(port.all_vessels, null, 2));
     fs.writeFileSync(`${dir}/candidates.json`, JSON.stringify(port.sales_candidates, null, 2));
     fs.writeFileSync(`${dir}/berths.json`, JSON.stringify(port.berths, null, 2));
+    fs.writeFileSync(`${dir}/congestion.json`, JSON.stringify(portCongestionHeatmap.find(p => String(p.port_code) === String(port.port_code) || p.port === port.port_name) || null, null, 2));
+    fs.writeFileSync(`${dir}/anchorage.json`, JSON.stringify(buildPortAnchorage(vessels, port.port_code), null, 2));
   }
   fs.writeFileSync("dashboard/api/commercial-command-center.json", JSON.stringify(commercialCommandCenter, null, 2));
   fs.writeFileSync("dashboard/api/port-congestion-heatmap.json", JSON.stringify(portCongestionHeatmap, null, 2));

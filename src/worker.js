@@ -1,4 +1,4 @@
-const API_CACHE_SECONDS = 300;
+﻿const API_CACHE_SECONDS = 300;
 
 function json(data, init = {}) {
   return new Response(JSON.stringify(data, null, 2), {
@@ -133,17 +133,28 @@ function buildPortHeatmap(records) {
   const map = new Map();
   for (const v of records) {
     const port = v.port || "Korea";
-    const p = map.get(port) || { port, total: 0, waiting: 0, long_stay: 0, high_biofouling: 0, immediate: 0, score: 0 };
+    const p = map.get(port) || { port, port_code: v.port_code || portCodeFromName(port), total: 0, waiting: 0, anchorage_vessels: 0, long_stay: 0, long_idle_vessels: 0, high_biofouling: 0, immediate: 0, score: 0, waiting_hours_total: 0, berth_hours_total: 0 };
     p.total += 1;
-    if ((v.anchorage_hours || 0) >= 12 || /waiting|anchorage|anchor|idle|drifting/i.test(v.status || "")) p.waiting += 1;
-    if ((v.stay_hours || 0) >= 168) p.long_stay += 1;
+    if (v.is_anchorage_waiting || (v.anchorage_hours || 0) >= 12 || /waiting|anchorage|anchor|idle|drifting/i.test(v.status || "")) {
+      p.waiting += 1;
+      p.anchorage_vessels += 1;
+    }
+    if (v.is_long_idle || (v.stay_hours || 0) >= 168) {
+      p.long_stay += 1;
+      p.long_idle_vessels += 1;
+    }
     if ((v.biofouling_score || 0) >= 70) p.high_biofouling += 1;
     if (v.is_immediate_candidate) p.immediate += 1;
-    p.score += v.operational_risk_score || v.biofouling_score || 0;
+    p.waiting_hours_total += Number(v.anchorage_hours || 0);
+    p.berth_hours_total += Number(v.berth_hours || 0);
+    p.score += v.port_congestion_score || v.operational_risk_score || v.biofouling_score || 0;
     map.set(port, p);
   }
   return [...map.values()].map(p => ({
     ...p,
+    average_waiting_time: p.waiting ? Math.round((p.waiting_hours_total / p.waiting) * 10) / 10 : 0,
+    berth_occupancy: p.total ? Math.min(100, Math.round((p.berth_hours_total / Math.max(1, p.total * 24)) * 100)) : 0,
+    anchorage_density: p.total ? Math.min(100, Math.round((p.anchorage_vessels / p.total) * 100)) : 0,
     congestion_score: p.total ? Math.min(100, Math.round(p.score / p.total + p.waiting * 4 + p.long_stay * 5 + p.immediate * 8)) : 0
   })).sort((a, b) => b.congestion_score - a.congestion_score);
 }
@@ -206,7 +217,12 @@ function portCodeFromName(port = "") {
   if (/ulsan|울산/.test(text)) return "820";
   if (/pyeongtaek|dangjin|평택|당진/.test(text)) return "031";
   if (/pohang|포항/.test(text)) return "810";
-  if (/masan|jinhae|samcheonpo|hadong|마산|진해|삼천포|하동/.test(text)) return "622";
+  if (/mokpo|목포/.test(text)) return "070";
+  if (/gunsan|군산/.test(text)) return "080";
+  if (/daesan|대산/.test(text)) return "621";
+  if (/donghae|mukho|동해|묵호/.test(text)) return "120";
+  if (/jeju|제주/.test(text)) return "940";
+  if (/masan|jinhae|samcheonpo|hadong|tongyeong|geoje|okpo|마산|진해|삼천포|하동|통영|거제|옥포/.test(text)) return "622";
   return "unknown";
 }
 
@@ -230,6 +246,36 @@ function recordsForPort(records, portCode) {
   return records.filter(v => String(v.port_code || portCodeFromName(v.port)) === String(portCode));
 }
 
+
+function buildPortCongestion(records, portCode) {
+  return buildPortHeatmap(records).find(p => String(p.port_code || portCodeFromName(p.port)) === String(portCode)) || {
+    port_code: portCode,
+    total: 0,
+    anchorage_vessels: 0,
+    long_idle_vessels: 0,
+    average_waiting_time: 0,
+    berth_occupancy: 0,
+    anchorage_density: 0,
+    congestion_score: 0
+  };
+}
+
+function buildAnchorage(records) {
+  return sortCommercialPriority(records.filter(v => v.is_anchorage_waiting || (v.anchorage_hours || 0) > 0 || /waiting|anchorage|anchor|idle|drifting/i.test(v.status || "")))
+    .map(v => ({
+      vessel_id: v.vessel_id,
+      vessel_name: v.vessel_name,
+      port_code: v.port_code || portCodeFromName(v.port),
+      port_name: v.port_name || v.port,
+      anchorage_name: v.anchorage_name || v.anchorage_zone || "",
+      anchorage_hours: v.anchorage_hours || 0,
+      anchorage_days: v.anchorage_days || 0,
+      anchorage_density_score: v.anchorage_density_score || 0,
+      idle_risk_score: v.idle_risk_score || 0,
+      total_sales_priority_score: v.total_sales_priority_score || 0,
+      reason_codes: v.reason_codes || []
+    }));
+}
 function buildStatus(records, source) {
   const high = records.filter(v => (v.risk_score || 0) >= 70);
   const dataMode = records.length ? "supabase_live_snapshot" : "no_live_data";
@@ -269,11 +315,13 @@ async function apiResponse(pathname, env) {
   if (pathname.endsWith("/candidates.json")) return json(buildHot(records).filter(v => v.is_cleaning_candidate || (v.total_sales_priority_score || 0) >= 60), { headers: corsHeaders() });
   if (pathname.endsWith("/hot-candidates.json")) return json(buildHot(records), { headers: corsHeaders() });
   if (pathname.endsWith("/ports.json")) return json(buildPorts(records), { headers: corsHeaders() });
-  const portMatch = pathname.match(/\/api\/ports\/([^/]+)\/(vessels|candidates|berths)\.json$/);
+  const portMatch = pathname.match(new RegExp("^/api/ports/([^/]+)/(vessels|candidates|berths|congestion|anchorage)\\.json$"));
   if (portMatch) {
     const rows = recordsForPort(records, decodeURIComponent(portMatch[1]));
     if (portMatch[2] === "vessels") return json(rows, { headers: corsHeaders() });
     if (portMatch[2] === "candidates") return json(buildHot(rows), { headers: corsHeaders() });
+    if (portMatch[2] === "congestion") return json(buildPortCongestion(records, decodeURIComponent(portMatch[1])), { headers: corsHeaders() });
+    if (portMatch[2] === "anchorage") return json(buildAnchorage(rows), { headers: corsHeaders() });
     return json(rows.filter(v => v.berth).map(v => ({ berth_name: v.berth, vessel_name: v.vessel_name, status: v.status, eta: v.eta, etd: v.etd })), { headers: corsHeaders() });
   }
   if (pathname.endsWith("/hot-vessels.json")) return json(buildHot(records), { headers: corsHeaders() });
@@ -294,3 +342,4 @@ export default {
     return env.ASSETS.fetch(request);
   }
 };
+
