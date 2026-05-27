@@ -1,6 +1,8 @@
 const SOURCE_TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 25000);
 const MAX_OUTPUT_ROWS = Number(process.env.MAX_OUTPUT_ROWS || 500);
+const MAX_SOURCE_ROWS = Number(process.env.MAX_SOURCE_ROWS || 100);
 const MAX_CHILD_ENRICHMENT_ROWS = Number(process.env.MAX_CHILD_ENRICHMENT_ROWS || 10);
+const COLLECTOR_RUNTIME_BUDGET_MS = Number(process.env.COLLECTOR_RUNTIME_BUDGET_MS || 300000);
 const DEFAULT_PORT_OPERATION_API_URL = "http://apis.data.go.kr/1192000/VsslEtrynd5/Info5";
 const DEFAULT_CARGO_HARBOR_USE_API_URL = "http://apis.data.go.kr/1192000/CargHarborUse2/Info";
 const DEFAULT_PORT_OPERATION_CODES = {
@@ -77,6 +79,10 @@ function hasEmbeddedKey(urlValue) {
 
 function canAttempt(source) {
   return Boolean(source.url && (source.noKeyRequired || source.serviceKey || hasEmbeddedKey(source.url)));
+}
+
+function sourceCsvEnabled() {
+  return String(process.env.ENABLE_SOURCE_CSV || "").toLowerCase() === "true";
 }
 
 function formatDateCompact(date = new Date()) {
@@ -236,16 +242,16 @@ function allSourceConfigs() {
     .filter(Boolean);
 
   return [
-    { key: "source_csv", label: "Core external snapshot CSV", url: env("SOURCE_CSV_URL"), serviceKey: null, noKeyRequired: true },
+    { key: "source_csv", label: "Core external snapshot CSV", url: sourceCsvEnabled() ? env("SOURCE_CSV_URL") : "", serviceKey: null, noKeyRequired: true, disabledReason: "disabled_by_default_enable_source_csv_true", maxRows: Math.min(MAX_SOURCE_ROWS, 100) },
     ...portOperationSources,
     { key: "ulsan_core", label: "Ulsan core", url: env("ULSAN_API_URL"), serviceKey: env("ULSAN_API_KEY") },
     { key: "ulsan_berth_detail", label: "Ulsan berth detail", url: env("ULSAN_BERTH_DETAIL_API_URL"), serviceKey: env("ULSAN_BERTH_DETAIL_API_KEY") },
     { key: "ulsan_cargo_plan", label: "Ulsan cargo plan", url: env("ULSAN_CARGO_PLAN_API_URL"), serviceKey: env("ULSAN_CARGO_PLAN_API_KEY") },
     { key: "ulsan_berth_operation", label: "Ulsan berth operation", url: env("ULSAN_BERTH_OPERATION_API_URL"), serviceKey: env("ULSAN_BERTH_OPERATION_API_KEY") },
     { key: "ulsan_terminal_process", label: "Ulsan terminal process", url: env("ULSAN_TERMINAL_PROCESS_API_URL"), serviceKey: env("ULSAN_TERMINAL_PROCESS_API_KEY") },
-    { key: "mof_ais_dynamic", label: "MOF AIS dynamic", url: env("MOF_AIS_DYNAMIC_API_URL"), serviceKey: env("MOF_AIS_DYNAMIC_SERVICE_KEY") },
-    { key: "mof_ais_info", label: "MOF AIS info", url: env("MOF_AIS_INFO_API_URL"), serviceKey: env("MOF_AIS_INFO_SERVICE_KEY") },
-    { key: "mof_ais_stat", label: "MOF AIS stat", url: env("MOF_AIS_STAT_API_URL"), serviceKey: env("MOF_AIS_STAT_SERVICE_KEY") },
+    { key: "mof_ais_dynamic", label: "MOF AIS dynamic", url: env("MOF_AIS_DYNAMIC_API_URL"), serviceKey: env("MOF_AIS_DYNAMIC_SERVICE_KEY"), maxRows: Math.min(Number(env("MOF_AIS_DYNAMIC_PER_PAGE") || MAX_SOURCE_ROWS), MAX_SOURCE_ROWS) },
+    { key: "mof_ais_info", label: "MOF AIS info", url: env("MOF_AIS_INFO_API_URL"), serviceKey: env("MOF_AIS_INFO_SERVICE_KEY"), maxRows: Math.min(Number(env("MOF_AIS_INFO_PER_PAGE") || MAX_SOURCE_ROWS), MAX_SOURCE_ROWS) },
+    { key: "mof_ais_stat", label: "MOF AIS stat", url: env("MOF_AIS_STAT_API_URL"), serviceKey: env("MOF_AIS_STAT_SERVICE_KEY"), maxRows: Math.min(Number(env("MOF_AIS_STAT_PER_PAGE") || MAX_SOURCE_ROWS), MAX_SOURCE_ROWS) },
     { key: "korea_public_data", label: "Korea public data fallback", url: env("KOREA_PORTMIS_BASE_URL"), serviceKey: env("PORTMIS_API_KEY") || env("PORT_MIS_API_KEY") || env("DATA_GO_KR_API_KEY") || env("SERVICE_KEY") },
     ...((vtsBase && vtsKey) ? vtsCodes.map(code => ({ key: `mof_vts_${code.toLowerCase()}`, label: `Integrated VTS ${code}`, url: vtsBase, serviceKey: vtsKey, portCode: code })) : [])
   ];
@@ -343,7 +349,7 @@ function parseXmlRows(text) {
   return rows;
 }
 
-function parseCsvRows(text) {
+function parseCsvRows(text, limit = MAX_SOURCE_ROWS) {
   const rows = [];
   const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(line => line.trim());
   if (lines.length < 2) return rows;
@@ -370,7 +376,7 @@ function parseCsvRows(text) {
     return out;
   };
   const headers = parseLine(lines[0]);
-  for (const line of lines.slice(1)) {
+  for (const line of lines.slice(1, limit + 1)) {
     const values = parseLine(line);
     const row = {};
     headers.forEach((header, index) => {
@@ -381,16 +387,16 @@ function parseCsvRows(text) {
   return rows;
 }
 
-function parseRows(text) {
+function parseRows(text, limit = MAX_SOURCE_ROWS) {
   const trimmed = text.trim();
   if (!trimmed) return [];
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return flattenJson(JSON.parse(trimmed)).filter(row => row && typeof row === "object");
-  if (trimmed.startsWith("<")) return parseXmlRows(trimmed);
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return flattenJson(JSON.parse(trimmed)).filter(row => row && typeof row === "object").slice(0, limit);
+  if (trimmed.startsWith("<")) return parseXmlRows(trimmed).slice(0, limit);
   if (/^[^\n,]+,/.test(trimmed) || trimmed.includes("\n")) {
-    const csvRows = parseCsvRows(trimmed);
+    const csvRows = parseCsvRows(trimmed, limit);
     if (csvRows.length) return csvRows;
   }
-  return parseXmlRows(trimmed);
+  return parseXmlRows(trimmed).slice(0, limit);
 }
 
 function normalizeStatus(value) {
@@ -536,7 +542,7 @@ async function enrichWithCargoHarborUse(rawRow, record, now) {
   if (!canAttempt(source)) return { record, status: "missing_service_key_or_embedded_key", row_count: 0, normalized_count: 0 };
   try {
     const { text, http_status, result_meta, url } = await fetchText(source, params);
-    const rows = parseRows(text);
+    const rows = parseRows(text, 5);
     const enriched = mergeCargoHarborUse(record, rows);
     enriched.actionable_source_row = isActionableRecord(enriched);
     enriched.sales_ready_input = enriched.actionable_source_row;
@@ -557,6 +563,7 @@ async function enrichWithCargoHarborUse(rawRow, record, now) {
 
 async function collectRealRows() {
   const now = new Date().toISOString();
+  const deadline = Date.now() + COLLECTOR_RUNTIME_BUDGET_MS;
   const records = [];
   let totalChildEnrichmentAttempts = 0;
   diagnostics = { generated_at: now, attempted_count: 0, success_count: 0, failed_count: 0, skipped_count: 0, real_row_count: 0, actionable_row_count: 0, fallback_used: false, sources: [] };
@@ -576,9 +583,16 @@ async function collectRealRows() {
       sde: source.defaultParams?.sde || null,
       ede: source.defaultParams?.ede || null
     };
+    if (Date.now() > deadline) {
+      diag.skipped = true;
+      diag.reason = "runtime_budget_exceeded";
+      diagnostics.skipped_count += 1;
+      diagnostics.sources.push(diag);
+      continue;
+    }
     if (!source.url) {
       diag.skipped = true;
-      diag.reason = "missing_url";
+      diag.reason = source.disabledReason || "missing_url";
       diagnostics.skipped_count += 1;
       diagnostics.sources.push(diag);
       continue;
@@ -594,7 +608,8 @@ async function collectRealRows() {
     diagnostics.attempted_count += 1;
     try {
       const { text, url, http_status, latency_ms, result_meta } = await fetchText(source);
-      const rows = parseRows(text);
+      const rowLimit = Math.max(1, Math.min(Number(source.maxRows || MAX_SOURCE_ROWS), MAX_SOURCE_ROWS));
+      const rows = parseRows(text, rowLimit);
       diag.success = true;
       diag.latency_ms = latency_ms;
       diag.http_status = http_status;
@@ -603,6 +618,8 @@ async function collectRealRows() {
       diag.resultMsg = result_meta?.resultMsg || null;
       diag.totalCount = result_meta?.totalCount !== undefined ? Number(result_meta.totalCount) || result_meta.totalCount : null;
       diag.row_count = rows.length;
+      diag.max_rows = rowLimit;
+      diag.truncated = rows.length >= rowLimit;
       diag.url_host = url.host;
       diag.sample_keys = rows[0] && typeof rows[0] === "object" ? Object.keys(rows[0]).slice(0, 30) : [];
       let childAttempted = 0;

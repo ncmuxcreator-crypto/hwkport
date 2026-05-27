@@ -121,7 +121,7 @@ if (!workflow.includes("group: ${{ github.workflow }}-${{ github.ref }}") || !wo
 if (!workflow.includes("timeout-minutes: 12")) {
   throw new Error("Longterm workflow job timeout must be 12 minutes");
 }
-if (!workflow.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflow.includes("SOURCE_TIMEOUT_MS: 12000") || !workflow.includes("timeout-minutes: 7")) {
+if (!workflow.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflow.includes("MAX_SOURCE_ROWS") || !workflow.includes("ENABLE_SOURCE_CSV") || !workflow.includes("SOURCE_TIMEOUT_MS: 8000") || !workflow.includes("timeout-minutes: 7")) {
   throw new Error("Longterm workflow must bound collector runtime and child enrichment");
 }
 for (const marker of ["github.run_id", "github.ref", "runner.os", "github.workflow", "timestamp=$(date -u"]) {
@@ -152,6 +152,9 @@ for (const param of ["sde", "ede", "deGb", "numOfRows", "requested_url_without_s
 if (!koreaCollector.includes("MAX_CHILD_ENRICHMENT_ROWS") || !koreaCollector.includes("skipped_by_limit")) {
   throw new Error("CargHarborUse2 enrichment must be bounded to keep update runtime under control");
 }
+if (!koreaCollector.includes("MAX_SOURCE_ROWS") || !koreaCollector.includes("COLLECTOR_RUNTIME_BUDGET_MS") || !koreaCollector.includes("ENABLE_SOURCE_CSV")) {
+  throw new Error("Collector must bound per-source rows, runtime, and optional CSV ingestion");
+}
 if (!koreaCollector.includes("noTypeParam")) {
   throw new Error("PORT-MIS XML-capable APIs must not force _type=json");
 }
@@ -181,6 +184,10 @@ const gdriveLib = fs.readFileSync("scripts/lib/gdrive.js", "utf8");
 if (!gdriveLib.includes("supportsAllDrives=true") || !gdriveLib.includes("normalizeFolderId") || !gdriveLib.includes("Buffer.from(value, \"base64\")")) {
   throw new Error("Google Drive archive helper must support shared drives, folder URLs, and base64 service account secrets");
 }
+const dbLib = fs.readFileSync("scripts/lib/db.js", "utf8");
+if (!dbLib.includes("SUPABASE_BATCH_SIZE") || !dbLib.includes("batchSize")) {
+  throw new Error("Supabase writes must be batched to avoid long single upserts");
+}
 const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
 if (packageJson.scripts?.["gdrive:check"] && !fs.existsSync("scripts/gdrive-check.js")) {
   throw new Error("Google Drive check script is registered but scripts/gdrive-check.js is missing");
@@ -209,7 +216,7 @@ if (/git push origin HEAD:main|git commit -m "auto: refresh|runs-on: self-hosted
 if (!workflowV2.includes("continue-on-error: true") || !workflowV2.includes("Skip Cloudflare deploy notice")) {
   throw new Error("Longterm Update V2 must keep bypass diagnostics running even when optional checks fail");
 }
-if (!workflowV2.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflowV2.includes("SOURCE_TIMEOUT_MS: 12000") || !workflowV2.includes("timeout-minutes: 7")) {
+if (!workflowV2.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflowV2.includes("MAX_SOURCE_ROWS") || !workflowV2.includes("ENABLE_SOURCE_CSV") || !workflowV2.includes("SOURCE_TIMEOUT_MS: 8000") || !workflowV2.includes("timeout-minutes: 7")) {
   throw new Error("Longterm Update V2 must bound collector runtime and child enrichment");
 }
 

@@ -42,12 +42,18 @@ export async function saveToSupabase(records) {
     return { recordsSaved: 0, table: "vessel_snapshots", mode: "empty" };
   }
 
-  const { error } = await supabase
-    .from("vessel_snapshots")
-    .upsert(rows, {
-      onConflict: "snapshot_date,vessel_id,port"
-    });
+  let recordsSaved = 0;
+  const batchSize = Number(process.env.SUPABASE_BATCH_SIZE || 100);
+  for (let index = 0; index < rows.length; index += batchSize) {
+    const batch = rows.slice(index, index + batchSize);
+    const { error } = await supabase
+      .from("vessel_snapshots")
+      .upsert(batch, {
+        onConflict: "snapshot_date,vessel_id,port"
+      });
+    if (error) throw error;
+    recordsSaved += batch.length;
+  }
 
-  if (error) throw error;
-  return { recordsSaved: rows.length, table: "vessel_snapshots", mode: "upsert" };
+  return { recordsSaved, table: "vessel_snapshots", mode: "upsert", batchSize };
 }
