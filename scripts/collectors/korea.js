@@ -1,27 +1,37 @@
-﻿const SOURCE_TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 25000);
+import fs from "node:fs";
+import path from "node:path";
+
+const SOURCE_TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 25000);
 const MAX_OUTPUT_ROWS = Number(process.env.MAX_OUTPUT_ROWS || 10000);
 const MAX_SOURCE_ROWS = Number(process.env.MAX_SOURCE_ROWS || 5000);
 const MAX_CHILD_ENRICHMENT_ROWS = Number(process.env.MAX_CHILD_ENRICHMENT_ROWS || 10);
 const COLLECTOR_RUNTIME_BUDGET_MS = Number(process.env.COLLECTOR_RUNTIME_BUDGET_MS || 300000);
 const DEFAULT_PORT_OPERATION_API_URL = "http://apis.data.go.kr/1192000/VsslEtrynd5/Info5";
 const DEFAULT_CARGO_HARBOR_USE_API_URL = "http://apis.data.go.kr/1192000/CargHarborUse2/Info";
-const DEFAULT_PORT_OPERATION_CODES = {
-  busan: "020",
-  incheon: "030",
-  yeosu_gwangyang: "620",
-  ulsan: "820",
-  pyeongtaek_dangjin: "031",
-  pohang: "810",
-  masan_jinhae: "622",
-  samcheonpo_hadong: "622",
-  mokpo: "070",
-  gunsan: "080",
-  daesan: "621",
-  donghae_mukho: "120",
-  jeju: "940",
-  tongyeong: "622",
-  geoje_okpo: "622"
-};
+const PORTS_REGISTRY_PATH = path.join("data", "reference", "ports_registry.csv");
+const DEFAULT_PORT_REGISTRY = [
+  { port_code: "020", prtAgCd: "020", port_name_ko: "Busan", port_name_en: "Busan", port_group: "Busan", sub_port: "Busan", tier: "1", commercial_focus: "container,cruise,repair,anchorage", has_port_operation: "true", has_pilot_source: "true", has_berth_source: "true", has_vts: "true", anchorage_relevance: "high", commercial_priority: "high", enabled: "true" },
+  { port_code: "030", prtAgCd: "030", port_name_ko: "Incheon", port_name_en: "Incheon", port_group: "Incheon", sub_port: "Incheon", tier: "1", commercial_focus: "container,bulk,passenger", has_port_operation: "true", has_pilot_source: "true", has_berth_source: "true", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "high", enabled: "true" },
+  { port_code: "031", prtAgCd: "031", port_name_ko: "Pyeongtaek-Dangjin", port_name_en: "Pyeongtaek-Dangjin", port_group: "Pyeongtaek-Dangjin", sub_port: "Pyeongtaek/Dangjin", tier: "1", commercial_focus: "pctc,bulk,industrial", has_port_operation: "true", has_pilot_source: "true", has_berth_source: "true", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "high", enabled: "true" },
+  { port_code: "620", prtAgCd: "620", port_name_ko: "Yeosu/Gwangyang", port_name_en: "Yeosu/Gwangyang", port_group: "Yeosu/Gwangyang", sub_port: "Yeosu/Gwangyang", tier: "1", commercial_focus: "bulk,tanker,resource,anchorage", has_port_operation: "true", has_pilot_source: "true", has_berth_source: "true", has_vts: "true", anchorage_relevance: "high", commercial_priority: "high", enabled: "true" },
+  { port_code: "810", prtAgCd: "810", port_name_ko: "Pohang", port_name_en: "Pohang", port_group: "Pohang", sub_port: "Pohang", tier: "1", commercial_focus: "bulk,steel,coal,ore", has_port_operation: "true", has_pilot_source: "true", has_berth_source: "true", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "high", enabled: "true" },
+  { port_code: "820", prtAgCd: "820", port_name_ko: "Ulsan", port_name_en: "Ulsan", port_group: "Ulsan", sub_port: "Ulsan", tier: "1", commercial_focus: "tanker,industrial,energy", has_port_operation: "true", has_pilot_source: "true", has_berth_source: "true", has_vts: "true", anchorage_relevance: "high", commercial_priority: "high", enabled: "true" },
+  { port_code: "621", prtAgCd: "621", port_name_ko: "Daesan", port_name_en: "Daesan", port_group: "Daesan", sub_port: "Daesan", tier: "2", commercial_focus: "tanker,chemical,industrial", has_port_operation: "true", has_pilot_source: "true", has_berth_source: "false", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "medium_high", enabled: "true" },
+  { port_code: "622", prtAgCd: "622", port_name_ko: "Hadong/Samcheonpo", port_name_en: "Hadong/Samcheonpo", port_group: "South Gyeongsang", sub_port: "Hadong/Samcheonpo", tier: "2", commercial_focus: "coal,bulk,resource", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "medium_high", enabled: "true" },
+  { port_code: "622", prtAgCd: "622", port_name_ko: "Masan/Jinhae", port_name_en: "Masan/Jinhae", port_group: "South Gyeongsang", sub_port: "Masan/Jinhae", tier: "2", commercial_focus: "general_cargo,shipyard,industrial", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "medium", enabled: "true" },
+  { port_code: "622", prtAgCd: "622", port_name_ko: "Tongyeong", port_name_en: "Tongyeong", port_group: "South Gyeongsang", sub_port: "Tongyeong", tier: "2", commercial_focus: "industrial,shipyard,small_lng", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "true", anchorage_relevance: "low", commercial_priority: "medium", enabled: "true" },
+  { port_code: "622", prtAgCd: "622", port_name_ko: "Geoje/Okpo", port_name_en: "Geoje/Okpo", port_group: "South Gyeongsang", sub_port: "Geoje/Okpo", tier: "2", commercial_focus: "shipyard,repair,offshore", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "medium_high", enabled: "true" },
+  { port_code: "070", prtAgCd: "070", port_name_ko: "Mokpo", port_name_en: "Mokpo", port_group: "Mokpo", sub_port: "Mokpo", tier: "2", commercial_focus: "general_cargo,passenger,shipyard", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "true", anchorage_relevance: "low", commercial_priority: "medium", enabled: "true" },
+  { port_code: "080", prtAgCd: "080", port_name_ko: "Gunsan", port_name_en: "Gunsan", port_group: "Gunsan", sub_port: "Gunsan", tier: "2", commercial_focus: "bulk,general_cargo,industrial", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "medium", enabled: "true" },
+  { port_code: "120", prtAgCd: "120", port_name_ko: "Donghae/Mukho", port_name_en: "Donghae/Mukho", port_group: "Donghae/Mukho", sub_port: "Donghae/Mukho", tier: "2", commercial_focus: "bulk,cement,coal", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "medium", enabled: "true" },
+  { port_code: "940", prtAgCd: "940", port_name_ko: "Jeju", port_name_en: "Jeju", port_group: "Jeju", sub_port: "Jeju", tier: "3", commercial_focus: "passenger,cruise,general_cargo", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "false", anchorage_relevance: "low", commercial_priority: "medium_low", enabled: "true" },
+  { port_code: "120", prtAgCd: "120", port_name_ko: "Sokcho", port_name_en: "Sokcho", port_group: "Donghae/Mukho", sub_port: "Sokcho", tier: "3", commercial_focus: "cruise,passenger,general_cargo", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "false", anchorage_relevance: "low", commercial_priority: "medium_low", enabled: "true" },
+  { port_code: "031", prtAgCd: "031", port_name_ko: "Boryeong", port_name_en: "Boryeong", port_group: "Pyeongtaek-Dangjin", sub_port: "Boryeong", tier: "3", commercial_focus: "coal,industrial,bulk", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "false", anchorage_relevance: "medium", commercial_priority: "medium", enabled: "true" },
+  { port_code: "030", prtAgCd: "030", port_name_ko: "Yeongheung", port_name_en: "Yeongheung", port_group: "Incheon", sub_port: "Yeongheung", tier: "3", commercial_focus: "coal,lng,industrial", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "false", anchorage_relevance: "medium", commercial_priority: "medium", enabled: "true" },
+  { port_code: "621", prtAgCd: "621", port_name_ko: "Taean", port_name_en: "Taean", port_group: "Daesan", sub_port: "Taean", tier: "3", commercial_focus: "coal,bulk,industrial", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "false", anchorage_relevance: "medium", commercial_priority: "medium", enabled: "true" },
+  { port_code: "031", prtAgCd: "031", port_name_ko: "Dangjin Industrial Terminals", port_name_en: "Dangjin Industrial Terminals", port_group: "Pyeongtaek-Dangjin", sub_port: "Dangjin industrial terminals", tier: "3", commercial_focus: "steel,bulk,industrial", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "medium_high", enabled: "true" },
+  { port_code: "820", prtAgCd: "820", port_name_ko: "Smaller LNG/Industrial Terminals", port_name_en: "Smaller LNG/Industrial Terminals", port_group: "Industrial Terminals", sub_port: "LNG/industrial terminals", tier: "3", commercial_focus: "lng,lpg,chemical,industrial", has_port_operation: "true", has_pilot_source: "false", has_berth_source: "false", has_vts: "true", anchorage_relevance: "medium", commercial_priority: "medium", enabled: "true" }
+];
 
 let diagnostics = {
   generated_at: null,
@@ -34,6 +44,7 @@ let diagnostics = {
   fallback_used: false,
   sources: []
 };
+let portsRegistryCache = null;
 
 const FIELD_ALIASES = {
   vessel_name: ["vessel_name", "ship_name", "shipNm", "shipname", "shipName", "vsslNm", "vslNm", "vesselNm", "VSL_NM", "VSSL_NM", "vsslEngNm", "vsslKrnNm", "선박명", "선명"],
@@ -90,6 +101,92 @@ function envAny(...names) {
   return "";
 }
 
+function parseReferenceCsv(text) {
+  const lines = String(text || "").replace(/^\uFEFF/, "").split(/\r?\n/).filter(line => line.trim());
+  if (lines.length < 2) return [];
+  const parseLine = line => {
+    const cells = [];
+    let current = "";
+    let quoted = false;
+    for (let index = 0; index < line.length; index += 1) {
+      const char = line[index];
+      const next = line[index + 1];
+      if (char === '"' && quoted && next === '"') {
+        current += '"';
+        index += 1;
+      } else if (char === '"') {
+        quoted = !quoted;
+      } else if (char === "," && !quoted) {
+        cells.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    cells.push(current.trim());
+    return cells;
+  };
+  const headers = parseLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const values = parseLine(line);
+    return Object.fromEntries(headers.map((header, index) => [header, values[index] || ""]));
+  });
+}
+
+function truthyFlag(value) {
+  return /^(1|true|yes|y)$/i.test(String(value || "").trim());
+}
+
+function slug(value = "") {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function loadPortsRegistry() {
+  if (portsRegistryCache) return portsRegistryCache;
+  if (!fs.existsSync(PORTS_REGISTRY_PATH)) {
+    portsRegistryCache = DEFAULT_PORT_REGISTRY;
+    return portsRegistryCache;
+  }
+  const rows = parseReferenceCsv(fs.readFileSync(PORTS_REGISTRY_PATH, "utf8"));
+  portsRegistryCache = rows.length ? rows : DEFAULT_PORT_REGISTRY;
+  return portsRegistryCache;
+}
+
+function portRegistryRows() {
+  return loadPortsRegistry()
+    .map(row => ({
+      ...row,
+      prtAgCd: row.prtAgCd || row.port_code,
+      port_code: row.port_code || row.prtAgCd,
+      port_name_en: row.port_name_en || row.port_name || row.port_group || row.sub_port,
+      port_name_ko: row.port_name_ko || row.port_name_en || row.port_name || row.port_group || row.sub_port,
+      enabled: row.enabled === "" ? "true" : row.enabled
+    }))
+    .filter(row => row.prtAgCd);
+}
+
+function buildPortCoverageRegistryDiagnostics(ports = configuredPortOperationPorts()) {
+  const registry = portRegistryRows();
+  const enabledRegistry = registry.filter(row => truthyFlag(row.enabled));
+  const uniqueAttemptCodes = new Set(ports.map(port => port.code).filter(Boolean));
+  return {
+    registry_path: PORTS_REGISTRY_PATH,
+    registry_rows_count: registry.length,
+    enabled_ports_count: enabledRegistry.length,
+    enabled_port_operation_rows_count: enabledRegistry.filter(row => truthyFlag(row.has_port_operation)).length,
+    tier1_ports_count: enabledRegistry.filter(row => String(row.tier) === "1").length,
+    tier2_ports_count: enabledRegistry.filter(row => String(row.tier) === "2").length,
+    tier3_ports_count: enabledRegistry.filter(row => String(row.tier) === "3").length,
+    unique_prtAgCd_count: uniqueAttemptCodes.size,
+    unique_prtAgCd: [...uniqueAttemptCodes].sort()
+  };
+}
+
 function runtimeEnvDiagnostics() {
   return {
     PORT_OPERATION_API_URL: Boolean(process.env.PORT_OPERATION_API_URL),
@@ -139,13 +236,68 @@ function addDaysCompact(days) {
   return formatDateCompact(date);
 }
 
-function configuredPortOperationCodes() {
+function configuredPortOperationPorts() {
   const raw = env("PORT_OPERATION_PORT_CODES") || env("PORT_MIS_PORT_CODES");
-  if (!raw) return DEFAULT_PORT_OPERATION_CODES;
-  const mapped = { ...DEFAULT_PORT_OPERATION_CODES };
+  const registryRows = portRegistryRows()
+    .filter(row => truthyFlag(row.enabled) && truthyFlag(row.has_port_operation))
+    .map(row => ({
+      name: slug(row.port_group || row.port_name_en || row.sub_port || row.prtAgCd),
+      code: row.prtAgCd,
+      portCode: row.port_code || row.prtAgCd,
+      portName: row.port_group || row.port_name_en || row.port_name_ko || row.sub_port || row.prtAgCd,
+      portNameKo: row.port_name_ko || row.port_name_en || row.sub_port || row.prtAgCd,
+      portGroup: row.port_group || row.port_name_en || row.port_name_ko || row.prtAgCd,
+      subPort: row.sub_port || row.port_name_en || row.port_name_ko || "",
+      tier: row.tier || "",
+      commercialFocus: row.commercial_focus || "",
+      commercialPriority: row.commercial_priority || "",
+      anchorageRelevance: row.anchorage_relevance || ""
+    }));
+  const registry = [...registryRows.reduce((map, port) => {
+    const existing = map.get(port.code);
+    if (!existing) {
+      map.set(port.code, port);
+      return map;
+    }
+    existing.subPort = [...new Set([existing.subPort, port.subPort].filter(Boolean).join("/").split("/").map(value => value.trim()).filter(Boolean))].join("/");
+    existing.commercialFocus = [...new Set([existing.commercialFocus, port.commercialFocus].filter(Boolean).join(",").split(",").map(value => value.trim()).filter(Boolean))].join(",");
+    existing.commercialPriority = existing.commercialPriority === "high" || port.commercialPriority !== "high" ? existing.commercialPriority : port.commercialPriority;
+    existing.anchorageRelevance = existing.anchorageRelevance === "high" || port.anchorageRelevance !== "high" ? existing.anchorageRelevance : port.anchorageRelevance;
+    return map;
+  }, new Map()).values()];
+  if (!raw) return registry;
+  const mapped = [...registry];
   for (const part of raw.split(/[,\n]+/).map(v => v.trim()).filter(Boolean)) {
     const [name, code] = part.split(/[:=]/).map(v => v?.trim()).filter(Boolean);
-    if (name && code) mapped[name.toLowerCase().replace(/[^a-z0-9]+/g, "_")] = code;
+    if (name && code) {
+      mapped.push({
+        name: slug(name),
+        code,
+        portCode: code,
+        portName: name,
+        portNameKo: name,
+        portGroup: name,
+        subPort: name,
+        tier: "override",
+        commercialFocus: "env_override",
+        commercialPriority: "override",
+        anchorageRelevance: ""
+      });
+    } else if (name) {
+      mapped.push({
+        name: slug(name),
+        code: name,
+        portCode: name,
+        portName: name,
+        portNameKo: name,
+        portGroup: name,
+        subPort: name,
+        tier: "override",
+        commercialFocus: "env_override",
+        commercialPriority: "override",
+        anchorageRelevance: ""
+      });
+    }
   }
   return mapped;
 }
@@ -287,17 +439,27 @@ function allSourceConfigs() {
     .split(/[,\s]+/)
     .map(value => value.trim())
     .filter(Boolean);
-  const portOperationSources = Object.entries(configuredPortOperationCodes()).flatMap(([name, code]) => portOperationDirections.map(deGb => ({
-    key: `port_operation_${name}_${deGb.toLowerCase()}`,
-    label: `PORT-MIS VsslEtrynd5 ${name} ${deGb}`,
+  const portOperationPorts = configuredPortOperationPorts();
+  diagnostics.port_registry = buildPortCoverageRegistryDiagnostics(portOperationPorts);
+  const portOperationSources = portOperationPorts.flatMap(port => portOperationDirections.map(deGb => ({
+    key: `port_operation_${port.name}_${deGb.toLowerCase()}`,
+    label: `PORT-MIS VsslEtrynd5 ${port.portName} ${deGb}`,
     url: portOperationUrl,
     serviceKey: portOperationKey,
     serviceKeyVariants: serviceKeyVariants(portOperationKey),
-    portName: name,
-    prtAgCd: code,
+    portName: port.portName,
+    portNameKo: port.portNameKo,
+    portGroup: port.portGroup,
+    subPort: port.subPort,
+    portTier: port.tier,
+    commercialFocus: port.commercialFocus,
+    commercialPriority: port.commercialPriority,
+    anchorageRelevance: port.anchorageRelevance,
+    prtAgCd: port.code,
+    portCode: port.portCode,
     noTypeParam: true,
     defaultParams: {
-      prtAgCd: code,
+      prtAgCd: port.code,
       sde,
       ede,
       deGb,
@@ -653,8 +815,17 @@ function normalizeStatus(value) {
   return text || "Observed";
 }
 
+function portNameForCode(code = "") {
+  const text = String(code || "").trim();
+  if (!text) return "";
+  const row = portRegistryRows().find(item => String(item.prtAgCd || item.port_code) === text || String(item.port_code) === text);
+  return row?.port_name_en || row?.port_name_ko || "";
+}
+
 function normalizePort(value, fallback = "") {
   const text = String(value || fallback || "").trim();
+  const registryName = portNameForCode(text);
+  if (registryName) return registryName;
   if (text === "020" || /busan/i.test(text)) return "Busan";
   if (text === "030" || /incheon/i.test(text)) return "Incheon";
   if (text === "620" || /yeosu_gwangyang/i.test(text)) return "Yeosu/Gwangyang";
@@ -671,6 +842,10 @@ function normalizePort(value, fallback = "") {
   if (/hadong|samcheonpo/i.test(text)) return "Hadong/Samcheonpo";
   if (/masan|jinhae/i.test(text)) return "Masan/Jinhae";
   if (/incheon/i.test(text)) return "Incheon";
+  if (/sokcho/i.test(text)) return "Sokcho";
+  if (/boryeong/i.test(text)) return "Boryeong";
+  if (/yeongheung/i.test(text)) return "Yeongheung";
+  if (/taean/i.test(text)) return "Taean";
   return text || "Korea";
 }
 
@@ -688,6 +863,10 @@ function portCodeFromName(port = "") {
   if (/daesan|대산/.test(text)) return "621";
   if (/donghae|mukho|동해|묵호/.test(text)) return "120";
   if (/jeju|제주/.test(text)) return "940";
+  if (/sokcho|속초/.test(text)) return "120";
+  if (/boryeong|보령/.test(text)) return "031";
+  if (/yeongheung|영흥/.test(text)) return "030";
+  if (/taean|태안/.test(text)) return "621";
   if (/masan|jinhae|samcheonpo|hadong|tongyeong|geoje|okpo|마산|진해|삼천포|하동|통영|거제|옥포/.test(text)) return "622";
   return "";
 }
@@ -1060,6 +1239,13 @@ function normalizeRow(row, source, now) {
     port,
     port_code: source.prtAgCd || rawValue(adapted, ["prtAgCd", "portCode", "prtCd"]) || portCodeFromName(port),
     port_name: port,
+    port_name_ko: source.portNameKo || port,
+    port_group: source.portGroup || port,
+    sub_port: source.subPort || "",
+    port_tier: source.portTier || "",
+    commercial_focus: source.commercialFocus || "",
+    commercial_priority: source.commercialPriority || "",
+    anchorage_relevance: source.anchorageRelevance || "",
     berth: String(firstValue(adapted, FIELD_ALIASES.berth)).trim(),
     berth_name: String(firstValue(adapted, FIELD_ALIASES.berth)).trim(),
     anchorage_zone: String(firstValue(adapted, FIELD_ALIASES.anchorage_zone)).trim(),
@@ -1496,6 +1682,26 @@ async function collectRealRows() {
       return gt > 0 && gt < 5000;
     }).length
   };
+  const portOperationDiagnostics = diagnostics.sources.filter(source => String(source.key || "").startsWith("port_operation_"));
+  diagnostics.coverage = {
+    ...(diagnostics.port_registry || {}),
+    successful_ports_count: new Set(portOperationDiagnostics.filter(source => source.success && Number(source.row_count || 0) > 0).map(source => source.prtAgCd).filter(Boolean)).size,
+    failed_ports_count: new Set(portOperationDiagnostics.filter(source => source.error).map(source => source.prtAgCd).filter(Boolean)).size,
+    no_data_ports_count: new Set(portOperationDiagnostics.filter(source => source.success && Number(source.row_count || 0) === 0).map(source => source.prtAgCd).filter(Boolean)).size,
+    port_operation_rows_by_port: Object.fromEntries([...new Set(portOperationDiagnostics.map(source => source.prtAgCd).filter(Boolean))].map(code => [
+      code,
+      portOperationDiagnostics.filter(source => source.prtAgCd === code).reduce((sum, source) => sum + Number(source.row_count || 0), 0)
+    ])),
+    target_vessels_by_port: Object.fromEntries([...new Set(deduped.map(record => record.port_code).filter(Boolean))].map(code => [
+      code,
+      deduped.filter(record => record.port_code === code && Number(record.gt || record.grtg || record.intrlGrtg || 0) >= 5000).length
+    ])),
+    candidates_by_port: Object.fromEntries([...new Set(deduped.map(record => record.port_code).filter(Boolean))].map(code => [
+      code,
+      deduped.filter(record => record.port_code === code && Number(record.commercial_value_score || record.total_sales_priority_score || 0) >= 50).length
+    ]))
+  };
+  Object.assign(diagnostics, diagnostics.coverage);
   return deduped;
 }
 

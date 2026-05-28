@@ -150,6 +150,15 @@ function normalizeSnapshot(row = {}) {
     mmsi: merged.mmsi || "",
     call_sign: merged.call_sign || merged.callsign || "",
     port: merged.port || "Korea",
+    port_code: merged.port_code || portCodeFromName(merged.port || merged.port_name),
+    port_name: merged.port_name || merged.port || "Korea",
+    port_name_ko: merged.port_name_ko || "",
+    port_group: merged.port_group || "",
+    sub_port: merged.sub_port || "",
+    port_tier: merged.port_tier || "",
+    commercial_focus: merged.commercial_focus || "",
+    commercial_priority: merged.commercial_priority || "",
+    anchorage_relevance: merged.anchorage_relevance || "",
     berth: merged.berth || "",
     anchorage_zone: merged.anchorage_zone || "",
     anchorage_name: merged.anchorage_name || merged.anchorage_zone || "",
@@ -918,17 +927,34 @@ function portCodeFromName(port = "") {
 function buildPorts(records) {
   const map = new Map();
   for (const v of records) {
-    const portName = v.port || "Unknown";
+    const portName = v.port_name || v.port || "Unknown";
     const portCode = v.port_code || portCodeFromName(portName);
     const key = portCode !== "unknown" ? portCode : portName;
-    const p = map.get(key) || { port_code: portCode, port_name: portName, vessel_count: 0, scored_count: 0, candidate_count: 0, immediate_target_count: 0 };
+    const p = map.get(key) || {
+      port_code: portCode,
+      port_name: portName,
+      port_name_ko: v.port_name_ko || "",
+      port_group: v.port_group || portName,
+      sub_port: v.sub_port || "",
+      tier: v.port_tier || "",
+      commercial_priority: v.commercial_priority || "",
+      vessel_count: 0,
+      scored_count: 0,
+      candidate_count: 0,
+      immediate_target_count: 0
+    };
     p.vessel_count += 1;
     if (typeof v.total_sales_priority_score === "number") p.scored_count += 1;
     if (isSalesCandidate(v)) p.candidate_count += 1;
     if (isImmediateTarget(v)) p.immediate_target_count += 1;
     map.set(key, p);
   }
-  return [...map.values()].sort((a, b) => b.immediate_target_count - a.immediate_target_count || b.candidate_count - a.candidate_count || b.vessel_count - a.vessel_count);
+  return [...map.values()].sort((a, b) =>
+    Number(a.tier || 99) - Number(b.tier || 99) ||
+    b.immediate_target_count - a.immediate_target_count ||
+    b.candidate_count - a.candidate_count ||
+    b.vessel_count - a.vessel_count
+  );
 }
 
 function recordsForPort(records, portCode) {

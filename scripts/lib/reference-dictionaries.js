@@ -142,6 +142,7 @@ function seedCandidates(record = {}) {
 
 export function loadReferenceDictionaries() {
   const ports = loadCsv("ports.csv");
+  const portsRegistry = loadCsv("ports_registry.csv");
   const berths = loadCsv("berths.csv");
   const anchorages = loadCsv("anchorages.csv");
   const vesselTypes = loadCsv("vessel_types.csv");
@@ -152,6 +153,7 @@ export function loadReferenceDictionaries() {
   return {
     loaded_at: new Date().toISOString(),
     ports,
+    portsRegistry,
     berths,
     anchorages,
     vesselTypes,
@@ -160,7 +162,7 @@ export function loadReferenceDictionaries() {
     agentOperatorMappings,
     vesselMasterSeed,
     indexes: {
-      ports: indexBy(ports, ["port_code", "port_name", "alias"]),
+      ports: indexBy([...ports, ...portsRegistry], ["port_code", "prtAgCd", "port_name", "port_name_ko", "port_name_en", "alias", "sub_port"]),
       berths: indexBy(berths, ["berth_name", "alias"]),
       anchorages: indexBy(anchorages, ["anchorage_name", "alias"]),
       vesselTypes: indexBy(vesselTypes, ["vessel_type", "alias"]),

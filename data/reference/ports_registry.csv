@@ -1,0 +1,23 @@
+port_code,prtAgCd,port_name_ko,port_name_en,port_group,sub_port,tier,commercial_focus,has_port_operation,has_pilot_source,has_berth_source,has_vts,anchorage_relevance,commercial_priority,enabled
+020,020,부산항,Busan,Busan,Busan,1,"container,cruise,repair,anchorage",true,true,true,true,high,high,true
+820,820,울산항,Ulsan,Ulsan,Ulsan,1,"tanker,industrial,energy",true,true,true,true,high,high,true
+620,620,여수·광양항,Yeosu/Gwangyang,Yeosu/Gwangyang,Yeosu/Gwangyang,1,"bulk,tanker,resource,anchorage",true,true,true,true,high,high,true
+031,031,평택·당진항,Pyeongtaek-Dangjin,Pyeongtaek-Dangjin,Pyeongtaek/Dangjin,1,"pctc,bulk,industrial",true,true,true,true,medium,high,true
+030,030,인천항,Incheon,Incheon,Incheon,1,"container,bulk,passenger",true,true,true,true,medium,high,true
+810,810,포항항,Pohang,Pohang,Pohang,1,"bulk,steel,coal,ore",true,true,true,true,medium,high,true
+622,622,하동항,Hadong,South Gyeongsang,Hadong,2,"coal,bulk,resource",true,false,false,true,medium,medium_high,true
+622,622,삼천포항,Samcheonpo,South Gyeongsang,Samcheonpo,2,"bulk,coal,industrial",true,false,false,true,medium,medium_high,true
+621,621,대산항,Daesan,Daesan,Daesan,2,"tanker,chemical,industrial",true,true,false,true,medium,medium_high,true
+622,622,마산·진해항,Masan/Jinhae,South Gyeongsang,Masan/Jinhae,2,"general_cargo,shipyard,industrial",true,false,false,true,medium,medium,true
+622,622,통영항,Tongyeong,South Gyeongsang,Tongyeong,2,"industrial,shipyard,small_lng",true,false,false,true,low,medium,true
+622,622,거제·옥포항,Geoje/Okpo,South Gyeongsang,Geoje/Okpo,2,"shipyard,repair,offshore",true,false,false,true,medium,medium_high,true
+070,070,목포항,Mokpo,Mokpo,Mokpo,2,"general_cargo,passenger,shipyard",true,false,false,true,low,medium,true
+080,080,군산항,Gunsan,Gunsan,Gunsan,2,"bulk,general_cargo,industrial",true,false,false,true,medium,medium,true
+120,120,동해·묵호항,Donghae/Mukho,Donghae/Mukho,Donghae/Mukho,2,"bulk,cement,coal",true,false,false,true,medium,medium,true
+940,940,제주항,Jeju,Jeju,Jeju,3,"passenger,cruise,general_cargo",true,false,false,false,low,medium_low,true
+120,120,속초항,Sokcho,Donghae/Mukho,Sokcho,3,"cruise,passenger,general_cargo",true,false,false,false,low,medium_low,true
+031,031,보령항,Boryeong,Pyeongtaek-Dangjin,Boryeong,3,"coal,industrial,bulk",true,false,false,false,medium,medium,true
+030,030,영흥 터미널,Yeongheung,Incheon,Yeongheung,3,"coal,lng,industrial",true,false,false,false,medium,medium,true
+621,621,태안 터미널,Taean,Daesan,Taean,3,"coal,bulk,industrial",true,false,false,false,medium,medium,true
+031,031,당진 산업터미널,Dangjin Industrial Terminals,Pyeongtaek-Dangjin,Dangjin industrial terminals,3,"steel,bulk,industrial",true,false,false,true,medium,medium_high,true
+820,820,소형 LNG·산업 터미널,Smaller LNG/Industrial Terminals,Industrial Terminals,LNG/industrial terminals,3,"lng,lpg,chemical,industrial",true,false,false,true,medium,medium,true

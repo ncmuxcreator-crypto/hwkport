@@ -173,7 +173,7 @@ const windowText=windowStatus;
 const windowChip=v=>`<span class="chip ${windowClass(v)}">${windowStatus(v)}</span>`;
 const vesselTitle=v=>text(v.vessel_name,v.name,v.ship_name,"선명 미확인");
 const portName=v=>text(v.port_name,v.port,v.port_code);
-const portKoMap={"020":"부산항","030":"인천항","031":"평택·당진항","620":"여수·광양항","820":"울산항","810":"포항항","621":"대산항","622":"마산·진해·거제항","070":"목포항","080":"군산항","120":"동해·묵호항","940":"제주항"};
+const portKoMap={"020":"부산항","030":"인천항","031":"평택·당진항","620":"여수·광양항","820":"울산항","810":"포항항","621":"대산·태안권","622":"하동·삼천포·마산·진해·통영·거제권","070":"목포항","080":"군산항","120":"동해·묵호·속초권","940":"제주항"};
 function portDisplayName(v){const code=String(v?.port_code||v?.code||"");const raw=text(v?.port_name,v?.name,v?.port,v?.port,code);if(portKoMap[code])return portKoMap[code];if(/busan|부산/i.test(raw))return"부산항";if(/ulsan|울산/i.test(raw))return"울산항";if(/yeosu|gwangyang|여수|광양/i.test(raw))return"여수·광양항";if(/incheon|인천/i.test(raw))return"인천항";if(/daesan|대산/i.test(raw))return"대산항";if(/pohang|포항/i.test(raw))return"포항항";return raw==="-"?"항만 확인 필요":raw}
 const vesselTypeKoMap={bulk_carrier:"벌크선",bulk:"벌크선",tanker:"탱커",crude_tanker:"원유운반선",product_tanker:"석유제품운반선",container_ship:"컨테이너선",container:"컨테이너선",pctc:"자동차운반선",car_carrier:"자동차운반선",lng_carrier:"LNG 운반선",lpg_carrier:"LPG 운반선",cruise:"크루즈선",passenger:"여객선",general_cargo:"일반화물선",cargo:"화물선",unknown:"확인 필요"};
 function vesselTypeKo(v){const raw=String(text(v.vessel_type_group,v.vessel_type,v.vsslKndNm,"unknown")).trim();const key=raw.toLowerCase().replace(/[\s-]+/g,"_");return vesselTypeKoMap[key]||vesselTypeKoMap[String(v.vessel_type_group||"").toLowerCase()]||raw}
