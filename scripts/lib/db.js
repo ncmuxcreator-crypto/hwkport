@@ -323,6 +323,16 @@ export async function saveToSupabase(records, options = {}) {
     manager_name: r.manager_name || null,
     owner_name: r.owner_name || null,
     contact_readiness_score: Number(r.contact_readiness_score || 0),
+    previous_port: r.previous_port || null,
+    destination_port: r.destination_port || r.destination || r.next_port || null,
+    next_port: r.next_port || null,
+    route_region: r.route_region || null,
+    predicted_arrival_time: r.predicted_arrival_time || null,
+    arrival_prediction_confidence: Number(r.arrival_prediction_confidence || 0),
+    predicted_congestion: Number(r.predicted_congestion || 0),
+    predicted_cleaning_window: Number(r.predicted_cleaning_window || 0),
+    arrival_opportunity_score: Number(r.arrival_opportunity_score || 0),
+    predicted_arrival_pipeline: Boolean(r.predicted_arrival_pipeline),
     data_quality_tier: r.data_quality_tier || null,
     risk_score: r.risk_score || 0,
     total_sales_priority_score: r.total_sales_priority_score || 0,
@@ -553,6 +563,88 @@ export async function saveToSupabase(records, options = {}) {
     if (error) throw error;
   }
 
+  const routePatternRows = uniqueBy(records
+    .filter(r => r.route_from_port || r.previous_port || r.destination_port || r.next_port)
+    .map(r => {
+      const fromPort = normalizeCompanyName(r.route_from_port || r.previous_port || "");
+      const toPort = normalizeCompanyName(r.route_to_port || r.destination_port || r.destination || r.next_port || r.port_name || r.port || "");
+      const vesselTypeGroup = r.vessel_type_group || "unknown";
+      if (!fromPort && !toPort) return null;
+      return {
+        route_pattern_id: stableEntityId("ROUTE", `${fromPort}-${toPort}-${vesselTypeGroup}`),
+        from_port: fromPort || null,
+        to_port: toPort || null,
+        vessel_type_group: vesselTypeGroup,
+        avg_transit_hours: Number(r.avg_transit_hours || r.historical_avg_transit_hours || 0),
+        avg_waiting_hours: Number(r.historical_avg_waiting_hours || r.anchorage_hours || 0),
+        avg_stay_hours: Number(r.historical_avg_stay_hours || r.stay_hours || 0),
+        congestion_probability: Number(r.predicted_congestion || r.port_congestion_score || 0),
+        observation_count: 1,
+        last_seen: now,
+        payload: r
+      };
+    })
+    .filter(Boolean), row => `${row.from_port}|${row.to_port}|${row.vessel_type_group}`);
+
+  for (let index = 0; index < routePatternRows.length; index += batchSize) {
+    const batch = routePatternRows.slice(index, index + batchSize);
+    const { error } = await supabase.from("route_patterns").upsert(batch, { onConflict: "from_port,to_port,vessel_type_group" });
+    if (error) throw error;
+  }
+
+  const vesselRouteHistoryRows = uniqueBy(records
+    .filter(r => r.previous_port || r.destination_port || r.next_port || r.predicted_arrival_time)
+    .map(r => ({
+      route_history_id: stableEntityId("VRH", `${runId}-${r.hybrid_entity_key || r.vessel_id}-${r.previous_port || ""}-${r.destination_port || r.next_port || ""}`),
+      run_id: runId,
+      master_vessel_id: fallbackMasterId(r),
+      hybrid_entity_key: r.hybrid_entity_key || r.vessel_id,
+      vessel_name: r.vessel_name || null,
+      previous_port: r.previous_port || null,
+      destination_port: r.destination_port || r.destination || r.next_port || null,
+      arrival: r.ata || r.eta || r.predicted_arrival_time || null,
+      departure: r.atd || r.etd || null,
+      vessel_type_group: r.vessel_type_group || null,
+      route_region: r.route_region || null,
+      arrival_opportunity_score: Number(r.arrival_opportunity_score || 0),
+      predicted_arrival_time: r.predicted_arrival_time || null,
+      arrival_prediction_confidence: Number(r.arrival_prediction_confidence || 0),
+      payload: r
+    })), row => row.route_history_id);
+
+  for (let index = 0; index < vesselRouteHistoryRows.length; index += batchSize) {
+    const batch = vesselRouteHistoryRows.slice(index, index + batchSize);
+    const { error } = await supabase.from("vessel_route_history").upsert(batch, { onConflict: "route_history_id" });
+    if (error) throw error;
+  }
+
+  const predictedArrivalRows = uniqueBy(records
+    .filter(r => r.predicted_arrival_pipeline || Number(r.arrival_opportunity_score || 0) >= 35)
+    .map(r => ({
+      predicted_arrival_id: stableEntityId("PARR", `${runId}-${r.hybrid_entity_key || r.vessel_id}-${r.predicted_arrival_time || r.eta || ""}`),
+      run_id: runId,
+      master_vessel_id: fallbackMasterId(r),
+      hybrid_entity_key: r.hybrid_entity_key || r.vessel_id,
+      vessel_name: r.vessel_name || null,
+      previous_port: r.previous_port || null,
+      destination_port: r.destination_port || r.destination || r.next_port || null,
+      port_code: r.port_code || null,
+      port_name: r.port_name || r.port || null,
+      predicted_arrival_time: r.predicted_arrival_time || r.eta || null,
+      arrival_prediction_confidence: Number(r.arrival_prediction_confidence || 0),
+      predicted_congestion: Number(r.predicted_congestion || 0),
+      predicted_cleaning_window: Number(r.predicted_cleaning_window || 0),
+      arrival_opportunity_score: Number(r.arrival_opportunity_score || 0),
+      status: r.predicted_arrival_pipeline ? "predicted_arrival_pipeline" : "route_watch",
+      payload: r
+    })), row => row.predicted_arrival_id);
+
+  for (let index = 0; index < predictedArrivalRows.length; index += batchSize) {
+    const batch = predictedArrivalRows.slice(index, index + batchSize);
+    const { error } = await supabase.from("predicted_arrivals").upsert(batch, { onConflict: "predicted_arrival_id" });
+    if (error) throw error;
+  }
+
   const aliases = records
     .filter(r => r.vessel_name && (r.hybrid_entity_key || r.vessel_id))
     .map(r => ({
@@ -738,6 +830,9 @@ export async function saveToSupabase(records, options = {}) {
     agentRowsSaved: agentRows.length,
     agentOperatorLinksSaved: agentOperatorLinks.length,
     vesselOperatorHistoryRowsSaved: operatorHistoryRows.length,
+    routePatternRowsSaved: routePatternRows.length,
+    vesselRouteHistoryRowsSaved: vesselRouteHistoryRows.length,
+    predictedArrivalRowsSaved: predictedArrivalRows.length,
     identityCandidatesSaved: identityCandidates.length,
     riskRowsSaved: riskRows.length,
     eventsSaved: events.length,

@@ -130,7 +130,7 @@ function deriveBiofoulingScore(v, metrics) {
 
 function deriveCiiPressureScore(v, metrics, biofoulingScore) {
   const type = String(v.vessel_type || "").toLowerCase();
-  const route = [v.destination, v.previous_port, v.next_port].join(" ").toLowerCase();
+  const route = [v.destination, v.previous_port, v.next_port, v.destination_port].join(" ").toLowerCase();
   const routeProfile = deriveRouteCommercialProfile(v);
   let score = Math.round(biofoulingScore * 0.42);
   if (Number(v.gt || 0) >= 5000) score += 18;
@@ -196,6 +196,95 @@ function deriveRouteCommercialProfile(v = {}) {
     profile.route_reason_codes.push("PRE_ARRIVAL_COMPLIANCE_WINDOW");
   }
   return { ...profile, route_reason_codes: [...new Set(profile.route_reason_codes)] };
+}
+
+function normalizePortToken(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+}
+
+function deriveRoutePattern(v = {}, metrics = {}, routeProfile = deriveRouteCommercialProfile(v)) {
+  const fromPort = normalizePortToken(v.previous_port || v.last_port || "");
+  const toPort = normalizePortToken(v.destination_port || v.destination || v.next_port || v.port_name || v.port || "");
+  const typeGroup = v.vessel_type_group || defaultVesselTypeGroup(v);
+  const routeKey = [fromPort || "UNKNOWN", toPort || "KOREA", typeGroup || "unknown"].join("|");
+  const isKnownRoute = Boolean(fromPort && toPort);
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const congestionProbability = Math.min(100, Math.round(
+    (Number(metrics.anchorage_hours || 0) >= 24 ? 45 : 0) +
+    (Number(metrics.stay_hours || 0) >= 48 ? 25 : 0) +
+    (routeProfile.high_regulation_route ? 15 : 0) +
+    (/bulk|tanker|pctc|container|lng|lpg/.test(String(typeGroup).toLowerCase()) ? 10 : 0) +
+    (gt >= 30000 ? 5 : 0)
+  ));
+  const avgStayHours = Number(metrics.stay_hours || metrics.planned_stay_hours || 0);
+  const avgWaitingHours = Number(metrics.anchorage_hours || 0);
+  return {
+    route_key: routeKey,
+    route_from_port: fromPort,
+    route_to_port: toPort,
+    route_pattern_known: isKnownRoute,
+    route_pattern_confidence: isKnownRoute ? Math.min(90, 45 + (routeProfile.high_regulation_route ? 20 : 0) + (avgStayHours > 0 ? 10 : 0) + (avgWaitingHours > 0 ? 10 : 0)) : 15,
+    historical_avg_stay_hours: avgStayHours || null,
+    historical_avg_waiting_hours: avgWaitingHours || null,
+    predicted_congestion: congestionProbability,
+    predicted_cleaning_window: Math.min(100, Math.round(
+      (avgWaitingHours >= 24 ? 35 : 0) +
+      (avgStayHours >= 48 ? 30 : 0) +
+      (routeProfile.high_regulation_route ? 15 : 0) +
+      (gt >= COMMERCIAL_GT_THRESHOLD ? 10 : 0) +
+      (/bulk|tanker|pctc|container|lng|lpg/.test(String(typeGroup).toLowerCase()) ? 10 : 0)
+    ))
+  };
+}
+
+function deriveArrivalPrediction(v = {}, metrics = {}, routeProfile = deriveRouteCommercialProfile(v), routePattern = deriveRoutePattern(v, metrics, routeProfile)) {
+  const now = new Date();
+  const explicitEta = parseScheduleTime(v.eta || v.eta_candidate || v.next_port_eta || v.destination_eta || v.pilot_time || v.movement_time);
+  const status = String(v.status_bucket || v.status || "").toLowerCase();
+  let predictedArrival = explicitEta;
+  let source = explicitEta ? "schedule_or_pilot" : "";
+  if (!predictedArrival && v.atd && (v.destination_port || v.next_port || v.destination)) {
+    const atd = parseScheduleTime(v.atd);
+    const routeHours = Number(v.avg_transit_hours || v.historical_avg_transit_hours || 48);
+    if (atd) {
+      predictedArrival = new Date(atd.getTime() + routeHours * 36e5);
+      source = "route_pattern";
+    }
+  }
+  const hoursUntilArrival = predictedArrival ? Math.round(((predictedArrival.getTime() - now.getTime()) / 36e5) * 10) / 10 : null;
+  const inWindow = hoursUntilArrival !== null && hoursUntilArrival >= 0 && hoursUntilArrival <= 72;
+  const likelyArrival = inWindow || status === "arriving_soon" || v.source_origin === "pilot_schedule" || v.pilot_only_arrival_review;
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const typeGroup = String(v.vessel_type_group || v.vessel_type || "").toLowerCase();
+  const vesselTypeScore = /bulk|tanker|pctc|container|lng|lpg|cruise/.test(typeGroup) ? 20 : 8;
+  const etaProximityScore = hoursUntilArrival === null ? 0 : hoursUntilArrival <= 24 ? 30 : hoursUntilArrival <= 48 ? 24 : hoursUntilArrival <= 72 ? 16 : 0;
+  const arrivalOpportunityScore = Math.min(100, Math.round(
+    etaProximityScore +
+    vesselTypeScore +
+    (gt >= 30000 ? 18 : gt >= COMMERCIAL_GT_THRESHOLD ? 12 : 0) +
+    Math.round(routeProfile.route_commercial_weight * 1.2) +
+    Math.round(Number(routePattern.predicted_congestion || 0) * 0.18) +
+    Math.round(Number(routePattern.predicted_cleaning_window || 0) * 0.12)
+  ));
+  return {
+    predicted_arrival_time: predictedArrival ? predictedArrival.toISOString() : "",
+    arrival_prediction_confidence: Math.min(100, Math.round(
+      (explicitEta ? 55 : source === "route_pattern" ? 35 : 0) +
+      (routePattern.route_pattern_known ? 15 : 0) +
+      (v.pilot_schedule_matched || v.source_origin === "pilot_schedule" ? 20 : 0) +
+      (routeProfile.high_regulation_route ? 10 : 0)
+    )),
+    predicted_congestion: routePattern.predicted_congestion,
+    predicted_cleaning_window: routePattern.predicted_cleaning_window,
+    arrival_opportunity_score: arrivalOpportunityScore,
+    arrival_prediction_source: source || "insufficient_route_data",
+    predicted_arrival_window_hours: hoursUntilArrival,
+    predicted_arrival_pipeline: Boolean(likelyArrival && arrivalOpportunityScore >= 35)
+  };
 }
 
 function normalizeIdentityToken(value) {
@@ -498,6 +587,8 @@ function deriveCommercialScoreParts(v, metrics) {
   const type = String([v.vessel_type, v.vessel_type_group, v.vsslKndNm, v.vsslKndCd, v.commercial_segment].filter(Boolean).join(" ")).toLowerCase();
   const route = [v.destination, v.previous_port, v.next_port].join(" ").toLowerCase();
   const routeProfile = deriveRouteCommercialProfile(v);
+  const routePattern = deriveRoutePattern(v, metrics, routeProfile);
+  const arrivalPrediction = deriveArrivalPrediction(v, metrics, routeProfile, routePattern);
   const status = String(v.status || "").toLowerCase();
   const berthStatus = String([v.berth_status, v.terminal_activity].filter(Boolean).join(" ")).toLowerCase();
   const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
@@ -548,7 +639,8 @@ function deriveCommercialScoreParts(v, metrics) {
   const routeMultiplierBonus = routeProfile.high_regulation_route && (isAnchorageWaiting || isLongIdle || isHighGt || isCommercialType)
     ? Math.round(routeProfile.route_commercial_weight * 0.45)
     : Math.round(routeProfile.route_commercial_weight * 0.25);
-  const total = biofoulingRiskScore + performanceProxyScore + congestionExposureScore + cleaningWindowScore + compliancePressureScore + commercialFitScore + routeMultiplierBonus;
+  const arrivalOpportunityBonus = arrivalPrediction.predicted_arrival_pipeline ? Math.min(8, Math.round(arrivalPrediction.arrival_opportunity_score / 14)) : 0;
+  const total = biofoulingRiskScore + performanceProxyScore + congestionExposureScore + cleaningWindowScore + compliancePressureScore + commercialFitScore + routeMultiplierBonus + arrivalOpportunityBonus;
   const reasonCodes = [];
   if (anchorageDays >= 1) reasonCodes.push("LONG_ANCHORAGE_WAIT");
   if (congestionExposureScore >= 14) reasonCodes.push("PORT_CONGESTION_HIGH");
@@ -573,6 +665,10 @@ function deriveCommercialScoreParts(v, metrics) {
   if (v.operator_fleet_badges?.includes("repeat_observed_fleet")) reasonCodes.push("REPEAT_OPERATOR_CALL");
   if (stayDays >= 7) reasonCodes.push("LONG_PORT_STAY");
   if (/australia|brazil/.test(route)) reasonCodes.push("AUSTRALIA_BRAZIL_EXPOSURE");
+  if (routePattern.route_pattern_known) reasonCodes.push("REPEAT_ROUTE_PATTERN");
+  if (arrivalPrediction.predicted_arrival_pipeline) reasonCodes.push("PREDICTED_ARRIVAL_OPPORTUNITY");
+  if (arrivalPrediction.predicted_arrival_window_hours !== null && arrivalPrediction.predicted_arrival_window_hours <= 72) reasonCodes.push("ETA_24_72H_WINDOW");
+  if (arrivalPrediction.predicted_congestion >= 60) reasonCodes.push("PREDICTED_CONGESTION_RISK");
   reasonCodes.push(...routeProfile.route_reason_codes);
   if (Number(metrics.work_window_hours || 0) >= 24) reasonCodes.push("BERTH_WINDOW_AVAILABLE");
   return {
@@ -608,6 +704,8 @@ function deriveCommercialScoreParts(v, metrics) {
     berth_timing_confidence: Math.max(Number(v.berth_timing_confidence || 0), pilotMatched ? Number(v.pilot_match_confidence || 0) : 0),
     commercial_signal_strength: Math.min(100, Math.round(total + routeProfile.route_commercial_weight + (isHighGt ? 8 : 0) + (isAnchorageWaiting ? 8 : 0) + (isBulkTankerPctc ? 5 : 0))),
     ...routeProfile,
+    ...routePattern,
+    ...arrivalPrediction,
     score_reason_codes: [...new Set(reasonCodes)]
   };
 }
@@ -629,7 +727,8 @@ function deriveCommercialValue(v = {}, scoreParts = {}) {
     Number(scoreParts.performance_proxy_score || 0) +
     Number(scoreParts.compliance_pressure_score || 0) +
     Number(scoreParts.sales_accessibility_score || 0) +
-    Number(scoreParts.route_commercial_weight || 0)
+    Number(scoreParts.route_commercial_weight || 0) +
+    Math.round(Number(scoreParts.arrival_opportunity_score || 0) / 12)
   ));
   return {
     commercial_value_score: commercialValueScore,
@@ -793,6 +892,8 @@ function buildCommercialSignals(v = {}, metrics = {}) {
   const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
   const typeGroup = String(v.vessel_type_group || v.vessel_type || "").toLowerCase();
   const routeProfile = deriveRouteCommercialProfile(v);
+  const routePattern = deriveRoutePattern(v, metrics, routeProfile);
+  const arrivalPrediction = deriveArrivalPrediction(v, metrics, routeProfile, routePattern);
   const flags = [];
   if (gt >= 30000) flags.push("GT_30000_PLUS");
   if (gt >= 80000) flags.push("GT_80000_PLUS");
@@ -810,6 +911,9 @@ function buildCommercialSignals(v = {}, metrics = {}) {
   if (v.agent) flags.push("AGENT_IDENTIFIED");
   if (v.operator) flags.push("OPERATOR_IDENTIFIED");
   if (v.reference_enriched) flags.push("KNOWN_COMMERCIAL_SEGMENT");
+  if (routePattern.route_pattern_known) flags.push("REPEAT_ROUTE_PATTERN");
+  if (arrivalPrediction.predicted_arrival_pipeline) flags.push("PREDICTED_ARRIVAL_OPPORTUNITY");
+  if (arrivalPrediction.predicted_congestion >= 60) flags.push("PREDICTED_CONGESTION_RISK");
   flags.push(...routeProfile.route_reason_codes);
   return {
     commercial_signal_flags: [...new Set(flags)],
@@ -821,7 +925,9 @@ function buildCommercialSignals(v = {}, metrics = {}) {
     fuel_efficiency_sensitivity_score: routeProfile.fuel_efficiency_sensitivity_score,
     hull_performance_sensitivity_score: routeProfile.hull_performance_sensitivity_score,
     high_regulation_route: routeProfile.high_regulation_route,
-    compliance_priority: routeProfile.compliance_priority
+    compliance_priority: routeProfile.compliance_priority,
+    ...routePattern,
+    ...arrivalPrediction
   };
 }
 
@@ -1542,6 +1648,11 @@ function buildScoringDiagnostics(records = []) {
     cii_score_nonzero_count: records.filter(v => Number(v.cii_pressure_score || v.compliance_pressure_score || 0) > 0).length,
     performance_proxy_nonzero_count: records.filter(v => Number(v.performance_proxy_score || 0) > 0).length,
     commercial_value_score_nonzero_count: records.filter(v => Number(v.commercial_value_score || v.total_sales_priority_score || 0) > 0).length,
+    route_pattern_known_count: records.filter(v => v.route_pattern_known).length,
+    predicted_arrival_count: records.filter(v => v.predicted_arrival_time).length,
+    predicted_arrival_pipeline_count: records.filter(v => v.predicted_arrival_pipeline).length,
+    arrival_opportunity_score_nonzero_count: records.filter(v => Number(v.arrival_opportunity_score || 0) > 0).length,
+    high_route_commercial_weight_count: records.filter(v => Number(v.route_commercial_weight || 0) >= 8).length,
     vsslKndCd_coverage: coverageRatio(records, v => hasValue(v.vsslKndCd)),
     vsslKndNm_coverage: coverageRatio(records, v => hasValue(v.vsslKndNm)),
     vessel_type_unknown_count: records.filter(v => !v.vessel_type_group || v.vessel_type_group === "unknown" || !v.vessel_type || String(v.vessel_type).toLowerCase() === "unknown").length,

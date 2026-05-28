@@ -186,6 +186,18 @@ function normalizeSnapshot(row = {}) {
     contact_path_available: Boolean(merged.contact_path_available || merged.operator_name || merged.operator || merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm),
     destination_port: merged.destination_port || merged.destination || merged.next_port || "",
     route_region: merged.route_region || "unknown",
+    route_from_port: merged.route_from_port || merged.previous_port || "",
+    route_to_port: merged.route_to_port || merged.destination_port || merged.destination || merged.next_port || "",
+    route_pattern_known: Boolean(merged.route_pattern_known),
+    route_pattern_confidence: Number(merged.route_pattern_confidence || 0),
+    predicted_arrival_time: merged.predicted_arrival_time || "",
+    arrival_prediction_confidence: Number(merged.arrival_prediction_confidence || 0),
+    predicted_congestion: Number(merged.predicted_congestion || 0),
+    predicted_cleaning_window: Number(merged.predicted_cleaning_window || 0),
+    arrival_opportunity_score: Number(merged.arrival_opportunity_score || 0),
+    predicted_arrival_window_hours: Number(merged.predicted_arrival_window_hours || 0),
+    predicted_arrival_pipeline: Boolean(merged.predicted_arrival_pipeline),
+    arrival_prediction_source: merged.arrival_prediction_source || "",
     sales_accessibility_score: Number(merged.sales_accessibility_score || deriveSalesAccessibilityScore(merged)),
     contact_readiness_score: Number(merged.contact_readiness_score || deriveContactReadinessScore(merged)),
     biosecurity_exposure_score: Number(merged.biosecurity_exposure_score || 0),
@@ -932,7 +944,7 @@ function buildVisibilityBuckets(records) {
     target_vessels: targetVessels,
     canonical_scored_vessels: canonicalScoredVessels,
     staying_vessels: targetVessels.filter(v => ["arrived_staying", "berthed", "anchorage_waiting"].includes(v.status_bucket)),
-    arrival_pipeline: targetVessels.filter(v => v.status_bucket === "arriving_soon"),
+    arrival_pipeline: targetVessels.filter(v => v.status_bucket === "arriving_soon" || v.predicted_arrival_pipeline || Number(v.arrival_opportunity_score || 0) >= 35),
     pilot_only_arrival_review: targetVessels.filter(v => v.pilot_only_arrival_review || v.ledger_status === "pilot_only_pending_port_operation"),
     sales_candidates: salesCandidates,
     immediate_targets: immediateTargets
@@ -1012,7 +1024,11 @@ function buildScoringDiagnostics(records = []) {
     biofouling_score_nonzero_count: records.filter(v => deriveBiofoulingProxyScore(v) > 0).length,
     cii_score_nonzero_count: records.filter(v => deriveCiiProxyScore(v) > 0).length,
     performance_proxy_nonzero_count: records.filter(v => derivePerformanceProxyScore(v) > 0).length,
-    commercial_value_score_nonzero_count: records.filter(v => commercialScore(v) > 0).length
+    commercial_value_score_nonzero_count: records.filter(v => commercialScore(v) > 0).length,
+    route_pattern_known_count: records.filter(v => v.route_pattern_known).length,
+    predicted_arrival_count: records.filter(v => v.predicted_arrival_time).length,
+    predicted_arrival_pipeline_count: records.filter(v => v.predicted_arrival_pipeline).length,
+    arrival_opportunity_score_nonzero_count: records.filter(v => Number(v.arrival_opportunity_score || 0) > 0).length
   };
 }
 

@@ -168,12 +168,24 @@ alter table vessel_snapshots add column if not exists agent_source text;
 alter table vessel_snapshots add column if not exists manager_name text;
 alter table vessel_snapshots add column if not exists owner_name text;
 alter table vessel_snapshots add column if not exists contact_readiness_score int default 0;
+alter table vessel_snapshots add column if not exists previous_port text;
+alter table vessel_snapshots add column if not exists destination_port text;
+alter table vessel_snapshots add column if not exists next_port text;
+alter table vessel_snapshots add column if not exists route_region text;
+alter table vessel_snapshots add column if not exists predicted_arrival_time timestamptz;
+alter table vessel_snapshots add column if not exists arrival_prediction_confidence int default 0;
+alter table vessel_snapshots add column if not exists predicted_congestion int default 0;
+alter table vessel_snapshots add column if not exists predicted_cleaning_window int default 0;
+alter table vessel_snapshots add column if not exists arrival_opportunity_score int default 0;
+alter table vessel_snapshots add column if not exists predicted_arrival_pipeline boolean default false;
 alter table vessel_snapshots drop constraint if exists vessel_snapshots_snapshot_date_vessel_id_port_key;
 create index if not exists idx_vessel_snapshots_hybrid_entity_key on vessel_snapshots(hybrid_entity_key);
 create index if not exists idx_vessel_snapshots_collected_at on vessel_snapshots(collected_at desc);
 create index if not exists idx_vessel_snapshots_run_id on vessel_snapshots(run_id);
 create index if not exists idx_vessel_snapshots_operator_normalized on vessel_snapshots(operator_normalized);
 create index if not exists idx_vessel_snapshots_agent_normalized on vessel_snapshots(agent_normalized);
+create index if not exists idx_vessel_snapshots_route_region on vessel_snapshots(route_region);
+create index if not exists idx_vessel_snapshots_predicted_arrival_time on vessel_snapshots(predicted_arrival_time);
 
 create table if not exists vessel_entities (
   hybrid_entity_key text primary key,
@@ -272,6 +284,61 @@ create table if not exists vessel_operator_history (
   agent_source text,
   contact_readiness_score int default 0,
   collected_at timestamptz default now(),
+  payload jsonb default '{}'::jsonb
+);
+
+create table if not exists route_patterns (
+  route_pattern_id text primary key,
+  from_port text,
+  to_port text,
+  vessel_type_group text,
+  avg_transit_hours numeric default 0,
+  avg_waiting_hours numeric default 0,
+  avg_stay_hours numeric default 0,
+  congestion_probability int default 0,
+  observation_count int default 0,
+  first_seen timestamptz default now(),
+  last_seen timestamptz default now(),
+  payload jsonb default '{}'::jsonb,
+  unique(from_port, to_port, vessel_type_group)
+);
+
+create table if not exists vessel_route_history (
+  route_history_id text primary key,
+  run_id text,
+  master_vessel_id text,
+  hybrid_entity_key text,
+  vessel_name text,
+  previous_port text,
+  destination_port text,
+  arrival timestamptz,
+  departure timestamptz,
+  vessel_type_group text,
+  route_region text,
+  arrival_opportunity_score int default 0,
+  predicted_arrival_time timestamptz,
+  arrival_prediction_confidence int default 0,
+  created_at timestamptz default now(),
+  payload jsonb default '{}'::jsonb
+);
+
+create table if not exists predicted_arrivals (
+  predicted_arrival_id text primary key,
+  run_id text,
+  master_vessel_id text,
+  hybrid_entity_key text,
+  vessel_name text,
+  previous_port text,
+  destination_port text,
+  port_code text,
+  port_name text,
+  predicted_arrival_time timestamptz,
+  arrival_prediction_confidence int default 0,
+  predicted_congestion int default 0,
+  predicted_cleaning_window int default 0,
+  arrival_opportunity_score int default 0,
+  status text,
+  created_at timestamptz default now(),
   payload jsonb default '{}'::jsonb
 );
 
