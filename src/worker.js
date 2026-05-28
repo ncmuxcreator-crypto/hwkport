@@ -47,17 +47,62 @@ function basicInfoCompleteness(record = {}) {
 function sortCommercialPriority(records) {
   return records.slice().sort((a, b) =>
     Number(b.is_immediate_candidate) - Number(a.is_immediate_candidate) ||
-    (b.total_sales_priority_score || b.cleaning_candidate_score || b.risk_score || 0) - (a.total_sales_priority_score || a.cleaning_candidate_score || a.risk_score || 0) ||
-    (b.biofouling_score || 0) - (a.biofouling_score || 0)
+    commercialScore(b) - commercialScore(a) ||
+    deriveCongestionScore(b) - deriveCongestionScore(a) ||
+    (b.data_confidence_score || 0) - (a.data_confidence_score || 0) ||
+    (b.biofouling_score || b.biofouling_risk_score || 0) - (a.biofouling_score || a.biofouling_risk_score || 0)
   );
+}
+
+function candidateDedupeKey(v = {}) {
+  const normalizedName = String(v.normalized_vessel_name || v.vessel_name || "").normalize("NFKC").toUpperCase().replace(/[^A-Z0-9가-힣]+/g, "");
+  const portCode = String(v.port_code || portCodeFromName(v.port || v.port_name) || "");
+  if (hasValue(v.master_vessel_id) && hasValue(v.port_call_identity)) return `MASTER_PORTCALL|${v.master_vessel_id}|${portCode}|${v.port_call_identity}`;
+  if (hasValue(v.imo)) return `IMO_TIME|${v.imo}|${portCode}|${v.ata || v.eta || ""}`;
+  if (hasValue(v.call_sign) && (hasValue(v.etryptYear) || hasValue(v.etryptCo))) return `CALL_PORTCALL|${v.call_sign}|${portCode}|${v.etryptYear || ""}|${v.etryptCo || ""}`;
+  return `NAME_PORT_BERTH_TIME|${normalizedName}|${portCode}|${v.berth_name || v.berth || v.anchorage_name || ""}|${v.ata || v.eta || ""}`;
+}
+
+function candidateTimestamp(v = {}) {
+  const value = Date.parse(v.collected_at || v.updated_at || v.last_seen_at || v.first_seen_at || "");
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function isBetterCandidate(next = {}, current = {}) {
+  return commercialScore(next) > commercialScore(current) ||
+    (commercialScore(next) === commercialScore(current) && deriveCongestionScore(next) > deriveCongestionScore(current)) ||
+    (commercialScore(next) === commercialScore(current) && deriveCongestionScore(next) === deriveCongestionScore(current) && Number(next.data_confidence_score || 0) > Number(current.data_confidence_score || 0)) ||
+    (commercialScore(next) === commercialScore(current) && deriveCongestionScore(next) === deriveCongestionScore(current) && Number(next.data_confidence_score || 0) === Number(current.data_confidence_score || 0) && candidateTimestamp(next) > candidateTimestamp(current));
+}
+
+function dedupeCandidateRows(records = []) {
+  const byKey = new Map();
+  for (const record of records) {
+    const key = candidateDedupeKey(record);
+    const current = byKey.get(key);
+    if (!current || isBetterCandidate(record, current)) byKey.set(key, record);
+  }
+  return [...byKey.values()];
 }
 
 function normalizeSnapshot(row = {}) {
   const payload = row.payload || row.raw_payload || {};
   const merged = { ...row, ...payload };
   const riskScore = Number(merged.risk_score || merged.biofouling_score || 0);
-  const candidateScore = Number(merged.cleaning_candidate_score || merged.total_sales_priority_score || riskScore);
   const sourceMode = merged.source_mode || "supabase_snapshot";
+  const congestionScore = deriveCongestionScore(merged);
+  const biofoulingRiskScore = deriveBiofoulingProxyScore(merged, congestionScore, riskScore);
+  const performanceProxyScore = derivePerformanceProxyScore(merged, congestionScore);
+  const ciiPressureScore = deriveCiiProxyScore(merged, congestionScore, performanceProxyScore);
+  const candidateScore = Math.max(
+    Number(merged.cleaning_candidate_score || merged.total_sales_priority_score || riskScore || 0),
+    deriveCommercialProxyScore(merged, {
+      congestionScore,
+      biofoulingRiskScore,
+      performanceProxyScore,
+      ciiPressureScore
+    })
+  );
   return {
     vessel_id: merged.vessel_id,
     vessel_name: merged.vessel_name,
@@ -156,10 +201,15 @@ function normalizeSnapshot(row = {}) {
     berth_timing_confidence: Number(merged.berth_timing_confidence || 0),
     risk_score: riskScore,
     risk_level: merged.risk_level || scoreLevel(riskScore),
-    biofouling_score: Number(merged.biofouling_score || riskScore),
-    cii_pressure_score: Number(merged.cii_pressure_score || 0),
-    total_sales_priority_score: Number(merged.total_sales_priority_score || candidateScore),
-    commercial_value_score: Number(merged.commercial_value_score || merged.total_sales_priority_score || candidateScore),
+    biofouling_score: biofoulingRiskScore,
+    biofouling_risk_score: biofoulingRiskScore,
+    cii_pressure_score: ciiPressureScore,
+    performance_proxy_score: performanceProxyScore,
+    congestion_score: congestionScore,
+    congestion_exposure_score: Math.max(Number(merged.congestion_exposure_score || 0), Math.round(congestionScore / 5)),
+    port_congestion_score: Math.max(Number(merged.port_congestion_score || 0), congestionScore),
+    total_sales_priority_score: Math.max(Number(merged.total_sales_priority_score || 0), candidateScore),
+    commercial_value_score: Math.max(Number(merged.commercial_value_score || merged.total_sales_priority_score || 0), candidateScore),
     commercial_value_band: merged.commercial_value_band || merged.sales_priority_band || "low_priority",
     data_confidence_score: Number(merged.data_confidence_score || 0),
     data_confidence_band: merged.data_confidence_band || "review",
@@ -287,20 +337,120 @@ function isMainCommercialVessel(v = {}) {
 
 function isExplicitlyExcluded(v = {}) {
   const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
-  return status === "excluded_non_commercial_type" || status === "excluded_departure_only" || status === "non_target_small_vessel" || v.excluded_from_commercial_targets === true;
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const threshold = Number(v.commercial_gt_threshold || 5000);
+  return status === "excluded_non_commercial_type" ||
+    status === "excluded_departure_only" ||
+    (status === "non_target_small_vessel" && gt > 0 && gt < threshold) ||
+    v.excluded_from_commercial_targets === true;
 }
 
 function exclusionReason(v = {}) {
   const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
   if (status === "excluded_non_commercial_type") return "excluded_non_commercial_type";
   if (status === "excluded_departure_only") return "excluded_departure_only";
-  if (status === "non_target_small_vessel") return "excluded_under_5000gt";
+  if (status === "non_target_small_vessel" && Number(v.gt || v.grtg || v.intrlGrtg || 0) > 0 && Number(v.gt || v.grtg || v.intrlGrtg || 0) < Number(v.commercial_gt_threshold || 5000)) return "excluded_under_5000gt";
   if (v.excluded_from_commercial_targets === true) return v.exclusion_reason || "explicitly_excluded";
   return "";
 }
 
 function commercialScore(v = {}) {
   return Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
+}
+
+function numericMax(...values) {
+  return Math.max(0, ...values.map(value => Number(value || 0)).filter(Number.isFinite));
+}
+
+function statusHasOpenStay(v = {}) {
+  const statusBucket = String(v.status_bucket || deriveStatusBucket(v) || "").toLowerCase();
+  return !hasValue(v.atd) && ["arrived_staying", "berthed", "anchorage_waiting"].includes(statusBucket);
+}
+
+function deriveCongestionScore(v = {}) {
+  const anchorageHours = Number(v.anchorage_hours || 0);
+  const stayHours = Number(v.cumulative_stay_hours || v.stay_hours || v.current_call_stay_hours || 0);
+  const facilityType = String(v.facility_type || v.berth_class || v.anchorage_class || "").toLowerCase();
+  const statusBucket = String(v.status_bucket || deriveStatusBucket(v) || "").toLowerCase();
+  const hasDeparture = hasValue(v.atd);
+  let score = numericMax(v.congestion_score, v.port_congestion_score, v.anchorage_density_score, Number(v.congestion_exposure_score || 0) * 5);
+
+  if (anchorageHours >= 24) score = Math.max(score, 40);
+  if (anchorageHours >= 48) score = Math.max(score, 60);
+  if (anchorageHours >= 72) score = Math.max(score, 75);
+  if (stayHours >= 48 && !hasDeparture) score = Math.max(score, 45);
+  if (stayHours >= 72 && !hasDeparture) score = Math.max(score, 60);
+  if ((facilityType === "anchorage" || statusBucket === "anchorage_waiting") && !hasDeparture) score = Math.max(score, 60);
+  if (statusHasOpenStay(v) && score === 0) score = 25;
+  if ((anchorageHours > 0 || stayHours > 0) && score === 0) score = 20;
+  return Math.min(100, Math.round(score));
+}
+
+function deriveBiofoulingProxyScore(v = {}, congestionScore = deriveCongestionScore(v), fallback = 0) {
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const type = String([v.vessel_type_group, v.vessel_type, v.vsslKndNm].filter(Boolean).join(" ")).toLowerCase();
+  const stayHours = Number(v.cumulative_stay_hours || v.stay_hours || v.current_call_stay_hours || 0);
+  const anchorageHours = Number(v.anchorage_hours || 0);
+  const routeScore = numericMax(v.biosecurity_exposure_score, v.high_regulation_route ? 20 : 0);
+  let score = numericMax(v.biofouling_risk_score, v.biofouling_score, fallback);
+  score = Math.max(score, Math.round(
+    Math.min(30, stayHours / 24 * 4) +
+    Math.min(28, anchorageHours / 24 * 6) +
+    Math.min(18, congestionScore * 0.18) +
+    (/bulk|tanker|container|pctc|cruise|lng|lpg|벌크|탱커|컨테이너|자동차|크루즈/.test(type) ? 12 : 0) +
+    (gt >= 5000 ? 8 : 0) +
+    Math.min(12, routeScore / 8)
+  ));
+  return Math.min(100, Math.round(score));
+}
+
+function derivePerformanceProxyScore(v = {}, congestionScore = deriveCongestionScore(v)) {
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const type = String([v.vessel_type_group, v.vessel_type, v.commercial_segment].filter(Boolean).join(" ")).toLowerCase();
+  const stayHours = Number(v.cumulative_stay_hours || v.stay_hours || v.current_call_stay_hours || 0);
+  const anchorageHours = Number(v.anchorage_hours || 0);
+  let score = numericMax(v.performance_proxy_score);
+  score = Math.max(score, Math.round(
+    Math.min(28, congestionScore * 0.28) +
+    Math.min(20, stayHours / 24 * 3) +
+    Math.min(18, anchorageHours / 24 * 5) +
+    (gt >= 30000 ? 14 : gt >= 5000 ? 8 : 0) +
+    (/bulk|tanker|container|pctc|cruise|lng|lpg/.test(type) ? 10 : 0) +
+    Math.min(10, Number(v.fuel_efficiency_sensitivity_score || 0) / 10)
+  ));
+  return Math.min(100, Math.round(score));
+}
+
+function deriveCiiProxyScore(v = {}, congestionScore = deriveCongestionScore(v), performanceScore = derivePerformanceProxyScore(v, congestionScore)) {
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const type = String([v.vessel_type_group, v.vessel_type, v.commercial_segment].filter(Boolean).join(" ")).toLowerCase();
+  let score = numericMax(v.cii_pressure_score, v.compliance_pressure_score);
+  score = Math.max(score, Math.round(
+    Math.min(25, performanceScore * 0.25) +
+    Math.min(18, congestionScore * 0.18) +
+    (gt >= 5000 ? 18 : 0) +
+    (/bulk|tanker|container|pctc|cruise|lng|lpg/.test(type) ? 10 : 0) +
+    Math.min(20, numericMax(v.esg_sensitivity_score, v.fuel_efficiency_sensitivity_score) / 5)
+  ));
+  return Math.min(100, Math.round(score));
+}
+
+function deriveCommercialProxyScore(v = {}, scores = {}) {
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const type = String([v.vessel_type_group, v.vessel_type, v.commercial_segment].filter(Boolean).join(" ")).toLowerCase();
+  const vesselValue = gt >= 80000 ? 20 : gt >= 30000 ? 16 : gt >= 5000 ? 11 : 0;
+  const typeValue = /bulk|tanker|container|pctc|cruise|lng|lpg/.test(type) ? 10 : 0;
+  return Math.min(100, Math.round(
+    vesselValue +
+    typeValue +
+    Number(scores.congestionScore || 0) * 0.20 +
+    Number(scores.biofoulingRiskScore || 0) * 0.20 +
+    Number(scores.performanceProxyScore || 0) * 0.10 +
+    Number(scores.ciiPressureScore || 0) * 0.10 +
+    Number(v.cleaning_window_score || 0) +
+    Math.min(10, Number(v.biosecurity_exposure_score || 0) / 10) +
+    (v.agent || v.operator ? 4 : 0)
+  ));
 }
 
 function isSalesCandidate(v = {}) {
@@ -723,10 +873,12 @@ function recordsForPort(records, portCode) {
 
 function buildVisibilityBuckets(records) {
   const targetVessels = records.filter(isMainCommercialVessel);
-  const salesCandidates = targetVessels.filter(isSalesCandidate).map(v => ({ ...v, candidate_band: commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD ? "immediate_target" : "sales_candidate", exclusion_reason: exclusionReason(v) }));
-  const immediateTargets = targetVessels.filter(isImmediateTarget).map(v => ({ ...v, candidate_band: "immediate_target", is_immediate_candidate: true, exclusion_reason: exclusionReason(v) }));
+  const canonicalScoredVessels = sortCommercialPriority(dedupeCandidateRows(targetVessels));
+  const salesCandidates = sortCommercialPriority(dedupeCandidateRows(canonicalScoredVessels.filter(isSalesCandidate))).map(v => ({ ...v, candidate_band: commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD ? "immediate_target" : "sales_candidate", exclusion_reason: exclusionReason(v) }));
+  const immediateTargets = sortCommercialPriority(dedupeCandidateRows(canonicalScoredVessels.filter(isImmediateTarget))).map(v => ({ ...v, candidate_band: "immediate_target", is_immediate_candidate: true, exclusion_reason: exclusionReason(v) }));
   return {
     target_vessels: targetVessels,
+    canonical_scored_vessels: canonicalScoredVessels,
     staying_vessels: targetVessels.filter(v => ["arrived_staying", "berthed", "anchorage_waiting"].includes(v.status_bucket)),
     arrival_pipeline: targetVessels.filter(v => v.status_bucket === "arriving_soon"),
     pilot_only_arrival_review: targetVessels.filter(v => v.pilot_only_arrival_review || v.ledger_status === "pilot_only_pending_port_operation"),
@@ -798,6 +950,20 @@ function buildAnchorage(records) {
       reason_codes: v.reason_codes || []
     }));
 }
+
+function buildScoringDiagnostics(records = []) {
+  return {
+    congestion_score_calculated_count: records.filter(v => deriveCongestionScore(v) > 0).length,
+    congestion_score_zero_but_stay_exists_count: records.filter(v => (Number(v.stay_hours || v.current_call_stay_hours || v.cumulative_stay_hours || 0) > 0 || Number(v.anchorage_hours || 0) > 0) && deriveCongestionScore(v) <= 0).length,
+    anchorage_hours_detected_count: records.filter(v => Number(v.anchorage_hours || 0) > 0).length,
+    stay_hours_detected_count: records.filter(v => Number(v.stay_hours || v.current_call_stay_hours || v.cumulative_stay_hours || 0) > 0).length,
+    biofouling_score_nonzero_count: records.filter(v => deriveBiofoulingProxyScore(v) > 0).length,
+    cii_score_nonzero_count: records.filter(v => deriveCiiProxyScore(v) > 0).length,
+    performance_proxy_nonzero_count: records.filter(v => derivePerformanceProxyScore(v) > 0).length,
+    commercial_value_score_nonzero_count: records.filter(v => commercialScore(v) > 0).length
+  };
+}
+
 function buildStatus(records, source) {
   const buckets = buildVisibilityBuckets(records);
   const countFunnel = buildCountFunnel(records, buckets);
@@ -835,6 +1001,7 @@ function buildStatus(records, source) {
     high_value_low_confidence_count: buildHighValueLowConfidence(buckets.target_vessels).length,
     opportunity_usd: records.reduce((sum, v) => sum + (v.opportunity_usd || 0), 0),
     count_funnel: countFunnel,
+    scoring_diagnostics: buildScoringDiagnostics(records),
     frontend_poll_interval_seconds: 900,
     source_runtime: {
       provider: "supabase",
