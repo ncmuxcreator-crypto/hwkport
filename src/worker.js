@@ -1,5 +1,5 @@
 ﻿const API_CACHE_SECONDS = 300;
-const SALES_CANDIDATE_THRESHOLD = 50;
+const SALES_CANDIDATE_THRESHOLD = 60;
 const IMMEDIATE_TARGET_THRESHOLD = 75;
 const BASIC_INFO_FIELDS = [
   "vessel_name", "normalized_vessel_name", "call_sign", "imo", "mmsi", "vessel_type", "vessel_type_group",
@@ -12,7 +12,7 @@ function json(data, init = {}) {
     ...init,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": `public, max-age=${API_CACHE_SECONDS}`,
+      "cache-control": `public, max-age=${API_CACHE_SECONDS}, stale-while-revalidate=900`,
       ...(init.headers || {})
     }
   });
@@ -279,7 +279,36 @@ function deriveCommercialRelevance(v = {}) {
 }
 
 function isMainCommercialVessel(v = {}) {
-  return ["target_vessel", "unknown_gt_review"].includes(v.commercial_relevance_status || deriveCommercialRelevance(v));
+  const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
+  const commercialScore = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
+  if (isExplicitlyExcluded(v)) return false;
+  return ["target_vessel", "unknown_gt_review"].includes(status) || commercialScore >= SALES_CANDIDATE_THRESHOLD;
+}
+
+function isExplicitlyExcluded(v = {}) {
+  const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
+  return status === "excluded_non_commercial_type" || status === "excluded_departure_only" || status === "non_target_small_vessel" || v.excluded_from_commercial_targets === true;
+}
+
+function exclusionReason(v = {}) {
+  const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
+  if (status === "excluded_non_commercial_type") return "excluded_non_commercial_type";
+  if (status === "excluded_departure_only") return "excluded_departure_only";
+  if (status === "non_target_small_vessel") return "excluded_under_5000gt";
+  if (v.excluded_from_commercial_targets === true) return v.exclusion_reason || "explicitly_excluded";
+  return "";
+}
+
+function commercialScore(v = {}) {
+  return Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
+}
+
+function isSalesCandidate(v = {}) {
+  return !isExplicitlyExcluded(v) && commercialScore(v) >= SALES_CANDIDATE_THRESHOLD;
+}
+
+function isImmediateTarget(v = {}) {
+  return !isExplicitlyExcluded(v) && commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD;
 }
 
 function supabaseBase(env) {
@@ -411,7 +440,7 @@ function latestPerVesselPort(records) {
 
 function buildHot(records) {
   return sortCommercialPriority(records)
-    .filter(v => v.actionable_source_row !== false && isMainCommercialVessel(v) && (v.is_cleaning_candidate || ["arrived_staying", "berthed", "anchorage_waiting", "arriving_soon"].includes(v.status_bucket) || (v.biofouling_score || 0) >= 65 || (v.operational_risk_score || 0) >= 60))
+    .filter(v => v.actionable_source_row !== false && isMainCommercialVessel(v) && (isSalesCandidate(v) || v.is_cleaning_candidate || ["arrived_staying", "berthed", "anchorage_waiting", "arriving_soon"].includes(v.status_bucket) || (v.biofouling_score || 0) >= 65 || (v.operational_risk_score || 0) >= 60))
     .slice(0, 40);
 }
 
@@ -474,7 +503,7 @@ function buildCommandCenter(records) {
     focus_question: "Which vessel should HullWiper Korea contact now, and why?",
     hot_count: hot.length,
     full_count: records.length,
-    immediate_targets: hot.filter(v => v.is_immediate_candidate).slice(0, 8),
+    immediate_targets: sortCommercialPriority(records).filter(isImmediateTarget).slice(0, 8),
     operational_risk_queue: sortCommercialPriority(records)
       .filter(v => (v.operational_risk_flags || []).length || (v.operational_risk_score || 0) >= 60)
       .slice(0, 12),
@@ -681,8 +710,8 @@ function buildPorts(records) {
     const p = map.get(key) || { port_code: portCode, port_name: portName, vessel_count: 0, scored_count: 0, candidate_count: 0, immediate_target_count: 0 };
     p.vessel_count += 1;
     if (typeof v.total_sales_priority_score === "number") p.scored_count += 1;
-    if (v.is_cleaning_candidate || (v.total_sales_priority_score || 0) >= SALES_CANDIDATE_THRESHOLD) p.candidate_count += 1;
-    if (v.is_immediate_candidate || (v.total_sales_priority_score || 0) >= IMMEDIATE_TARGET_THRESHOLD) p.immediate_target_count += 1;
+    if (isSalesCandidate(v)) p.candidate_count += 1;
+    if (isImmediateTarget(v)) p.immediate_target_count += 1;
     map.set(key, p);
   }
   return [...map.values()].sort((a, b) => b.immediate_target_count - a.immediate_target_count || b.candidate_count - a.candidate_count || b.vessel_count - a.vessel_count);
@@ -694,13 +723,15 @@ function recordsForPort(records, portCode) {
 
 function buildVisibilityBuckets(records) {
   const targetVessels = records.filter(isMainCommercialVessel);
+  const salesCandidates = targetVessels.filter(isSalesCandidate).map(v => ({ ...v, candidate_band: commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD ? "immediate_target" : "sales_candidate", exclusion_reason: exclusionReason(v) }));
+  const immediateTargets = targetVessels.filter(isImmediateTarget).map(v => ({ ...v, candidate_band: "immediate_target", is_immediate_candidate: true, exclusion_reason: exclusionReason(v) }));
   return {
     target_vessels: targetVessels,
     staying_vessels: targetVessels.filter(v => ["arrived_staying", "berthed", "anchorage_waiting"].includes(v.status_bucket)),
     arrival_pipeline: targetVessels.filter(v => v.status_bucket === "arriving_soon"),
     pilot_only_arrival_review: targetVessels.filter(v => v.pilot_only_arrival_review || v.ledger_status === "pilot_only_pending_port_operation"),
-    sales_candidates: targetVessels.filter(v => v.commercial_relevance_status === "target_vessel" && (v.is_cleaning_candidate || (v.total_sales_priority_score || 0) >= SALES_CANDIDATE_THRESHOLD)),
-    immediate_targets: targetVessels.filter(v => v.commercial_relevance_status === "target_vessel" && (v.is_immediate_candidate || (v.total_sales_priority_score || 0) >= IMMEDIATE_TARGET_THRESHOLD))
+    sales_candidates: salesCandidates,
+    immediate_targets: immediateTargets
   };
 }
 
@@ -797,8 +828,8 @@ function buildStatus(records, source) {
     cleaning_candidate_count: records.filter(v => v.is_cleaning_candidate).length,
     immediate_candidate_count: records.filter(v => v.is_immediate_candidate).length,
     scored_vessel_count: buckets.target_vessels.filter(v => typeof v.commercial_value_score === "number").length,
-    sales_candidate_count: buckets.target_vessels.filter(v => (v.commercial_value_score || 0) >= SALES_CANDIDATE_THRESHOLD && v.commercial_relevance_status === "target_vessel").length,
-    immediate_target_count: buckets.target_vessels.filter(v => (v.commercial_value_score || 0) >= IMMEDIATE_TARGET_THRESHOLD && v.commercial_relevance_status === "target_vessel").length,
+    sales_candidate_count: buckets.sales_candidates.length,
+    immediate_target_count: buckets.immediate_targets.length,
     imo_missing_count: buckets.target_vessels.filter(v => !v.imo).length,
     imo_recovery_kpis: buildImoRecoveryKpis(buckets.target_vessels),
     high_value_low_confidence_count: buildHighValueLowConfidence(buckets.target_vessels).length,
@@ -858,8 +889,8 @@ async function apiResponse(pathname, env) {
   if (pathname.endsWith("/quality/basic-info-coverage.json")) return json(buildBasicInfoCoverage(records), { headers: corsHeaders() });
   if (pathname.endsWith("/review/basic-info-missing.json")) return json(buildBasicInfoMissing(records), { headers: corsHeaders() });
   if (pathname.endsWith("/vessels.json")) return json(records, { headers: corsHeaders() });
-  if (pathname.endsWith("/candidates.json")) return json(buildHot(records).filter(v => v.commercial_relevance_status === "target_vessel" && (v.is_cleaning_candidate || (v.total_sales_priority_score || 0) >= SALES_CANDIDATE_THRESHOLD)), { headers: corsHeaders() });
-  if (pathname.endsWith("/hot-candidates.json")) return json(buildHot(records).filter(v => v.commercial_relevance_status === "target_vessel"), { headers: corsHeaders() });
+  if (pathname.endsWith("/candidates.json")) return json(buckets.sales_candidates, { headers: corsHeaders() });
+  if (pathname.endsWith("/hot-candidates.json")) return json(buckets.immediate_targets, { headers: corsHeaders() });
   if (pathname.endsWith("/master/unknown-imo.json")) return json(buildUnknownImo(records), { headers: corsHeaders() });
   if (pathname.endsWith("/ports.json")) return json(buildPorts(records), { headers: corsHeaders() });
   const portMatch = pathname.match(new RegExp("^/api/ports/([^/]+)/(vessels|target-vessels|staying-vessels|arrivals|candidates|berths|congestion|anchorage)\\.json$"));
@@ -869,7 +900,7 @@ async function apiResponse(pathname, env) {
     if (portMatch[2] === "target-vessels") return json(rows.filter(isMainCommercialVessel), { headers: corsHeaders() });
     if (portMatch[2] === "staying-vessels") return json(rows.filter(v => ["arrived_staying", "berthed", "anchorage_waiting"].includes(v.status_bucket)), { headers: corsHeaders() });
     if (portMatch[2] === "arrivals") return json(rows.filter(v => v.status_bucket === "arriving_soon"), { headers: corsHeaders() });
-    if (portMatch[2] === "candidates") return json(buildHot(rows).filter(v => v.commercial_relevance_status === "target_vessel"), { headers: corsHeaders() });
+    if (portMatch[2] === "candidates") return json(buildVisibilityBuckets(rows).sales_candidates, { headers: corsHeaders() });
     if (portMatch[2] === "congestion") return json(buildPortCongestion(records, decodeURIComponent(portMatch[1])), { headers: corsHeaders() });
     if (portMatch[2] === "anchorage") return json(buildAnchorage(rows), { headers: corsHeaders() });
     return json(rows.filter(v => v.berth).map(v => ({ berth_name: v.berth, vessel_name: v.vessel_name, status: v.status, eta: v.eta, etd: v.etd })), { headers: corsHeaders() });

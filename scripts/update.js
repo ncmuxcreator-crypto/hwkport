@@ -18,7 +18,7 @@ const PRIORITY_PORTS = [
 ];
 const COMMERCIAL_GT_THRESHOLD = Number(process.env.COMMERCIAL_GT_THRESHOLD || 5000);
 const REVIEW_TARGET_THRESHOLD = Number(process.env.REVIEW_TARGET_THRESHOLD || 35);
-const SALES_CANDIDATE_THRESHOLD = Number(process.env.SALES_CANDIDATE_THRESHOLD || 50);
+const SALES_CANDIDATE_THRESHOLD = Number(process.env.SALES_CANDIDATE_THRESHOLD || 60);
 const IMMEDIATE_TARGET_THRESHOLD = Number(process.env.IMMEDIATE_TARGET_THRESHOLD || 75);
 const MAX_TARGET_VESSELS = Number(process.env.MAX_TARGET_VESSELS || 5000);
 const MAX_CANDIDATES = Number(process.env.MAX_CANDIDATES || 1000);
@@ -435,6 +435,7 @@ function deriveCommercialScoreParts(v, metrics) {
   const isCommercialType = !isExcludedType && (/vlcc|cape|capesize|bulk|bulker|bulk_carrier|crude_tanker|product_tanker|chemical_tanker|tanker|pctc|lng|lpg|cruise|container/.test(type) || configuredCommercialFit >= 3);
   const sensitiveRoute = routeProfile.high_regulation_route || /australia|brazil|new zealand|california|usa|canada|port hedland|ponta da madeira/.test(route);
   const isAnchorageWaiting = Boolean(v.is_anchorage_waiting) || anchorageDays >= 0.5 || hasAnchorageSignal(v) || /waiting|anchorage|anchor|idle|drifting/.test(status);
+  const isStayingWithoutDeparture = ["arrived_staying", "berthed", "anchorage_waiting"].includes(v.status_bucket) || Boolean(v.ata && !v.atd) || stayDays >= 0.5;
   const isLongIdle = stayDays >= 7 || anchorageDays >= 3;
   const isHighGt = gt >= 30000;
   const isVeryHighGt = gt >= 80000;
@@ -449,7 +450,8 @@ function deriveCommercialScoreParts(v, metrics) {
   const outboundPilotSoon = pilotOutbound && parseScheduleTime(v.pilot_time || v.movement_time || v.etd_candidate)?.getTime() > Date.now();
   const biofoulingRiskScore = Math.min(30, Math.round(Math.min(14, stayDays * 1.4) + Math.min(8, anchorageDays * 2) + (isBulkTankerPctc ? 5 : isCommercialType ? 3 : 0) + Math.round(routeProfile.biosecurity_exposure_score / 20) + (isVeryHighGt ? 2 : 0)));
   const performanceProxyScore = Math.min(20, Math.round(Math.min(9, anchorageDays * 2) + Math.min(6, stayDays * 0.7) + (Number(v.speed || 0) > 0 && Number(v.speed || 0) < 1.5 ? 3 : 0) + (isHighGt ? 3 : meetsCommercialGtThreshold ? 2 : 0) + Math.round(routeProfile.fuel_efficiency_sensitivity_score / 25)));
-  const congestionExposureScore = Math.min(20, Math.round((isAnchorageWaiting ? 10 : 0) + Math.min(8, anchorageDays * 2) + (isLongIdle ? 4 : 0) + (v.berth_class === "anchorage" ? 2 : 0) + Math.min(4, berthOccupancyProxy / 25) + (enrichmentMatched ? 1 : 0)));
+  const stayCongestionProxy = isStayingWithoutDeparture ? Math.min(6, 2 + stayDays) : 0;
+  const congestionExposureScore = Math.min(20, Math.round((isAnchorageWaiting ? 10 : 0) + Math.min(8, anchorageDays * 2) + stayCongestionProxy + (isLongIdle ? 4 : 0) + (v.berth_class === "anchorage" ? 2 : 0) + Math.min(4, berthOccupancyProxy / 25) + (enrichmentMatched ? 1 : 0)));
   const cleaningWindowScore = Math.min(15, Math.max(0, Math.round(Math.min(9, Number(metrics.work_window_hours || 0) / 4) + (isAnchorageWaiting ? 4 : 0) + (v.berth || v.berth_name ? 2 : 0) + (enrichmentMatched ? 1 : 0) + (pilotMatched && !outboundPilotSoon ? 2 : 0) - (outboundPilotSoon ? 4 : 0) - (terminalActive ? 2 : 0))));
   const compliancePressureScore = Math.min(10, Math.round(Math.round(routeProfile.biosecurity_exposure_score / 20) + Math.round(routeProfile.esg_sensitivity_score / 35) + (isHighGt ? 3 : meetsCommercialGtThreshold ? 2 : 0) + (isBulkTankerPctc ? 1 : 0)));
   const commercialFitScore = Math.min(5, Math.round(Math.max(configuredCommercialFit, (isBulkTankerPctc ? 3 : isCommercialType ? 2 : 0)) + (isHighGt ? 1 : 0) + (v.operator || v.agent ? 1 : 0) + (v.port_code ? 1 : 0) - (isExcludedType ? 4 : 0)));
@@ -493,6 +495,7 @@ function deriveCommercialScoreParts(v, metrics) {
     meets_commercial_gt_threshold: meetsCommercialGtThreshold,
     review_target: total >= REVIEW_TARGET_THRESHOLD,
     is_anchorage_waiting: isAnchorageWaiting,
+    is_staying_without_departure: isStayingWithoutDeparture,
     is_long_idle: isLongIdle,
     anchorage_days: Math.round(anchorageDays * 10) / 10,
     estimated_waiting_time: metrics.anchorage_hours || 0,
@@ -635,7 +638,34 @@ function commercialRelevanceStatus(v = {}) {
 }
 
 function isMainCommercialVessel(v = {}) {
-  return ["target_vessel", "unknown_gt_review"].includes(v.commercial_relevance_status);
+  const score = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
+  if (isExplicitlyExcluded(v)) return false;
+  return ["target_vessel", "unknown_gt_review"].includes(v.commercial_relevance_status) || score >= SALES_CANDIDATE_THRESHOLD;
+}
+
+function isExplicitlyExcluded(v = {}) {
+  return v.commercial_relevance_status === "excluded_non_commercial_type" ||
+    v.commercial_relevance_status === "excluded_departure_only" ||
+    v.commercial_relevance_status === "non_target_small_vessel" ||
+    v.excluded_from_commercial_targets === true;
+}
+
+function isSalesCandidate(v = {}) {
+  const score = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
+  return !isExplicitlyExcluded(v) && score >= SALES_CANDIDATE_THRESHOLD;
+}
+
+function isImmediateTarget(v = {}) {
+  const score = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
+  return !isExplicitlyExcluded(v) && score >= IMMEDIATE_TARGET_THRESHOLD;
+}
+
+function commercialExclusionReason(v = {}) {
+  if (v.commercial_relevance_status === "excluded_non_commercial_type") return "excluded_non_commercial_type";
+  if (v.commercial_relevance_status === "excluded_departure_only") return "excluded_departure_only";
+  if (v.commercial_relevance_status === "non_target_small_vessel") return "excluded_under_5000gt";
+  if (v.excluded_from_commercial_targets === true) return v.exclusion_reason || "explicitly_excluded";
+  return "";
 }
 
 function buildCommercialSignals(v = {}, metrics = {}) {
@@ -923,11 +953,11 @@ function buildPortIntelligence(records) {
       current.scored_count += 1;
       current.scored_vessels.push(v);
     }
-    if (v.is_cleaning_candidate || (v.total_sales_priority_score || 0) >= SALES_CANDIDATE_THRESHOLD) {
+    if (isSalesCandidate(v)) {
       current.candidate_count += 1;
       current.sales_candidates.push(v);
     }
-    if (v.is_immediate_candidate || (v.total_sales_priority_score || 0) >= IMMEDIATE_TARGET_THRESHOLD) {
+    if (isImmediateTarget(v)) {
       current.immediate_target_count += 1;
       current.immediate_targets.push(v);
     }
@@ -954,7 +984,7 @@ function dataQualityTier(v) {
 
 function buildCandidateList(records = []) {
   return records
-    .filter(v => v.actionable_source_row !== false && v.commercial_relevance_status === "target_vessel" && v.meets_commercial_gt_threshold && (v.is_cleaning_candidate || (v.total_sales_priority_score || 0) >= SALES_CANDIDATE_THRESHOLD))
+    .filter(v => v.actionable_source_row !== false && isSalesCandidate(v))
     .slice()
     .sort((a, b) =>
       Number(b.is_immediate_candidate) - Number(a.is_immediate_candidate) ||
@@ -1081,8 +1111,9 @@ function enrichSalesSignals(records) {
       enriched.sales_reason = enriched.reason_codes;
       enriched.total_sales_priority_score = 0;
     } else {
-      enriched.is_cleaning_candidate = isMainCommercialVessel(enriched) && enriched.commercial_relevance_status === "target_vessel" && enriched.commercial_value_score >= SALES_CANDIDATE_THRESHOLD;
-      enriched.is_immediate_candidate = isMainCommercialVessel(enriched) && enriched.commercial_relevance_status === "target_vessel" && enriched.commercial_value_score >= IMMEDIATE_TARGET_THRESHOLD;
+      enriched.exclusion_reason = commercialExclusionReason(enriched);
+      enriched.is_cleaning_candidate = isSalesCandidate(enriched);
+      enriched.is_immediate_candidate = isImmediateTarget(enriched);
       enriched.is_operating_candidate = enriched.is_cleaning_candidate;
       enriched.is_operating_immediate_candidate = enriched.is_immediate_candidate;
       enriched.cleaning_candidate_score = enriched.total_sales_priority_score;
@@ -1108,8 +1139,9 @@ function enrichSalesSignals(records) {
       enriched.commercial_value_band = commercialValueBand(enriched.commercial_value_score, enriched.gt_status);
       enriched.cleaning_candidate_score = enriched.total_sales_priority_score;
       enriched.sales_priority_band = enriched.total_sales_priority_score >= IMMEDIATE_TARGET_THRESHOLD ? "immediate_target" : "high_potential";
-      enriched.is_cleaning_candidate = enriched.commercial_relevance_status === "target_vessel" && enriched.total_sales_priority_score >= SALES_CANDIDATE_THRESHOLD;
-      enriched.is_immediate_candidate = enriched.commercial_relevance_status === "target_vessel" && enriched.total_sales_priority_score >= IMMEDIATE_TARGET_THRESHOLD;
+      enriched.exclusion_reason = commercialExclusionReason(enriched);
+      enriched.is_cleaning_candidate = isSalesCandidate(enriched);
+      enriched.is_immediate_candidate = isImmediateTarget(enriched);
       enriched.is_operating_candidate = enriched.is_cleaning_candidate;
       enriched.is_operating_immediate_candidate = enriched.is_immediate_candidate;
     }
@@ -2222,8 +2254,8 @@ try {
   const candidateList = buildCandidateList(vessels).slice(0, MAX_CANDIDATES);
 
   const scoredVessels = vessels.filter(v => typeof v.commercial_value_score === "number");
-  const salesCandidates = vessels.filter(v => (v.commercial_value_score || 0) >= SALES_CANDIDATE_THRESHOLD && v.commercial_relevance_status === "target_vessel");
-  const immediateTargets = vessels.filter(v => (v.commercial_value_score || 0) >= IMMEDIATE_TARGET_THRESHOLD && v.commercial_relevance_status === "target_vessel");
+  const salesCandidates = vessels.filter(isSalesCandidate);
+  const immediateTargets = vessels.filter(isImmediateTarget);
   const scoringDiagnostics = buildScoringDiagnostics(vessels);
   const countFunnel = buildCountFunnel({
     rawRecords: collectedRows,
