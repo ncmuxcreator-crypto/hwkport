@@ -85,7 +85,7 @@ The Worker configuration is in `wrangler.jsonc`.
 
 Do not set the assets directory to the repository root. If the root is uploaded, Cloudflare may try to upload `node_modules`, including `workerd`, which exceeds the 25 MiB individual asset limit.
 
-Do not upload generated `dashboard/api/*.json` files as Cloudflare static assets. Those files can exceed the Workers 25 MiB per-asset limit, and `/api/*` must be served dynamically by `src/worker.js` from Supabase. The GitHub Actions deploy step temporarily removes `dashboard/api` during `wrangler deploy`, then restores it for diagnostics artifacts.
+Do not upload generated `dashboard/api/*.json` files as Cloudflare static assets. Those files can exceed the Workers 25 MiB per-asset limit, and `/api/*` must be served dynamically by `src/worker.js` from Supabase. The GitHub Actions deploy step temporarily moves `dashboard/api` outside the dashboard asset directory during `wrangler deploy`, then restores it for diagnostics artifacts.
 
 ## API Routes Served By Worker
 

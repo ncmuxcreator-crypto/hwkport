@@ -187,9 +187,9 @@ jobs:
         run: |
           echo "Preparing lean Cloudflare asset upload"
           if [ -d dashboard/api ]; then
-            mv dashboard/api dashboard/api.cloudflare-upload-skip
+            mv dashboard/api ./api.cloudflare-upload-skip
             mkdir -p dashboard/api
-            trap 'rm -rf dashboard/api; mv dashboard/api.cloudflare-upload-skip dashboard/api' EXIT
+            trap 'rm -rf dashboard/api; mv ./api.cloudflare-upload-skip dashboard/api' EXIT
           fi
           npx wrangler deploy
         env:
