@@ -147,6 +147,7 @@ export function loadReferenceDictionaries() {
   const vesselTypes = loadCsv("vessel_types.csv");
   const operators = loadCsv("operators.csv");
   const agents = loadCsv("agents.csv");
+  const agentOperatorMappings = loadCsv("agent_operator_mapping.csv");
   const vesselMasterSeed = loadCsv("vessel_master_seed.csv");
   return {
     loaded_at: new Date().toISOString(),
@@ -156,6 +157,7 @@ export function loadReferenceDictionaries() {
     vesselTypes,
     operators,
     agents,
+    agentOperatorMappings,
     vesselMasterSeed,
     indexes: {
       ports: indexBy(ports, ["port_code", "port_name", "alias"]),
@@ -164,6 +166,7 @@ export function loadReferenceDictionaries() {
       vesselTypes: indexBy(vesselTypes, ["vessel_type", "alias"]),
       operators: indexBy(operators, ["operator", "alias"]),
       agents: indexBy(agents, ["agent", "alias"]),
+      agentOperatorMappings: indexBy(agentOperatorMappings, ["agent", "agent_normalized", "alias"]),
       vesselMasterSeed: new Map([
         ...indexBy(vesselMasterSeed, ["imo", "mmsi", "call_sign"], normalize),
         ...indexBy(vesselMasterSeed, ["vessel_name", "normalized_name", "canonical_name", "alias"], normalizeCompact)
@@ -236,27 +239,32 @@ export function enrichWithReferenceDictionaries(records = [], dictionaries = loa
       enriched.vessel_type_normalization_source = "pattern";
     }
 
-    const operatorRef = indexes.operators?.get(normalize(record.operator));
+    const operatorRef = indexes.operators?.get(normalize(record.operator || record.operator_name));
     if (operatorRef) {
-      enriched.operator = operatorRef.operator || enriched.operator;
+      enriched.operator = operatorRef.operator || enriched.operator || enriched.operator_name;
+      enriched.operator_name = enriched.operator;
       enriched.operator_normalized = operatorRef.operator_normalized || normalize(enriched.operator);
       enriched.operator_source = enriched.operator_source || "operator_dictionary";
       enriched.operator_confidence = Math.max(Number(enriched.operator_confidence || 0), 90);
       enriched.operator_inferred = false;
     }
 
-    const agentRef = indexes.agents?.get(normalize(record.agent));
+    const agentRef = indexes.agents?.get(normalize(record.agent || record.agent_name || record.satmntEntrpsNm || record.entrpsCdNm));
     if (agentRef) {
-      enriched.agent = agentRef.agent || enriched.agent;
+      enriched.agent = agentRef.agent || enriched.agent || enriched.agent_name || enriched.satmntEntrpsNm || enriched.entrpsCdNm;
+      enriched.agent_name = enriched.agent;
       enriched.agent_normalized = agentRef.agent_normalized || normalize(enriched.agent);
       enriched.agent_source = enriched.agent_source || "agent_dictionary";
-      if (!enriched.operator && agentRef.operator) {
-        enriched.operator = agentRef.operator;
-        enriched.operator_normalized = normalize(agentRef.operator);
-        enriched.operator_source = "agent_dictionary";
-        enriched.operator_confidence = Math.max(Number(enriched.operator_confidence || 0), 65);
-        enriched.operator_inferred = true;
-      }
+    }
+
+    const agentOperatorRef = indexes.agentOperatorMappings?.get(normalize(enriched.agent || enriched.agent_name || record.satmntEntrpsNm || record.entrpsCdNm));
+    if (!enriched.operator && agentOperatorRef?.operator) {
+      enriched.operator = agentOperatorRef.operator;
+      enriched.operator_name = agentOperatorRef.operator;
+      enriched.operator_normalized = agentOperatorRef.operator_normalized || normalize(agentOperatorRef.operator);
+      enriched.operator_source = "agent_dictionary";
+      enriched.operator_confidence = Math.max(Number(enriched.operator_confidence || 0), Number(agentOperatorRef.confidence || 65));
+      enriched.operator_inferred = true;
     }
 
     const seedRef = seedCandidates(record).map(key => indexes.vesselMasterSeed?.get(key)).find(Boolean);
@@ -269,6 +277,10 @@ export function enrichWithReferenceDictionaries(records = [], dictionaries = loa
       enriched.vessel_type = enriched.vessel_type || seedRef.vessel_type;
       enriched.gt = enriched.gt || Number(seedRef.gt || 0);
       enriched.operator = enriched.operator || seedRef.operator;
+      enriched.operator_name = enriched.operator_name || enriched.operator;
+      enriched.operator_normalized = enriched.operator_normalized || seedRef.operator_normalized || (enriched.operator ? normalize(enriched.operator) : "");
+      enriched.manager_name = enriched.manager_name || seedRef.manager_name;
+      enriched.owner_name = enriched.owner_name || seedRef.owner_name;
       if (seedRef.operator) {
         enriched.operator_source = enriched.operator_source || "vessel_master_seed";
         enriched.operator_confidence = Math.max(Number(enriched.operator_confidence || 0), 82);
@@ -279,7 +291,7 @@ export function enrichWithReferenceDictionaries(records = [], dictionaries = loa
       enriched.imo_recovery_source = "vessel_master_seed";
     }
 
-    enriched.reference_enriched = Boolean(portRef || berthRef || anchorageRef || anchoragePattern || berthClass || typeRef || typePattern || operatorRef || agentRef || seedRef);
+    enriched.reference_enriched = Boolean(portRef || berthRef || anchorageRef || anchoragePattern || berthClass || typeRef || typePattern || operatorRef || agentRef || agentOperatorRef || seedRef);
     return enriched;
   });
 }

@@ -28,6 +28,19 @@ function normalizeVesselName(value) {
     .replace(/[^A-Z0-9\uAC00-\uD7A3]+/g, "");
 }
 
+function normalizeCompanyName(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+}
+
+function stableEntityId(prefix, value) {
+  const normalized = normalizeVesselName(value);
+  return `${prefix}-${normalized || randomUUID().slice(0, 10)}`;
+}
+
 function fallbackMasterId(record = {}) {
   return record.master_vessel_id || record.hybrid_entity_key || record.vessel_id;
 }
@@ -40,6 +53,16 @@ function chunk(values = [], size = 100) {
   const out = [];
   for (let index = 0; index < values.length; index += size) out.push(values.slice(index, index + size));
   return out;
+}
+
+function uniqueBy(values = [], keyFn) {
+  const map = new Map();
+  for (const value of values) {
+    const key = keyFn(value);
+    if (!key) continue;
+    map.set(key, value);
+  }
+  return [...map.values()];
 }
 
 function pickStaticFields(record = {}) {
@@ -80,7 +103,11 @@ function mergeCachedStaticInfo(record = {}, cached = {}, strategy = "unknown") {
     loa: record.loa || cached.loa || 0,
     beam: record.beam || cached.beam || 0,
     operator: record.operator || cached.operator || "",
+    operator_name: record.operator_name || record.operator || cached.operator || "",
     operator_normalized: record.operator_normalized || cached.operator_normalized || "",
+    operator_source: record.operator_source || (cached.operator ? "vessel_master" : ""),
+    operator_confidence: Math.max(Number(record.operator_confidence || 0), cached.operator ? 95 : 0),
+    operator_inferred: record.operator_inferred ?? false,
     flag: record.flag || cached.flag || "",
     master_vessel_id: cached.master_vessel_id || record.master_vessel_id,
     vessel_master_cache_match: true,
@@ -285,6 +312,17 @@ export async function saveToSupabase(records, options = {}) {
     anchorage_hours: r.anchorage_hours || 0,
     status: r.status,
     operator: r.operator || null,
+    operator_name: r.operator_name || r.operator || null,
+    operator_normalized: r.operator_normalized || normalizeCompanyName(r.operator_name || r.operator) || null,
+    operator_inferred: Boolean(r.operator_inferred),
+    operator_confidence: Number(r.operator_confidence || 0),
+    operator_source: r.operator_source || null,
+    agent_name: r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm || null,
+    agent_normalized: r.agent_normalized || normalizeCompanyName(r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm) || null,
+    agent_source: r.agent_source || null,
+    manager_name: r.manager_name || null,
+    owner_name: r.owner_name || null,
+    contact_readiness_score: Number(r.contact_readiness_score || 0),
     data_quality_tier: r.data_quality_tier || null,
     risk_score: r.risk_score || 0,
     total_sales_priority_score: r.total_sales_priority_score || 0,
@@ -352,8 +390,8 @@ export async function saveToSupabase(records, options = {}) {
     dwt: r.dwt || null,
     loa: r.loa || null,
     beam: r.beam || null,
-    operator: r.operator || null,
-    operator_normalized: String(r.operator || "").trim().toUpperCase() || null,
+    operator: r.operator_name || r.operator || null,
+    operator_normalized: r.operator_normalized || normalizeCompanyName(r.operator_name || r.operator) || null,
     flag: r.flag || null,
     identity_confidence: identityConfidence(r),
     imo_status: r.imo_status || (r.imo ? "present" : "missing"),
@@ -405,6 +443,113 @@ export async function saveToSupabase(records, options = {}) {
   for (let index = 0; index < masterRows.length; index += batchSize) {
     const batch = masterRows.slice(index, index + batchSize);
     const { error } = await supabase.from("vessel_master").upsert(batch, { onConflict: "master_vessel_id" });
+    if (error) throw error;
+  }
+
+  const operatorRows = uniqueBy(records
+    .map(r => {
+      const operatorName = r.operator_name || r.operator;
+      const operatorNormalized = r.operator_normalized || normalizeCompanyName(operatorName);
+      if (!operatorName || !operatorNormalized) return null;
+      return {
+        operator_id: stableEntityId("OP", operatorNormalized),
+        operator_name: operatorName,
+        operator_normalized: operatorNormalized,
+        source: r.operator_source || "collector",
+        confidence: Number(r.operator_confidence || 0),
+        last_seen: now,
+        payload: {
+          inferred: Boolean(r.operator_inferred),
+          source: r.operator_source || null
+        }
+      };
+    })
+    .filter(Boolean), row => row.operator_normalized);
+
+  for (let index = 0; index < operatorRows.length; index += batchSize) {
+    const batch = operatorRows.slice(index, index + batchSize);
+    const { error } = await supabase.from("operator_master").upsert(batch, { onConflict: "operator_normalized" });
+    if (error) throw error;
+  }
+
+  const agentRows = uniqueBy(records
+    .map(r => {
+      const agentName = r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm;
+      const agentNormalized = r.agent_normalized || normalizeCompanyName(agentName);
+      if (!agentName || !agentNormalized) return null;
+      return {
+        agent_id: stableEntityId("AG", agentNormalized),
+        agent_name: agentName,
+        agent_normalized: agentNormalized,
+        source: r.agent_source || "collector",
+        last_seen: now,
+        payload: {
+          satmntEntrpsNm: r.satmntEntrpsNm || null,
+          entrpsCdNm: r.entrpsCdNm || null
+        }
+      };
+    })
+    .filter(Boolean), row => row.agent_normalized);
+
+  for (let index = 0; index < agentRows.length; index += batchSize) {
+    const batch = agentRows.slice(index, index + batchSize);
+    const { error } = await supabase.from("agent_master").upsert(batch, { onConflict: "agent_normalized" });
+    if (error) throw error;
+  }
+
+  const agentOperatorLinks = uniqueBy(records
+    .map(r => {
+      const operatorName = r.operator_name || r.operator;
+      const agentName = r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm;
+      const operatorNormalized = r.operator_normalized || normalizeCompanyName(operatorName);
+      const agentNormalized = r.agent_normalized || normalizeCompanyName(agentName);
+      if (!operatorNormalized || !agentNormalized) return null;
+      return {
+        link_id: stableEntityId("AGOP", `${agentNormalized}-${operatorNormalized}-${r.operator_source || "collector"}`),
+        agent_id: stableEntityId("AG", agentNormalized),
+        operator_id: stableEntityId("OP", operatorNormalized),
+        agent_normalized: agentNormalized,
+        operator_normalized: operatorNormalized,
+        source: r.operator_source || r.agent_source || "collector",
+        confidence: Number(r.operator_confidence || 0),
+        inferred: Boolean(r.operator_inferred),
+        last_seen: now,
+        payload: r
+      };
+    })
+    .filter(Boolean), row => `${row.agent_normalized}|${row.operator_normalized}|${row.source}`);
+
+  for (let index = 0; index < agentOperatorLinks.length; index += batchSize) {
+    const batch = agentOperatorLinks.slice(index, index + batchSize);
+    const { error } = await supabase.from("agent_operator_links").upsert(batch, { onConflict: "agent_normalized,operator_normalized,source" });
+    if (error) throw error;
+  }
+
+  const operatorHistoryRows = uniqueBy(records
+    .filter(r => r.operator_name || r.operator || r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm)
+    .map(r => ({
+      history_id: stableEntityId("VOH", `${runId}-${r.hybrid_entity_key || r.vessel_id}-${r.port_call_identity || r.port_code || r.port || ""}`),
+      run_id: runId,
+      master_vessel_id: fallbackMasterId(r),
+      hybrid_entity_key: r.hybrid_entity_key || r.vessel_id,
+      vessel_name: r.vessel_name || null,
+      port_code: r.port_code || null,
+      operator_name: r.operator_name || r.operator || null,
+      operator_normalized: r.operator_normalized || normalizeCompanyName(r.operator_name || r.operator) || null,
+      operator_inferred: Boolean(r.operator_inferred),
+      operator_confidence: Number(r.operator_confidence || 0),
+      operator_source: r.operator_source || null,
+      agent_name: r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm || null,
+      agent_normalized: r.agent_normalized || normalizeCompanyName(r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm) || null,
+      agent_source: r.agent_source || null,
+      contact_readiness_score: Number(r.contact_readiness_score || 0),
+      collected_at: now,
+      payload: r
+    })), row => row.history_id);
+
+  for (let index = 0; index < operatorHistoryRows.length; index += batchSize) {
+    const batch = operatorHistoryRows.slice(index, index + batchSize);
+    const { error } = await supabase.from("vessel_operator_history").upsert(batch, { onConflict: "history_id" });
     if (error) throw error;
   }
 
@@ -579,5 +724,24 @@ export async function saveToSupabase(records, options = {}) {
     promoted = true;
   }
 
-  return { runId, recordsSaved, table: "vessel_snapshots", mode: "append_only", promoted, promotion, batchSize, entitiesSaved: entities.length, masterRowsSaved: masterRows.length, identityCandidatesSaved: identityCandidates.length, riskRowsSaved: riskRows.length, eventsSaved: events.length, pilotScheduleEventsSaved: pilotEvents.length, congestionRowsSaved: congestionRows.length };
+  return {
+    runId,
+    recordsSaved,
+    table: "vessel_snapshots",
+    mode: "append_only",
+    promoted,
+    promotion,
+    batchSize,
+    entitiesSaved: entities.length,
+    masterRowsSaved: masterRows.length,
+    operatorRowsSaved: operatorRows.length,
+    agentRowsSaved: agentRows.length,
+    agentOperatorLinksSaved: agentOperatorLinks.length,
+    vesselOperatorHistoryRowsSaved: operatorHistoryRows.length,
+    identityCandidatesSaved: identityCandidates.length,
+    riskRowsSaved: riskRows.length,
+    eventsSaved: events.length,
+    pilotScheduleEventsSaved: pilotEvents.length,
+    congestionRowsSaved: congestionRows.length
+  };
 }

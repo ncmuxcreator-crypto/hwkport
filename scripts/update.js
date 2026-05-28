@@ -394,7 +394,7 @@ function deriveFleetBadges(v) {
 
 function inferOperatorInfo(v = {}) {
   const currentOperator = v.operator_name || v.operator || "";
-  const currentAgent = v.agent_name || v.agent || v.satmntEntrpsNm || "";
+  const currentAgent = v.agent_name || v.agent || v.satmntEntrpsNm || v.entrpsCdNm || "";
   const manager = v.manager_name || v.manager || v.ship_manager || "";
   const owner = v.owner_name || v.owner || v.ship_owner || "";
   const normalizedOperator = normalizeCompanyName(currentOperator);
@@ -442,6 +442,12 @@ function inferOperatorInfo(v = {}) {
   }
 
   const contactPathAvailable = Boolean(operatorName || currentAgent);
+  const contactReadinessScore = Math.min(100, Math.round(
+    (operatorName ? Math.min(55, 20 + Number(operatorConfidence || 0) * 0.35) : 0) +
+    (currentAgent ? 35 : 0) +
+    (manager ? 5 : 0) +
+    (owner ? 5 : 0)
+  ));
   return {
     operator_name: operatorName || "",
     operator: operatorName || currentOperator || "",
@@ -452,9 +458,11 @@ function inferOperatorInfo(v = {}) {
     agent_name: currentAgent || "",
     agent: currentAgent || "",
     agent_normalized: normalizedAgent,
+    agent_source: currentAgent ? (v.agent_source || (v.satmntEntrpsNm || v.entrpsCdNm ? "port_operation" : "source_field")) : "",
     manager_name: manager || "",
     owner_name: owner || "",
-    contact_path_available: contactPathAvailable
+    contact_path_available: contactPathAvailable,
+    contact_readiness_score: contactReadinessScore
   };
 }
 
@@ -576,6 +584,7 @@ function deriveCommercialScoreParts(v, metrics) {
     cleaning_window_score: cleaningWindowScore,
     compliance_pressure_score: compliancePressureScore,
     sales_accessibility_score: Math.min(5, Math.max(operatorAccessibilityBonus, Math.round((v.agent ? 2 : 0) + (v.operator ? 2 : 0) + (v.operator_normalized || v.agent_normalized ? 1 : 0)))),
+    contact_readiness_score: Math.max(Number(v.contact_readiness_score || 0), Math.min(100, Math.round((operatorAccessibilityBonus / 5) * 55 + (v.agent ? 35 : 0) + (v.manager_name ? 5 : 0) + (v.owner_name ? 5 : 0)))),
     commercial_fit_score: commercialFitScore,
     total_sales_priority_score: Math.min(100, total),
     sales_priority_band: total >= IMMEDIATE_TARGET_THRESHOLD ? "immediate_target" : total >= SALES_CANDIDATE_THRESHOLD ? "high_potential" : total >= REVIEW_TARGET_THRESHOLD ? "review_target" : "low_priority",
@@ -1558,7 +1567,9 @@ function buildOperatorDiagnostics(records = [], salesCandidates = [], immediateT
     operator_source_breakdown: sourceBreakdown,
     candidates_with_operator_count: salesCandidates.filter(v => hasValue(v.operator_name || v.operator)).length,
     candidates_with_agent_count: salesCandidates.filter(v => hasValue(v.agent_name || v.agent)).length,
-    immediate_targets_with_contact_path_count: immediateTargets.filter(v => v.contact_path_available || hasValue(v.operator_name || v.operator) || hasValue(v.agent_name || v.agent)).length
+    immediate_targets_with_contact_path_count: immediateTargets.filter(v => v.contact_path_available || hasValue(v.operator_name || v.operator) || hasValue(v.agent_name || v.agent)).length,
+    contact_ready_count: records.filter(v => Number(v.contact_readiness_score || 0) >= 50 || v.contact_path_available).length,
+    candidates_contact_ready_count: salesCandidates.filter(v => Number(v.contact_readiness_score || 0) >= 50 || v.contact_path_available).length
   };
 }
 

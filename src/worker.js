@@ -74,6 +74,16 @@ function deriveSalesAccessibilityScore(v = {}) {
   return 0;
 }
 
+function deriveContactReadinessScore(v = {}) {
+  const accessibility = deriveSalesAccessibilityScore(v);
+  return Math.min(100, Math.round(
+    (accessibility / 5) * 55 +
+    (hasValue(v.agent_name || v.agent || v.satmntEntrpsNm || v.entrpsCdNm) ? 35 : 0) +
+    (hasValue(v.manager_name || v.manager) ? 5 : 0) +
+    (hasValue(v.owner_name || v.owner) ? 5 : 0)
+  ));
+}
+
 function sortCommercialPriority(records) {
   return records.slice().sort((a, b) =>
     Number(b.is_immediate_candidate) - Number(a.is_immediate_candidate) ||
@@ -167,15 +177,17 @@ function normalizeSnapshot(row = {}) {
     beam: Number(merged.beam || 0),
     flag: merged.flag || "",
     operator_normalized: merged.operator_normalized || normalizeCompanyName(merged.operator_name || merged.operator || ""),
-    agent_name: merged.agent_name || merged.agent || merged.satmntEntrpsNm || "",
-    agent: merged.agent_name || merged.agent || merged.satmntEntrpsNm || "",
-    agent_normalized: merged.agent_normalized || normalizeCompanyName(merged.agent_name || merged.agent || merged.satmntEntrpsNm || ""),
+    agent_name: merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm || "",
+    agent: merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm || "",
+    agent_normalized: merged.agent_normalized || normalizeCompanyName(merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm || ""),
+    agent_source: merged.agent_source || (merged.satmntEntrpsNm || merged.entrpsCdNm ? "port_operation" : ""),
     manager_name: merged.manager_name || merged.manager || merged.ship_manager || "",
     owner_name: merged.owner_name || merged.owner || merged.ship_owner || "",
-    contact_path_available: Boolean(merged.contact_path_available || merged.operator_name || merged.operator || merged.agent_name || merged.agent),
+    contact_path_available: Boolean(merged.contact_path_available || merged.operator_name || merged.operator || merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm),
     destination_port: merged.destination_port || merged.destination || merged.next_port || "",
     route_region: merged.route_region || "unknown",
     sales_accessibility_score: Number(merged.sales_accessibility_score || deriveSalesAccessibilityScore(merged)),
+    contact_readiness_score: Number(merged.contact_readiness_score || deriveContactReadinessScore(merged)),
     biosecurity_exposure_score: Number(merged.biosecurity_exposure_score || 0),
     esg_sensitivity_score: Number(merged.esg_sensitivity_score || 0),
     fuel_efficiency_sensitivity_score: Number(merged.fuel_efficiency_sensitivity_score || 0),
@@ -1020,7 +1032,9 @@ function buildOperatorDiagnostics(records = [], buckets = buildVisibilityBuckets
     operator_source_breakdown: sourceBreakdown,
     candidates_with_operator_count: buckets.sales_candidates.filter(v => hasValue(v.operator_name || v.operator)).length,
     candidates_with_agent_count: buckets.sales_candidates.filter(v => hasValue(v.agent_name || v.agent)).length,
-    immediate_targets_with_contact_path_count: buckets.immediate_targets.filter(v => v.contact_path_available || hasValue(v.operator_name || v.operator) || hasValue(v.agent_name || v.agent)).length
+    immediate_targets_with_contact_path_count: buckets.immediate_targets.filter(v => v.contact_path_available || hasValue(v.operator_name || v.operator) || hasValue(v.agent_name || v.agent)).length,
+    contact_ready_count: records.filter(v => Number(v.contact_readiness_score || 0) >= 50 || v.contact_path_available).length,
+    candidates_contact_ready_count: buckets.sales_candidates.filter(v => Number(v.contact_readiness_score || 0) >= 50 || v.contact_path_available).length
   };
 }
 

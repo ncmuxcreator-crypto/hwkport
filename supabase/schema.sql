@@ -157,10 +157,23 @@ alter table vessel_snapshots add column if not exists commercial_value_band text
 alter table vessel_snapshots add column if not exists data_confidence_score int default 0;
 alter table vessel_snapshots add column if not exists candidate_band text;
 alter table vessel_snapshots add column if not exists reason_codes jsonb default '[]'::jsonb;
+alter table vessel_snapshots add column if not exists operator_name text;
+alter table vessel_snapshots add column if not exists operator_normalized text;
+alter table vessel_snapshots add column if not exists operator_inferred boolean default false;
+alter table vessel_snapshots add column if not exists operator_confidence int default 0;
+alter table vessel_snapshots add column if not exists operator_source text;
+alter table vessel_snapshots add column if not exists agent_name text;
+alter table vessel_snapshots add column if not exists agent_normalized text;
+alter table vessel_snapshots add column if not exists agent_source text;
+alter table vessel_snapshots add column if not exists manager_name text;
+alter table vessel_snapshots add column if not exists owner_name text;
+alter table vessel_snapshots add column if not exists contact_readiness_score int default 0;
 alter table vessel_snapshots drop constraint if exists vessel_snapshots_snapshot_date_vessel_id_port_key;
 create index if not exists idx_vessel_snapshots_hybrid_entity_key on vessel_snapshots(hybrid_entity_key);
 create index if not exists idx_vessel_snapshots_collected_at on vessel_snapshots(collected_at desc);
 create index if not exists idx_vessel_snapshots_run_id on vessel_snapshots(run_id);
+create index if not exists idx_vessel_snapshots_operator_normalized on vessel_snapshots(operator_normalized);
+create index if not exists idx_vessel_snapshots_agent_normalized on vessel_snapshots(agent_normalized);
 
 create table if not exists vessel_entities (
   hybrid_entity_key text primary key,
@@ -201,6 +214,64 @@ create table if not exists vessel_master (
   first_seen timestamptz default now(),
   last_seen timestamptz default now(),
   updated_at timestamptz default now(),
+  payload jsonb default '{}'::jsonb
+);
+
+create table if not exists operator_master (
+  operator_id text primary key,
+  operator_name text not null,
+  operator_normalized text not null unique,
+  operator_group text,
+  source text,
+  confidence int default 0,
+  first_seen timestamptz default now(),
+  last_seen timestamptz default now(),
+  payload jsonb default '{}'::jsonb
+);
+
+create table if not exists agent_master (
+  agent_id text primary key,
+  agent_name text not null,
+  agent_normalized text not null unique,
+  agent_group text,
+  source text,
+  first_seen timestamptz default now(),
+  last_seen timestamptz default now(),
+  payload jsonb default '{}'::jsonb
+);
+
+create table if not exists agent_operator_links (
+  link_id text primary key,
+  agent_id text,
+  operator_id text,
+  agent_normalized text not null,
+  operator_normalized text not null,
+  source text,
+  confidence int default 0,
+  inferred boolean default true,
+  first_seen timestamptz default now(),
+  last_seen timestamptz default now(),
+  payload jsonb default '{}'::jsonb,
+  unique(agent_normalized, operator_normalized, source)
+);
+
+create table if not exists vessel_operator_history (
+  history_id text primary key,
+  run_id text,
+  master_vessel_id text,
+  hybrid_entity_key text,
+  vessel_name text,
+  port_code text,
+  operator_name text,
+  operator_normalized text,
+  operator_inferred boolean default false,
+  operator_confidence int default 0,
+  operator_source text,
+  agent_name text,
+  agent_normalized text,
+  agent_source text,
+  contact_readiness_score int default 0,
+  collected_at timestamptz default now(),
   payload jsonb default '{}'::jsonb
 );
 
