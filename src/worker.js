@@ -39,9 +39,39 @@ function hasValue(value) {
   return String(value).trim() !== "";
 }
 
+function normalizeCompanyName(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+}
+
 function basicInfoCompleteness(record = {}) {
   const present = BASIC_INFO_FIELDS.filter(field => hasValue(record[field]));
   return Math.round((present.length / BASIC_INFO_FIELDS.length) * 100);
+}
+
+function operatorReasonCodes(v = {}) {
+  const codes = [];
+  if (hasValue(v.operator_name || v.operator) && !v.operator_inferred) codes.push("OPERATOR_IDENTIFIED");
+  if (hasValue(v.operator_name || v.operator) && v.operator_inferred) codes.push("OPERATOR_INFERRED");
+  if (hasValue(v.agent_name || v.agent)) codes.push("AGENT_IDENTIFIED");
+  if (hasValue(v.operator_name || v.operator) || hasValue(v.agent_name || v.agent)) codes.push("CONTACT_PATH_AVAILABLE");
+  return codes;
+}
+
+function deriveSalesAccessibilityScore(v = {}) {
+  const source = String(v.operator_source || "");
+  const confidence = Number(v.operator_confidence || 0);
+  if (source === "vessel_master" || source === "vessel_spec_api") return 5;
+  if (source === "operator_dictionary") return 4;
+  if (source === "vessel_name_prefix" && confidence >= 70) return 3;
+  if (source === "agent_dictionary") return 2;
+  if (source === "agent_heuristic") return 1;
+  if (hasValue(v.operator_name || v.operator)) return 2;
+  if (hasValue(v.agent_name || v.agent)) return 1;
+  return 0;
 }
 
 function sortCommercialPriority(records) {
@@ -116,7 +146,11 @@ function normalizeSnapshot(row = {}) {
     berth_class: merged.berth_class || "",
     anchorage_class: merged.anchorage_class || "",
     status: merged.status || "Observed",
-    operator: merged.operator || "",
+    operator_name: merged.operator_name || merged.operator || "",
+    operator: merged.operator_name || merged.operator || "",
+    operator_inferred: Boolean(merged.operator_inferred),
+    operator_confidence: Number(merged.operator_confidence || 0),
+    operator_source: merged.operator_source || "",
     destination: merged.destination || "",
     previous_port: merged.previous_port || "",
     next_port: merged.next_port || "",
@@ -132,11 +166,16 @@ function normalizeSnapshot(row = {}) {
     loa: Number(merged.loa || 0),
     beam: Number(merged.beam || 0),
     flag: merged.flag || "",
-    operator_normalized: merged.operator_normalized || "",
-    agent: merged.agent || "",
-    agent_normalized: merged.agent_normalized || "",
+    operator_normalized: merged.operator_normalized || normalizeCompanyName(merged.operator_name || merged.operator || ""),
+    agent_name: merged.agent_name || merged.agent || merged.satmntEntrpsNm || "",
+    agent: merged.agent_name || merged.agent || merged.satmntEntrpsNm || "",
+    agent_normalized: merged.agent_normalized || normalizeCompanyName(merged.agent_name || merged.agent || merged.satmntEntrpsNm || ""),
+    manager_name: merged.manager_name || merged.manager || merged.ship_manager || "",
+    owner_name: merged.owner_name || merged.owner || merged.ship_owner || "",
+    contact_path_available: Boolean(merged.contact_path_available || merged.operator_name || merged.operator || merged.agent_name || merged.agent),
     destination_port: merged.destination_port || merged.destination || merged.next_port || "",
     route_region: merged.route_region || "unknown",
+    sales_accessibility_score: Number(merged.sales_accessibility_score || deriveSalesAccessibilityScore(merged)),
     biosecurity_exposure_score: Number(merged.biosecurity_exposure_score || 0),
     esg_sensitivity_score: Number(merged.esg_sensitivity_score || 0),
     fuel_efficiency_sensitivity_score: Number(merged.fuel_efficiency_sensitivity_score || 0),
@@ -216,8 +255,8 @@ function normalizeSnapshot(row = {}) {
     cleaning_candidate_score: candidateScore,
     is_cleaning_candidate: Boolean(merged.is_cleaning_candidate ?? (Number(merged.gt || 0) >= Number(merged.commercial_gt_threshold || 5000) && candidateScore >= SALES_CANDIDATE_THRESHOLD)),
     is_immediate_candidate: Boolean(merged.is_immediate_candidate ?? (Number(merged.gt || 0) >= Number(merged.commercial_gt_threshold || 5000) && candidateScore >= IMMEDIATE_TARGET_THRESHOLD)),
-    reason_codes: merged.reason_codes || merged.sales_reason || [],
-    sales_reason: merged.sales_reason || merged.reason_codes || [],
+    reason_codes: [...new Set([...(merged.reason_codes || merged.sales_reason || []), ...operatorReasonCodes(merged)])],
+    sales_reason: [...new Set([...(merged.sales_reason || merged.reason_codes || []), ...operatorReasonCodes(merged)])],
     hybrid_entity_key: merged.hybrid_entity_key || merged.vessel_id,
     master_vessel_id: merged.master_vessel_id || merged.hybrid_entity_key || merged.vessel_id,
     identification_method: merged.identification_method || (merged.imo ? "IMO" : merged.mmsi ? "MMSI" : "NAME_PORT_FALLBACK"),
@@ -447,9 +486,10 @@ function deriveCommercialProxyScore(v = {}, scores = {}) {
     Number(scores.biofoulingRiskScore || 0) * 0.20 +
     Number(scores.performanceProxyScore || 0) * 0.10 +
     Number(scores.ciiPressureScore || 0) * 0.10 +
+    deriveSalesAccessibilityScore(v) +
     Number(v.cleaning_window_score || 0) +
     Math.min(10, Number(v.biosecurity_exposure_score || 0) / 10) +
-    (v.agent || v.operator ? 4 : 0)
+    (v.agent || v.operator ? 2 : 0)
   ));
 }
 
@@ -964,6 +1004,26 @@ function buildScoringDiagnostics(records = []) {
   };
 }
 
+function buildOperatorDiagnostics(records = [], buckets = buildVisibilityBuckets(records)) {
+  const known = records.filter(v => hasValue(v.operator_name || v.operator));
+  const sourceBreakdown = {};
+  for (const v of known) {
+    const source = v.operator_source || "source_field";
+    sourceBreakdown[source] = (sourceBreakdown[source] || 0) + 1;
+  }
+  return {
+    operator_known_count: known.length,
+    operator_inferred_count: records.filter(v => v.operator_inferred).length,
+    operator_unknown_count: records.filter(v => !hasValue(v.operator_name || v.operator)).length,
+    agent_known_count: records.filter(v => hasValue(v.agent_name || v.agent)).length,
+    operator_confidence_avg: known.length ? Math.round(known.reduce((sum, v) => sum + Number(v.operator_confidence || 0), 0) / known.length) : 0,
+    operator_source_breakdown: sourceBreakdown,
+    candidates_with_operator_count: buckets.sales_candidates.filter(v => hasValue(v.operator_name || v.operator)).length,
+    candidates_with_agent_count: buckets.sales_candidates.filter(v => hasValue(v.agent_name || v.agent)).length,
+    immediate_targets_with_contact_path_count: buckets.immediate_targets.filter(v => v.contact_path_available || hasValue(v.operator_name || v.operator) || hasValue(v.agent_name || v.agent)).length
+  };
+}
+
 function buildStatus(records, source) {
   const buckets = buildVisibilityBuckets(records);
   const countFunnel = buildCountFunnel(records, buckets);
@@ -1002,6 +1062,7 @@ function buildStatus(records, source) {
     opportunity_usd: records.reduce((sum, v) => sum + (v.opportunity_usd || 0), 0),
     count_funnel: countFunnel,
     scoring_diagnostics: buildScoringDiagnostics(records),
+    operator_diagnostics: buildOperatorDiagnostics(records, buckets),
     frontend_poll_interval_seconds: 900,
     source_runtime: {
       provider: "supabase",

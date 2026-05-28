@@ -392,6 +392,72 @@ function deriveFleetBadges(v) {
   return badges;
 }
 
+function inferOperatorInfo(v = {}) {
+  const currentOperator = v.operator_name || v.operator || "";
+  const currentAgent = v.agent_name || v.agent || v.satmntEntrpsNm || "";
+  const manager = v.manager_name || v.manager || v.ship_manager || "";
+  const owner = v.owner_name || v.owner || v.ship_owner || "";
+  const normalizedOperator = normalizeCompanyName(currentOperator);
+  const normalizedAgent = normalizeCompanyName(currentAgent);
+  const name = normalizeVesselName(v.vessel_name);
+  let operatorName = currentOperator;
+  let operatorSource = v.operator_source || "";
+  let operatorConfidence = Number(v.operator_confidence || 0);
+  let operatorInferred = Boolean(v.operator_inferred);
+
+  if (operatorName && !operatorSource) {
+    operatorSource = v.vessel_master_match ? "vessel_master" : v.vessel_spec_enriched ? "vessel_spec_api" : v.operator_normalized ? "operator_dictionary" : "source_field";
+    operatorConfidence = Math.max(operatorConfidence, operatorSource === "vessel_master" ? 95 : operatorSource === "vessel_spec_api" ? 92 : operatorSource === "operator_dictionary" ? 90 : 72);
+    operatorInferred = false;
+  }
+
+  const prefixRules = [
+    { pattern: /^HMM|^HYUNDAI/, operator: "HMM", confidence: 78 },
+    { pattern: /^MAERSK/, operator: "MAERSK", confidence: 78 },
+    { pattern: /^MSC/, operator: "MSC", confidence: 78 },
+    { pattern: /^WANHAI|^WAN HAI/, operator: "WAN HAI", confidence: 75 },
+    { pattern: /^EVER|^EVERGREEN/, operator: "EVERGREEN", confidence: 75 },
+    { pattern: /^CMA|^APL/, operator: "CMA CGM", confidence: 72 },
+    { pattern: /^ONE|^NYK|^KLINE|^MOL/, operator: "ONE / 일본계 선사군", confidence: 68 },
+    { pattern: /^PAN|^PAN OCEAN/, operator: "PAN OCEAN", confidence: 72 },
+    { pattern: /^GLOVIS|^HYUNDAI GLOVIS/, operator: "HYUNDAI GLOVIS", confidence: 76 },
+    { pattern: /^KMTC/, operator: "KMTC", confidence: 74 },
+    { pattern: /^SINOKOR/, operator: "SINOKOR", confidence: 74 }
+  ];
+  if (!operatorName && name) {
+    const prefix = prefixRules.find(rule => rule.pattern.test(name));
+    if (prefix) {
+      operatorName = prefix.operator;
+      operatorSource = "vessel_name_prefix";
+      operatorConfidence = prefix.confidence;
+      operatorInferred = true;
+    }
+  }
+
+  if (!operatorName && currentAgent && /HMM|HYUNDAI|GLOVIS|MAERSK|MSC|PAN OCEAN|SINOKOR|KMTC|EVERGREEN|WAN HAI/i.test(currentAgent)) {
+    operatorName = currentAgent;
+    operatorSource = "agent_heuristic";
+    operatorConfidence = 45;
+    operatorInferred = true;
+  }
+
+  const contactPathAvailable = Boolean(operatorName || currentAgent);
+  return {
+    operator_name: operatorName || "",
+    operator: operatorName || currentOperator || "",
+    operator_normalized: operatorName ? normalizeCompanyName(operatorName) : normalizedOperator,
+    operator_inferred: operatorInferred,
+    operator_confidence: operatorName ? Math.max(1, Math.min(100, Math.round(operatorConfidence || 60))) : 0,
+    operator_source: operatorName ? (operatorSource || "source_field") : "",
+    agent_name: currentAgent || "",
+    agent: currentAgent || "",
+    agent_normalized: normalizedAgent,
+    manager_name: manager || "",
+    owner_name: owner || "",
+    contact_path_available: contactPathAvailable
+  };
+}
+
 function deriveOperationalRisk(v, metrics, biofoulingScore) {
   const status = String(v.status || "").toLowerCase();
   const flags = [];
@@ -444,6 +510,8 @@ function deriveCommercialScoreParts(v, metrics) {
   const enrichmentMatched = Boolean(v.secondary_enrichment_matched || v.cargo_harbor_use_enriched);
   const terminalActive = /active|working|cargo|loading|discharging|작업|하역|운영|진행/.test(berthStatus);
   const pilotMatched = Boolean(v.pilot_schedule_matched);
+  const operatorConfidence = Number(v.operator_confidence || 0);
+  const operatorSource = String(v.operator_source || "");
   const pilotOnly = v.source_origin === "pilot_schedule" || v.pilot_only_arrival_review;
   const pilotInbound = String(v.pilot_direction || v.movement_type || "").toLowerCase() === "inbound";
   const pilotOutbound = String(v.pilot_direction || v.movement_type || "").toLowerCase() === "outbound";
@@ -455,7 +523,20 @@ function deriveCommercialScoreParts(v, metrics) {
   const congestionExposureScore = Math.min(20, Math.max(Math.round(minimumCongestionScore / 5), Math.round((isAnchorageWaiting ? 10 : 0) + Math.min(8, anchorageDays * 2) + stayCongestionProxy + (isLongIdle ? 4 : 0) + (v.berth_class === "anchorage" ? 2 : 0) + Math.min(4, berthOccupancyProxy / 25) + (enrichmentMatched ? 1 : 0))));
   const cleaningWindowScore = Math.min(15, Math.max(0, Math.round(Math.min(9, Number(metrics.work_window_hours || 0) / 4) + (isAnchorageWaiting ? 4 : 0) + (v.berth || v.berth_name ? 2 : 0) + (enrichmentMatched ? 1 : 0) + (pilotMatched && !outboundPilotSoon ? 2 : 0) - (outboundPilotSoon ? 4 : 0) - (terminalActive ? 2 : 0))));
   const compliancePressureScore = Math.min(10, Math.round(Math.round(routeProfile.biosecurity_exposure_score / 20) + Math.round(routeProfile.esg_sensitivity_score / 35) + (isHighGt ? 3 : meetsCommercialGtThreshold ? 2 : 0) + (isBulkTankerPctc ? 1 : 0)));
-  const commercialFitScore = Math.min(5, Math.round(Math.max(configuredCommercialFit, (isBulkTankerPctc ? 3 : isCommercialType ? 2 : 0)) + (isHighGt ? 1 : 0) + (v.operator || v.agent ? 1 : 0) + (v.port_code ? 1 : 0) - (isExcludedType ? 4 : 0)));
+  const operatorAccessibilityBonus = operatorSource === "vessel_master" || operatorSource === "vessel_spec_api"
+    ? 5
+    : operatorSource === "operator_dictionary"
+      ? 4
+      : operatorSource === "vessel_name_prefix" && operatorConfidence >= 70
+        ? 3
+        : operatorSource === "agent_dictionary"
+          ? 2
+          : operatorSource === "agent_heuristic"
+            ? 1
+            : v.operator
+              ? 2
+              : 0;
+  const commercialFitScore = Math.min(5, Math.round(Math.max(configuredCommercialFit, (isBulkTankerPctc ? 3 : isCommercialType ? 2 : 0)) + (isHighGt ? 1 : 0) + (operatorAccessibilityBonus > 0 || v.agent ? 1 : 0) + (v.port_code ? 1 : 0) - (isExcludedType ? 4 : 0)));
   const routeMultiplierBonus = routeProfile.high_regulation_route && (isAnchorageWaiting || isLongIdle || isHighGt || isCommercialType)
     ? Math.round(routeProfile.route_commercial_weight * 0.45)
     : Math.round(routeProfile.route_commercial_weight * 0.25);
@@ -477,6 +558,11 @@ function deriveCommercialScoreParts(v, metrics) {
   if (outboundPilotSoon) reasonCodes.push("OUTBOUND_PILOT_WINDOW_CLOSING");
   if (berthOccupancyProxy >= 50) reasonCodes.push("BERTH_OCCUPANCY_SIGNAL");
   if (terminalActive) reasonCodes.push("TERMINAL_ACTIVITY_ACTIVE");
+  if (v.operator && !v.operator_inferred) reasonCodes.push("OPERATOR_IDENTIFIED");
+  if (v.operator && v.operator_inferred) reasonCodes.push("OPERATOR_INFERRED");
+  if (v.agent) reasonCodes.push("AGENT_IDENTIFIED");
+  if (v.operator || v.agent) reasonCodes.push("CONTACT_PATH_AVAILABLE");
+  if (v.operator_fleet_badges?.includes("repeat_observed_fleet")) reasonCodes.push("REPEAT_OPERATOR_CALL");
   if (stayDays >= 7) reasonCodes.push("LONG_PORT_STAY");
   if (/australia|brazil/.test(route)) reasonCodes.push("AUSTRALIA_BRAZIL_EXPOSURE");
   reasonCodes.push(...routeProfile.route_reason_codes);
@@ -489,7 +575,7 @@ function deriveCommercialScoreParts(v, metrics) {
     congestion_score: minimumCongestionScore,
     cleaning_window_score: cleaningWindowScore,
     compliance_pressure_score: compliancePressureScore,
-    sales_accessibility_score: Math.min(5, Math.round((v.agent ? 2 : 0) + (v.operator ? 2 : 0) + (v.operator_normalized || v.agent_normalized ? 1 : 0))),
+    sales_accessibility_score: Math.min(5, Math.max(operatorAccessibilityBonus, Math.round((v.agent ? 2 : 0) + (v.operator ? 2 : 0) + (v.operator_normalized || v.agent_normalized ? 1 : 0)))),
     commercial_fit_score: commercialFitScore,
     total_sales_priority_score: Math.min(100, total),
     sales_priority_band: total >= IMMEDIATE_TARGET_THRESHOLD ? "immediate_target" : total >= SALES_CANDIDATE_THRESHOLD ? "high_potential" : total >= REVIEW_TARGET_THRESHOLD ? "review_target" : "low_priority",
@@ -1061,12 +1147,13 @@ function enrichSalesSignals(records) {
     const ciiPressureScore = deriveCiiPressureScore(v, scheduleMetrics, biofoulingScore);
     const normalizedTypeGroup = v.vessel_type_group || defaultVesselTypeGroup(v);
     const normalizedType = v.vessel_type || (normalizedTypeGroup === "unknown" ? "Unknown" : normalizedTypeGroup);
-    const scoringInput = { ...v, vessel_type: normalizedType, vessel_type_group: normalizedTypeGroup, gt: gtProfile.gt, grtg: gtProfile.grtg, intrlGrtg: gtProfile.intrlGrtg };
+    const identity = deriveIdentity(v);
+    const operatorInfo = inferOperatorInfo({ ...v, ...identity });
+    const scoringInput = { ...v, ...operatorInfo, vessel_type: normalizedType, vessel_type_group: normalizedTypeGroup, gt: gtProfile.gt, grtg: gtProfile.grtg, intrlGrtg: gtProfile.intrlGrtg };
     const scoreParts = deriveCommercialScoreParts(scoringInput, scheduleMetrics);
     const commercialValue = deriveCommercialValue({ ...scoringInput, gt_status: gtProfile.gt_status }, scoreParts);
-    const dataConfidence = deriveDataConfidence({ ...v, ...gtProfile, ...scoreParts });
+    const dataConfidence = deriveDataConfidence({ ...v, ...operatorInfo, ...gtProfile, ...scoreParts });
     const candidateProfile = buildCandidateProfile({ ...v, ...scheduleMetrics, risk_score: biofoulingScore, compliance_watch: complianceWatch });
-    const identity = deriveIdentity(v);
     const isSample = String(v.source_mode || "").includes("sample");
     const reasonCodes = [
       ...(v.reason_codes || []),
@@ -1076,6 +1163,7 @@ function enrichSalesSignals(records) {
     ].filter((value, index, arr) => value && arr.indexOf(value) === index);
     const enriched = {
       ...v,
+      ...operatorInfo,
       ...gtProfile,
       ...scheduleMetrics,
       ...candidateProfile,
@@ -1105,8 +1193,8 @@ function enrichSalesSignals(records) {
       loa: v.loa || 0,
       beam: v.beam || 0,
       flag: v.flag || "",
-      operator_normalized: normalizeCompanyName(v.operator),
-      agent_normalized: normalizeCompanyName(v.agent),
+      operator_normalized: operatorInfo.operator_normalized || normalizeCompanyName(v.operator),
+      agent_normalized: operatorInfo.agent_normalized || normalizeCompanyName(v.agent),
       destination_port: v.destination_port || v.destination || v.next_port || "",
       berth_name: v.berth_name || v.berth || "",
       anchorage_name: v.anchorage_name || v.anchorage_zone || "",
@@ -1451,6 +1539,26 @@ function buildScoringDiagnostics(records = []) {
     commercial_segment_coverage: coverageRatio(records, v => hasValue(v.commercial_segment)),
     secondary_enrichment_matched_count: records.filter(v => v.secondary_enrichment_matched || v.cargo_harbor_use_enriched).length,
     berth_enrichment_match_rate: coverageRatio(records, v => v.secondary_enrichment_matched || v.cargo_harbor_use_enriched)
+  };
+}
+
+function buildOperatorDiagnostics(records = [], salesCandidates = [], immediateTargets = []) {
+  const known = records.filter(v => hasValue(v.operator_name || v.operator));
+  const sourceBreakdown = {};
+  for (const v of known) {
+    const source = v.operator_source || "source_field";
+    sourceBreakdown[source] = (sourceBreakdown[source] || 0) + 1;
+  }
+  return {
+    operator_known_count: known.length,
+    operator_inferred_count: records.filter(v => v.operator_inferred).length,
+    operator_unknown_count: records.filter(v => !hasValue(v.operator_name || v.operator)).length,
+    agent_known_count: records.filter(v => hasValue(v.agent_name || v.agent)).length,
+    operator_confidence_avg: known.length ? Math.round(known.reduce((sum, v) => sum + Number(v.operator_confidence || 0), 0) / known.length) : 0,
+    operator_source_breakdown: sourceBreakdown,
+    candidates_with_operator_count: salesCandidates.filter(v => hasValue(v.operator_name || v.operator)).length,
+    candidates_with_agent_count: salesCandidates.filter(v => hasValue(v.agent_name || v.agent)).length,
+    immediate_targets_with_contact_path_count: immediateTargets.filter(v => v.contact_path_available || hasValue(v.operator_name || v.operator) || hasValue(v.agent_name || v.agent)).length
   };
 }
 
@@ -2326,6 +2434,7 @@ try {
   const salesCandidates = sortCommercialPriority(dedupeCandidateRows(vessels.filter(isSalesCandidate)));
   const immediateTargets = sortCommercialPriority(dedupeCandidateRows(vessels.filter(isImmediateTarget)));
   const scoringDiagnostics = buildScoringDiagnostics(vessels);
+  const operatorDiagnostics = buildOperatorDiagnostics(vessels, salesCandidates, immediateTargets);
   const countFunnel = buildCountFunnel({
     rawRecords: collectedRows,
     allCollected: allCollectedVessels,
@@ -2353,6 +2462,7 @@ try {
     sales_candidate_count: salesCandidates.length,
     immediate_target_count: immediateTargets.length,
     scoring_diagnostics: scoringDiagnostics,
+    operator_diagnostics: operatorDiagnostics,
     count_funnel: countFunnel,
     basic_info_coverage: buildBasicInfoCoverage(vessels),
     imo_recovery_kpis: buildImoRecoveryKpis(vessels),

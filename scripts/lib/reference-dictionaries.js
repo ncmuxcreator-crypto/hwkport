@@ -240,12 +240,23 @@ export function enrichWithReferenceDictionaries(records = [], dictionaries = loa
     if (operatorRef) {
       enriched.operator = operatorRef.operator || enriched.operator;
       enriched.operator_normalized = operatorRef.operator_normalized || normalize(enriched.operator);
+      enriched.operator_source = enriched.operator_source || "operator_dictionary";
+      enriched.operator_confidence = Math.max(Number(enriched.operator_confidence || 0), 90);
+      enriched.operator_inferred = false;
     }
 
     const agentRef = indexes.agents?.get(normalize(record.agent));
     if (agentRef) {
       enriched.agent = agentRef.agent || enriched.agent;
       enriched.agent_normalized = agentRef.agent_normalized || normalize(enriched.agent);
+      enriched.agent_source = enriched.agent_source || "agent_dictionary";
+      if (!enriched.operator && agentRef.operator) {
+        enriched.operator = agentRef.operator;
+        enriched.operator_normalized = normalize(agentRef.operator);
+        enriched.operator_source = "agent_dictionary";
+        enriched.operator_confidence = Math.max(Number(enriched.operator_confidence || 0), 65);
+        enriched.operator_inferred = true;
+      }
     }
 
     const seedRef = seedCandidates(record).map(key => indexes.vesselMasterSeed?.get(key)).find(Boolean);
@@ -258,6 +269,11 @@ export function enrichWithReferenceDictionaries(records = [], dictionaries = loa
       enriched.vessel_type = enriched.vessel_type || seedRef.vessel_type;
       enriched.gt = enriched.gt || Number(seedRef.gt || 0);
       enriched.operator = enriched.operator || seedRef.operator;
+      if (seedRef.operator) {
+        enriched.operator_source = enriched.operator_source || "vessel_master_seed";
+        enriched.operator_confidence = Math.max(Number(enriched.operator_confidence || 0), 82);
+        enriched.operator_inferred = !record.operator;
+      }
       enriched.vessel_master_seed_match = true;
       enriched.imo_recovered_from_seed = Boolean(!record.imo && seedRef.imo);
       enriched.imo_recovery_source = "vessel_master_seed";
