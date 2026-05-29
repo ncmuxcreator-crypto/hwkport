@@ -563,13 +563,13 @@ function deriveStatusBucket(v = {}) {
 }
 
 function isDepartedRecord(v = {}) {
-  const status = String(v.status_bucket || v.operational_status || v.status || deriveStatusBucket(v) || "").toLowerCase();
+  const status = String(v.status_bucket || v.operational_status || v.status || "").toLowerCase();
   return status === "departed" ||
     status === "departure_completed" ||
     status.includes("departed") ||
     status.includes("출항 완료") ||
-    Boolean(v.atd) ||
-    Boolean(v.departed_at);
+    String(v.commercial_relevance_status || "").toLowerCase() === "excluded_departure_only" ||
+    String(v.ledger_status || "").toLowerCase() === "departed";
 }
 
 function activeRecordsOnly(records = []) {
