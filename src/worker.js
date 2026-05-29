@@ -562,6 +562,20 @@ function deriveStatusBucket(v = {}) {
   return "unknown";
 }
 
+function isDepartedRecord(v = {}) {
+  const status = String(v.status_bucket || v.operational_status || v.status || deriveStatusBucket(v) || "").toLowerCase();
+  return status === "departed" ||
+    status === "departure_completed" ||
+    status.includes("departed") ||
+    status.includes("출항 완료") ||
+    Boolean(v.atd) ||
+    Boolean(v.departed_at);
+}
+
+function activeRecordsOnly(records = []) {
+  return records.filter(v => !isSyntheticSample(v) && !isDepartedRecord(v));
+}
+
 function deriveCommercialRelevance(v = {}) {
   const typeText = `${v.vessel_type || ""} ${v.vessel_name || ""}`.toLowerCase();
   if (/fishing|fishery|trawler|tug|pilot|patrol|government|navy|coast guard|workboat|barge|dredger|어선|예선|관공선|작업선|준설|순찰|해경/.test(typeText)) return "excluded_non_commercial_type";
@@ -574,7 +588,7 @@ function deriveCommercialRelevance(v = {}) {
 function isMainCommercialVessel(v = {}) {
   const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
   const commercialScore = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
-  if (isSyntheticSample(v) || v.excluded_from_commercial_targets === true) return false;
+  if (isSyntheticSample(v) || isDepartedRecord(v) || v.excluded_from_commercial_targets === true) return false;
   if (commercialScore >= SALES_CANDIDATE_THRESHOLD) return true;
   return ["target_vessel", "unknown_gt_review"].includes(status) || commercialScore >= SALES_CANDIDATE_THRESHOLD;
 }
@@ -591,6 +605,7 @@ function isExplicitlyExcluded(v = {}) {
 function isHardCandidateExcluded(v = {}) {
   const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
   const score = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
+  if (isDepartedRecord(v)) return true;
   return (status === "excluded_non_commercial_type" && score < SALES_CANDIDATE_THRESHOLD) ||
     v.excluded_from_commercial_targets === true ||
     isSyntheticSample(v);
@@ -891,6 +906,7 @@ function deriveCommercialProxyScore(v = {}, scores = {}) {
 
 function isSalesCandidate(v = {}) {
   return !isSyntheticSample(v) &&
+    !isDepartedRecord(v) &&
     v.excluded_from_commercial_targets !== true &&
     hasUsefulVesselIdentity(v) &&
     commercialScore(v) >= SALES_CANDIDATE_THRESHOLD;
@@ -1516,7 +1532,7 @@ function pageRows(records = [], searchParams = new URLSearchParams()) {
 }
 
 function vesselGroupRows(allRecords = [], group = "target") {
-  const usefulRows = allRecords.filter(v => !isSyntheticSample(v) && hasUsefulVesselIdentity(v));
+  const usefulRows = activeRecordsOnly(allRecords).filter(hasUsefulVesselIdentity);
   const rows = group === "all"
     ? usefulRows
     : usefulRows.filter(v => commercialScore(v) >= SALES_CANDIDATE_THRESHOLD && !isHardCandidateExcluded(v));
@@ -1579,17 +1595,18 @@ function findVesselById(records = [], vesselId = "") {
 }
 
 function buildDashboardSummary(allRecords = [], source = {}) {
-  const buckets = buildVisibilityBuckets(allRecords);
+  const activeRecords = activeRecordsOnly(allRecords);
+  const buckets = buildVisibilityBuckets(activeRecords);
   const immediateTargets = sortCommercialPriority(buckets.immediate_targets).slice(0, 5);
   const immediateKeys = new Set(immediateTargets.map(candidateDedupeKey));
   const opportunities = sortCommercialPriority(buckets.sales_candidates.filter(v => !immediateKeys.has(candidateDedupeKey(v)))).slice(0, 5);
   return {
-    status: buildStatus(allRecords, source),
+    status: buildStatus(activeRecords, source),
     ports: buildPorts(buckets.target_vessels),
     immediate_targets: immediateTargets,
     opportunities,
-    lead_pipeline: buildLeadPipeline(allRecords).slice(0, 8),
-    alert_candidates: buildAlertCandidates(allRecords).slice(0, 5),
+    lead_pipeline: buildLeadPipeline(activeRecords).slice(0, 8),
+    alert_candidates: buildAlertCandidates(activeRecords).slice(0, 5),
     congestion_summary: buildPortHeatmap(buckets.target_vessels).slice(0, 12),
     candidate_counts: {
       target_vessels: buckets.target_vessels.length,
@@ -1693,7 +1710,8 @@ function recordsForPort(records, portCode) {
 }
 
 function buildVisibilityBuckets(records) {
-  const targetVessels = records.filter(isMainCommercialVessel);
+  const activeRecords = activeRecordsOnly(records);
+  const targetVessels = activeRecords.filter(isMainCommercialVessel);
   const canonicalScoredVessels = sortCommercialPriority(dedupeCandidateRows(targetVessels));
   const salesCandidates = sortCommercialPriority(dedupeCandidateRows(canonicalScoredVessels.filter(isSalesCandidate))).map(v => ({ ...v, candidate_band: commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD ? "immediate_target" : "sales_candidate", exclusion_reason: exclusionReason(v) }));
   const immediateTargets = sortCommercialPriority(dedupeCandidateRows(canonicalScoredVessels.filter(isImmediateTarget))).map(v => ({ ...v, candidate_band: "immediate_target", is_immediate_candidate: true, exclusion_reason: exclusionReason(v) }));
@@ -1937,7 +1955,7 @@ async function apiResponse(url, env) {
   const pathname = typeof url === "string" ? url : url.pathname;
   const searchParams = typeof url === "string" ? new URLSearchParams() : url.searchParams;
   const source = await fetchSupabaseRows(env);
-  const allRecords = latestPerVesselPort(source.rows);
+  const allRecords = activeRecordsOnly(latestPerVesselPort(source.rows));
   const buckets = buildVisibilityBuckets(allRecords);
   const records = buckets.target_vessels;
   if (pathname.endsWith("/dashboard-summary.json")) return json(buildDashboardSummary(allRecords, source), { headers: corsHeaders() });

@@ -1066,6 +1066,20 @@ function deriveStatusBucket(v = {}, metrics = {}) {
   return "unknown";
 }
 
+function isDepartedRecord(v = {}) {
+  const status = String(v.status_bucket || v.operational_status || v.status || deriveStatusBucket(v) || "").toLowerCase();
+  return status === "departed" ||
+    status === "departure_completed" ||
+    status.includes("departed") ||
+    status.includes("출항 완료") ||
+    Boolean(v.atd) ||
+    Boolean(v.departed_at);
+}
+
+function activeRecordsOnly(records = []) {
+  return records.filter(v => !isSyntheticSample(v) && !isDepartedRecord(v));
+}
+
 function deriveCongestionScore(v = {}, metrics = {}) {
   const anchorageHours = Number(metrics.anchorage_hours ?? v.anchorage_hours ?? 0);
   const stayHours = Number(metrics.stay_hours ?? v.stay_hours ?? v.current_call_stay_hours ?? v.cumulative_stay_hours ?? 0);
@@ -1099,7 +1113,7 @@ function commercialRelevanceStatus(v = {}) {
 
 function isMainCommercialVessel(v = {}) {
   const score = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
-  if (isExplicitlyExcluded(v)) return false;
+  if (isDepartedRecord(v) || isExplicitlyExcluded(v)) return false;
   return ["target_vessel", "unknown_gt_review"].includes(v.commercial_relevance_status) || score >= SALES_CANDIDATE_THRESHOLD;
 }
 
@@ -1119,6 +1133,7 @@ function isSyntheticSample(v = {}) {
 
 function isHardCandidateExcluded(v = {}) {
   const score = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
+  if (isDepartedRecord(v)) return true;
   return (v.commercial_relevance_status === "excluded_non_commercial_type" && score < SALES_CANDIDATE_THRESHOLD) ||
     v.excluded_from_commercial_targets === true ||
     isSyntheticSample(v);
@@ -1126,7 +1141,7 @@ function isHardCandidateExcluded(v = {}) {
 
 function isSalesCandidate(v = {}) {
   const score = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
-  return !isHardCandidateExcluded(v) && score >= SALES_CANDIDATE_THRESHOLD;
+  return !isDepartedRecord(v) && !isHardCandidateExcluded(v) && score >= SALES_CANDIDATE_THRESHOLD;
 }
 
 function isImmediateTarget(v = {}) {
@@ -2831,7 +2846,7 @@ try {
     apiSources: detectSecrets(),
     supabaseStatus
   });
-  const allCollectedVessels = snapshotOutputs.merged;
+  const allCollectedVessels = activeRecordsOnly(snapshotOutputs.merged);
   const targetVesselsRaw = allCollectedVessels.filter(isMainCommercialVessel);
   const targetVessels = targetVesselsRaw.slice(0, MAX_TARGET_VESSELS);
   const stayingVessels = targetVessels.filter(v => ["arrived_staying", "berthed", "anchorage_waiting"].includes(v.status_bucket));
