@@ -309,6 +309,7 @@ function normalizeSnapshot(row = {}) {
   const biofoulingRiskScore = deriveBiofoulingProxyScore(merged, congestionScore, riskScore);
   const performanceProxyScore = derivePerformanceProxyScore(merged, congestionScore);
   const ciiPressureScore = deriveCiiProxyScore(merged, congestionScore, performanceProxyScore);
+  const arrivalPrediction = deriveArrivalPredictionFromSignals(merged);
   const candidateScore = Math.max(
     Number(merged.cleaning_candidate_score || merged.total_sales_priority_score || riskScore || 0),
     deriveCommercialProxyScore(merged, {
@@ -383,12 +384,13 @@ function normalizeSnapshot(row = {}) {
     contact_path_available: Boolean(merged.contact_path_available || merged.operator_name || merged.operator || merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm),
     destination_port: merged.destination_port || merged.destination || merged.next_port || "",
     route_region: merged.route_region || "unknown",
-    route_from_port: merged.route_from_port || merged.previous_port || "",
-    route_to_port: merged.route_to_port || merged.destination_port || merged.destination || merged.next_port || "",
-    route_pattern_known: Boolean(merged.route_pattern_known),
-    route_pattern_confidence: Number(merged.route_pattern_confidence || 0),
-    predicted_arrival_time: merged.predicted_arrival_time || "",
-    arrival_prediction_confidence: Number(merged.arrival_prediction_confidence || 0),
+    route_from_port: merged.route_from_port || arrivalPrediction.route_from_port || merged.previous_port || "",
+    route_to_port: merged.route_to_port || arrivalPrediction.route_to_port || merged.destination_port || merged.destination || merged.next_port || "",
+    route_pattern_known: Boolean(merged.route_pattern_known || arrivalPrediction.route_pattern_known),
+    route_pattern_confidence: Number(merged.route_pattern_confidence || arrivalPrediction.route_pattern_confidence || 0),
+    avg_transit_hours: Number(merged.avg_transit_hours || arrivalPrediction.avg_transit_hours || 0),
+    predicted_arrival_time: merged.predicted_arrival_time || arrivalPrediction.predicted_arrival_time || "",
+    arrival_prediction_confidence: Number(merged.arrival_prediction_confidence || arrivalPrediction.arrival_prediction_confidence || 0),
     predicted_congestion: Number(merged.predicted_congestion || 0),
     predicted_cleaning_window: Number(merged.predicted_cleaning_window || 0),
     predicted_congestion_score: Number(merged.predicted_congestion_score || merged.predicted_congestion || derivePredictedCongestionScore(merged)),
@@ -405,10 +407,10 @@ function normalizeSnapshot(row = {}) {
     anchorage_exposure: Number(merged.anchorage_exposure || 0),
     biofouling_exposure_score: Number(merged.biofouling_exposure_score || deriveBiofoulingExposureScore(merged)),
     predicted_cleaning_opportunity_score: Number(merged.predicted_cleaning_opportunity_score || derivePredictedCleaningOpportunityScore(merged)),
-    arrival_opportunity_score: Number(merged.arrival_opportunity_score || 0),
-    predicted_arrival_window_hours: Number(merged.predicted_arrival_window_hours || 0),
-    predicted_arrival_pipeline: Boolean(merged.predicted_arrival_pipeline),
-    arrival_prediction_source: merged.arrival_prediction_source || "",
+    arrival_opportunity_score: Number(merged.arrival_opportunity_score || arrivalPrediction.arrival_opportunity_score || 0),
+    predicted_arrival_window_hours: Number(merged.predicted_arrival_window_hours ?? arrivalPrediction.predicted_arrival_window_hours ?? 0),
+    predicted_arrival_pipeline: Boolean(merged.predicted_arrival_pipeline || arrivalPrediction.predicted_arrival_pipeline),
+    arrival_prediction_source: merged.arrival_prediction_source || arrivalPrediction.arrival_prediction_source || "",
     contact_intelligence_score: Number(merged.contact_intelligence_score ?? (
       (merged.operator_name || merged.operator ? 3 : 0) +
       (merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm ? 2 : 0) +
@@ -503,7 +505,7 @@ function normalizeSnapshot(row = {}) {
     quote_status: merged.quote_status || "not_started",
     notes: merged.notes || "",
     actual_arrival_time: merged.actual_arrival_time || merged.ata || "",
-    prediction_error_hours: merged.prediction_error_hours ?? derivePredictionErrorHours(merged),
+    prediction_error_hours: merged.prediction_error_hours ?? arrivalPrediction.prediction_error_hours ?? derivePredictionErrorHours({ ...merged, predicted_arrival_time: arrivalPrediction.predicted_arrival_time || merged.predicted_arrival_time }),
     alert_candidate: Boolean(merged.alert_candidate || isAlertCandidate(merged)),
     information_enrichment_needed: Boolean(merged.information_enrichment_needed || (Math.max(Number(merged.commercial_value_score || merged.total_sales_priority_score || 0), candidateScore) >= SALES_CANDIDATE_THRESHOLD && Number(merged.data_confidence_score || 0) < 60)),
     commercial_value_band: merged.commercial_value_band || merged.sales_priority_band || "low_priority",
@@ -769,6 +771,89 @@ function derivePredictedCleaningOpportunityScore(v = {}) {
     derivePredictedCongestionScore(v) * 0.14 +
     Number(v.arrival_opportunity_score || 0) * 0.06
   );
+}
+
+function normalizePortToken(value = "") {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+}
+
+function routeTransitHours(fromPort = "", toPort = "", typeGroup = "") {
+  const route = `${normalizePortToken(fromPort)} ${normalizePortToken(toPort)} ${String(typeGroup || "").toLowerCase()}`;
+  if (/PORT HEDLAND|NEWCASTLE|DAMPIER|GLADSTONE|HAY POINT|AUSTRALIA|호주/.test(route)) return /bulk|ore|cape/.test(route) ? 210 : 190;
+  if (/SANTOS|TUBARAO|PONTA DA MADEIRA|BRAZIL|브라질/.test(route)) return /bulk|ore|tanker/.test(route) ? 720 : 680;
+  if (/SINGAPORE|싱가포르/.test(route)) return 96;
+  if (/SHANGHAI|NINGBO|QINGDAO|TIANJIN|CHINA|중국/.test(route)) return 36;
+  if (/YOKOHAMA|KOBE|NAGOYA|JAPAN|일본/.test(route)) return 24;
+  if (/VANCOUVER|LOS ANGELES|LONG BEACH|SEATTLE|TACOMA|CALIFORNIA|USA|CANADA|북미|미국|캐나다/.test(route)) return 300;
+  if (/ROTTERDAM|HAMBURG|ANTWERP|EUROPE|MEDITERRANEAN|유럽|지중해/.test(route)) return 650;
+  return 72;
+}
+
+function deriveRoutePatternPrediction(v = {}) {
+  const fromPort = normalizePortToken(v.route_from_port || v.previous_port || "");
+  const toPort = normalizePortToken(v.route_to_port || v.destination_port || v.destination || v.next_port || v.port_name || v.port || "");
+  const typeGroup = v.vessel_type_group || v.vessel_type || "unknown";
+  const known = Boolean(fromPort && toPort);
+  const avgTransitHours = Number(v.avg_transit_hours || v.historical_avg_transit_hours || 0) || routeTransitHours(fromPort, toPort, typeGroup);
+  const confidence = boundedScore(
+    Number(v.route_pattern_confidence || 0) ||
+    (known ? 42 : 12) +
+    (Number(v.repeat_call_count || 0) >= 2 ? 12 : 0) +
+    (Number(v.repeat_operator_count || 0) >= 2 ? 8 : 0) +
+    (highRegulationRoute(v) ? 8 : 0)
+  );
+  return {
+    route_from_port: fromPort,
+    route_to_port: toPort,
+    route_pattern_known: known,
+    route_pattern_confidence: confidence,
+    avg_transit_hours: avgTransitHours
+  };
+}
+
+function deriveArrivalPredictionFromSignals(v = {}) {
+  const routePattern = deriveRoutePatternPrediction(v);
+  const explicit = parseDate(v.predicted_arrival_time || v.eta || v.eta_candidate || v.next_port_eta || v.destination_eta || v.pilot_time || v.movement_time);
+  let predicted = explicit;
+  let source = explicit ? (v.pilot_time || v.movement_time || v.pilot_schedule_matched || v.source_origin === "pilot_schedule" ? "pilot_schedule" : "schedule") : "";
+  if (!predicted && v.atd && (v.destination_port || v.next_port || v.destination || routePattern.route_to_port)) {
+    const departure = parseDate(v.atd);
+    if (departure) {
+      predicted = new Date(departure.getTime() + routePattern.avg_transit_hours * 36e5);
+      source = "route_pattern";
+    }
+  }
+  const now = new Date();
+  const hours = predicted ? Math.round(((predicted.getTime() - now.getTime()) / 36e5) * 10) / 10 : null;
+  const type = String(v.vessel_type_group || v.vessel_type || "").toLowerCase();
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const etaProximity = hours === null ? 0 : hours <= 24 && hours >= 0 ? 30 : hours <= 48 && hours >= 0 ? 24 : hours <= 72 && hours >= 0 ? 16 : hours > 72 ? 8 : 0;
+  const confidence = boundedScore(
+    (source === "pilot_schedule" ? 72 : source === "schedule" ? 58 : source === "route_pattern" ? 38 : 0) +
+    Math.round(routePattern.route_pattern_confidence * 0.25) +
+    (v.pilot_schedule_matched ? 15 : 0)
+  );
+  const arrivalOpportunityScore = boundedScore(
+    etaProximity +
+    (/bulk|tanker|container|pctc|cruise|lng|lpg/.test(type) ? 18 : 8) +
+    (gt >= 30000 ? 18 : gt >= 5000 ? 12 : 0) +
+    Math.round(derivePredictedCongestionScore(v) * 0.14) +
+    (highRegulationRoute(v) ? 10 : 0)
+  );
+  return {
+    ...routePattern,
+    predicted_arrival_time: predicted ? predicted.toISOString() : "",
+    predicted_arrival_window_hours: hours,
+    arrival_prediction_confidence: confidence,
+    arrival_prediction_source: source || "insufficient_route_data",
+    arrival_opportunity_score: arrivalOpportunityScore,
+    predicted_arrival_pipeline: Boolean(predicted && hours !== null && hours >= 0 && hours <= 168 && arrivalOpportunityScore >= 35),
+    prediction_error_hours: v.prediction_error_hours ?? (predicted && (v.actual_arrival_time || v.ata) ? derivePredictionErrorHours({ ...v, predicted_arrival_time: predicted.toISOString() }) : null)
+  };
 }
 
 function deriveLeadStatus(v = {}, leadPriorityScore = deriveLeadPriorityScore(v)) {

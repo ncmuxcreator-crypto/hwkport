@@ -207,12 +207,25 @@ function normalizePortToken(value) {
     .replace(/\s+/g, " ");
 }
 
+function routeTransitHours(fromPort = "", toPort = "", typeGroup = "") {
+  const route = `${normalizePortToken(fromPort)} ${normalizePortToken(toPort)} ${String(typeGroup || "").toLowerCase()}`;
+  if (/PORT HEDLAND|NEWCASTLE|DAMPIER|GLADSTONE|HAY POINT|AUSTRALIA|호주/.test(route)) return /bulk|ore|cape/.test(route) ? 210 : 190;
+  if (/SANTOS|TUBARAO|PONTA DA MADEIRA|BRAZIL|브라질/.test(route)) return /bulk|ore|tanker/.test(route) ? 720 : 680;
+  if (/SINGAPORE|싱가포르/.test(route)) return 96;
+  if (/SHANGHAI|NINGBO|QINGDAO|TIANJIN|CHINA|중국/.test(route)) return 36;
+  if (/YOKOHAMA|KOBE|NAGOYA|JAPAN|일본/.test(route)) return 24;
+  if (/VANCOUVER|LOS ANGELES|LONG BEACH|SEATTLE|TACOMA|CALIFORNIA|USA|CANADA|북미|미국|캐나다/.test(route)) return 300;
+  if (/ROTTERDAM|HAMBURG|ANTWERP|EUROPE|MEDITERRANEAN|유럽|지중해/.test(route)) return 650;
+  return 72;
+}
+
 function deriveRoutePattern(v = {}, metrics = {}, routeProfile = deriveRouteCommercialProfile(v)) {
   const fromPort = normalizePortToken(v.previous_port || v.last_port || "");
   const toPort = normalizePortToken(v.destination_port || v.destination || v.next_port || v.port_name || v.port || "");
   const typeGroup = v.vessel_type_group || defaultVesselTypeGroup(v);
   const routeKey = [fromPort || "UNKNOWN", toPort || "KOREA", typeGroup || "unknown"].join("|");
   const isKnownRoute = Boolean(fromPort && toPort);
+  const avgTransitHours = Number(v.avg_transit_hours || v.historical_avg_transit_hours || 0) || routeTransitHours(fromPort, toPort, typeGroup);
   const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
   const congestionProbability = Math.min(100, Math.round(
     (Number(metrics.anchorage_hours || 0) >= 24 ? 45 : 0) +
@@ -229,6 +242,7 @@ function deriveRoutePattern(v = {}, metrics = {}, routeProfile = deriveRouteComm
     route_to_port: toPort,
     route_pattern_known: isKnownRoute,
     route_pattern_confidence: isKnownRoute ? Math.min(90, 45 + (routeProfile.high_regulation_route ? 20 : 0) + (avgStayHours > 0 ? 10 : 0) + (avgWaitingHours > 0 ? 10 : 0)) : 15,
+    avg_transit_hours: avgTransitHours,
     historical_avg_stay_hours: avgStayHours || null,
     historical_avg_waiting_hours: avgWaitingHours || null,
     predicted_congestion: congestionProbability,
@@ -250,7 +264,7 @@ function deriveArrivalPrediction(v = {}, metrics = {}, routeProfile = deriveRout
   let source = explicitEta ? "schedule_or_pilot" : "";
   if (!predictedArrival && v.atd && (v.destination_port || v.next_port || v.destination)) {
     const atd = parseScheduleTime(v.atd);
-    const routeHours = Number(v.avg_transit_hours || v.historical_avg_transit_hours || 48);
+    const routeHours = Number(v.avg_transit_hours || v.historical_avg_transit_hours || routePattern.avg_transit_hours || 48);
     if (atd) {
       predictedArrival = new Date(atd.getTime() + routeHours * 36e5);
       source = "route_pattern";
