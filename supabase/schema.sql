@@ -222,6 +222,8 @@ alter table vessel_snapshots add column if not exists predicted_arrival_pipeline
 alter table vessel_snapshots add column if not exists work_feasibility_score int default 0;
 alter table vessel_snapshots add column if not exists lead_status text default 'monitor';
 alter table vessel_snapshots add column if not exists lead_priority_score int default 0;
+alter table vessel_snapshots add column if not exists auto_lead_created boolean default false;
+alter table vessel_snapshots add column if not exists lead_created_reason text;
 alter table vessel_snapshots add column if not exists why_now text;
 alter table vessel_snapshots add column if not exists candidate_summary_ko text;
 alter table vessel_snapshots add column if not exists sales_angle text;
@@ -632,6 +634,8 @@ create table if not exists commercial_leads (
   port_name text,
   lead_status text default 'monitor',
   lead_priority_score int default 0,
+  auto_lead_created boolean default false,
+  lead_created_reason text,
   commercial_value_score int default 0,
   contact_readiness_score int default 0,
   work_feasibility_score int default 0,
@@ -854,6 +858,8 @@ create index if not exists idx_commercial_leads_run_id on commercial_leads(run_i
 create index if not exists idx_commercial_leads_status on commercial_leads(lead_status);
 create index if not exists idx_commercial_leads_priority on commercial_leads(lead_priority_score desc);
 alter table commercial_leads add column if not exists predicted_cleaning_opportunity_score int default 0;
+alter table commercial_leads add column if not exists auto_lead_created boolean default false;
+alter table commercial_leads add column if not exists lead_created_reason text;
 alter table commercial_leads add column if not exists cleaning_opportunity_band text;
 alter table commercial_leads add column if not exists opportunity_summary text;
 alter table commercial_leads add column if not exists anchorage_probability int default 0;

@@ -1510,7 +1510,7 @@ function deriveLeadStatus(v = {}, leadPriorityScore = 0) {
   const existing = String(v.lead_status || "").toLowerCase();
   if (["contacted", "quoted", "scheduled", "won", "lost"].includes(existing)) return existing;
   if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD && (v.contact_path_available || ["contact_available", "high_confidence_contact"].includes(v.contact_path_status) || Number(v.contact_readiness_score || 0) >= 50)) return "contact_ready";
-  if (leadPriorityScore >= SALES_CANDIDATE_THRESHOLD) return "new_lead";
+  if (Number(v.commercial_value_score || v.total_sales_priority_score || 0) >= IMMEDIATE_TARGET_THRESHOLD) return "new_lead";
   return "monitor";
 }
 
@@ -1615,16 +1615,19 @@ function isAlertCandidate(v = {}) {
 
 function deriveLeadPipelineFields(v = {}, metrics = {}) {
   const workFeasibilityScore = deriveWorkFeasibilityScore(v, metrics);
+  const commercialValueScore = Number(v.commercial_value_score || v.total_sales_priority_score || 0);
   const leadPriorityScore = boundedScore(
-    Number(v.commercial_value_score || v.total_sales_priority_score || 0) * 0.45 +
-    Number(v.contact_readiness_score || 0) * 0.2 +
-    workFeasibilityScore * 0.2 +
-    Math.max(Number(v.arrival_opportunity_score || 0), Number(v.predicted_cleaning_opportunity_score || 0)) * 0.15
+    commercialValueScore * 0.5 +
+    Number(v.contact_readiness_score || 0) * 0.25 +
+    workFeasibilityScore * 0.25
   );
+  const autoLeadCreated = commercialValueScore >= IMMEDIATE_TARGET_THRESHOLD;
   return {
     work_feasibility_score: workFeasibilityScore,
     lead_priority_score: leadPriorityScore,
     lead_status: deriveLeadStatus(v, leadPriorityScore),
+    auto_lead_created: autoLeadCreated,
+    lead_created_reason: autoLeadCreated ? "commercial_value_score_75_plus" : "",
     why_now: deriveWhyNow(v, metrics),
     candidate_summary_ko: deriveCandidateSummaryKo(v),
     sales_angle: deriveSalesAngle(v, metrics),

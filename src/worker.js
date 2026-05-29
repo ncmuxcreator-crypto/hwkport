@@ -815,10 +815,9 @@ function deriveWorkFeasibilityScore(v = {}) {
 
 function deriveLeadPriorityScore(v = {}, parts = {}) {
   return boundedScore(
-    Number(parts.commercialValueScore ?? commercialScore(v)) * 0.45 +
-    Number(parts.contactReadinessScore ?? v.contact_readiness_score ?? deriveContactReadinessScore(v)) * 0.2 +
-    Number(parts.workFeasibilityScore ?? v.work_feasibility_score ?? deriveWorkFeasibilityScore(v)) * 0.2 +
-    Math.max(Number(parts.arrivalOpportunityScore ?? v.arrival_opportunity_score ?? 0), Number(v.predicted_cleaning_opportunity_score || 0)) * 0.15
+    Number(parts.commercialValueScore ?? commercialScore(v)) * 0.5 +
+    Number(parts.contactReadinessScore ?? v.contact_readiness_score ?? deriveContactReadinessScore(v)) * 0.25 +
+    Number(parts.workFeasibilityScore ?? v.work_feasibility_score ?? deriveWorkFeasibilityScore(v)) * 0.25
   );
 }
 
@@ -1173,7 +1172,7 @@ function deriveLeadStatus(v = {}, leadPriorityScore = deriveLeadPriorityScore(v)
   const existing = String(v.lead_status || "").toLowerCase();
   if (["contacted", "quoted", "scheduled", "won", "lost"].includes(existing)) return existing;
   if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD && (v.contact_path_available || ["contact_available", "high_confidence_contact"].includes(v.contact_path_status) || Number(v.contact_readiness_score || 0) >= 50)) return "contact_ready";
-  if (leadPriorityScore >= SALES_CANDIDATE_THRESHOLD) return "new_lead";
+  if (commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD) return "new_lead";
   return "monitor";
 }
 
@@ -2185,6 +2184,8 @@ function buildLeadPipeline(records = []) {
         work_feasibility_score: Number(v.work_feasibility_score || deriveWorkFeasibilityScore(v)),
         lead_priority_score: leadPriorityScore,
         lead_status: v.lead_status || deriveLeadStatus(v, leadPriorityScore),
+        auto_lead_created: Boolean(v.auto_lead_created || commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD),
+        lead_created_reason: v.lead_created_reason || (commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD ? "commercial_value_score_75_plus" : ""),
         why_now: v.why_now || deriveWhyNow(v),
         candidate_summary_ko: v.candidate_summary_ko || deriveCandidateSummaryKo(v),
         sales_angle: v.sales_angle || deriveSalesAngle(v),
@@ -2192,7 +2193,7 @@ function buildLeadPipeline(records = []) {
         lead_timeline: Array.isArray(v.lead_timeline) ? v.lead_timeline : deriveLeadTimeline(v)
       };
     })
-    .filter(v => Number(v.lead_priority_score || 0) >= 35 || commercialScore(v) >= SALES_CANDIDATE_THRESHOLD || Number(v.arrival_opportunity_score || 0) >= 35)))
+    .filter(v => commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD || ["contact_ready", "contacted", "quoted", "scheduled", "won", "lost"].includes(String(v.lead_status || "").toLowerCase()))))
     .sort((a, b) =>
       Number(b.lead_priority_score || 0) - Number(a.lead_priority_score || 0) ||
       commercialScore(b) - commercialScore(a) ||
@@ -2230,6 +2231,8 @@ function buildLeadPipeline(records = []) {
       repeat_operator_score: Number(v.repeat_operator_score || 0),
       lead_priority_score: Number(v.lead_priority_score || 0),
       lead_status: v.lead_status || "monitor",
+      auto_lead_created: Boolean(v.auto_lead_created),
+      lead_created_reason: v.lead_created_reason || "",
       why_now: v.why_now || "",
       candidate_summary_ko: v.candidate_summary_ko || "",
       sales_angle: v.sales_angle || "",

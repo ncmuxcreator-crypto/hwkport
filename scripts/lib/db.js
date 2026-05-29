@@ -973,7 +973,7 @@ export async function saveToSupabase(records, options = {}) {
   }
 
   const commercialLeadRows = uniqueBy(records
-    .filter(r => Number(r.lead_priority_score || r.commercial_value_score || r.total_sales_priority_score || r.arrival_opportunity_score || 0) >= 35)
+    .filter(r => Number(r.commercial_value_score || r.total_sales_priority_score || 0) >= 75 || ["contact_ready", "contacted", "quoted", "scheduled", "won", "lost"].includes(String(r.lead_status || "").toLowerCase()))
     .map(r => ({
       lead_id: stableEntityId("LEAD", `${r.hybrid_entity_key || r.vessel_id}-${r.port_call_identity || r.port_code || r.port || ""}`),
       run_id: runId,
@@ -985,6 +985,8 @@ export async function saveToSupabase(records, options = {}) {
       port_name: r.port_name || r.port || null,
       lead_status: r.lead_status || "monitor",
       lead_priority_score: Number(r.lead_priority_score || 0),
+      auto_lead_created: Boolean(r.auto_lead_created || Number(r.commercial_value_score || r.total_sales_priority_score || 0) >= 75),
+      lead_created_reason: r.lead_created_reason || (Number(r.commercial_value_score || r.total_sales_priority_score || 0) >= 75 ? "commercial_value_score_75_plus" : null),
       commercial_value_score: Number(r.commercial_value_score || r.total_sales_priority_score || 0),
       contact_readiness_score: Number(r.contact_readiness_score || 0),
       contact_path_status: r.contact_path_status || (r.contact_path_available ? "contact_available" : r.agent_name || r.agent ? "agent_known" : r.operator_name || r.operator ? "operator_known" : "unknown"),
