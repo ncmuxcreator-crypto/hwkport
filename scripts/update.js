@@ -310,6 +310,63 @@ function forecastBand(score) {
   return "low";
 }
 
+function deriveRouteBonus(v = {}, routeProfile = deriveRouteCommercialProfile(v)) {
+  const explicit = Number(v.route_bonus || 0);
+  if (explicit > 0) return Math.min(100, Math.round(explicit));
+  const routeWeight = Number(routeProfile.route_commercial_weight || 0);
+  const routeScores = [
+    Number(routeProfile.biosecurity_exposure_score || v.biosecurity_exposure_score || 0) * 0.35,
+    Number(routeProfile.esg_sensitivity_score || v.esg_sensitivity_score || 0) * 0.25,
+    Number(routeProfile.fuel_efficiency_sensitivity_score || v.fuel_efficiency_sensitivity_score || 0) * 0.25,
+    routeWeight * 3
+  ];
+  return Math.min(100, Math.round(Math.max(0, ...routeScores)));
+}
+
+function cleaningOpportunityBand(score) {
+  const value = Number(score || 0);
+  if (value >= 70) return "HIGH";
+  if (value >= 40) return "MEDIUM";
+  return "LOW";
+}
+
+function deriveCleaningOpportunityPrediction(v = {}, metrics = {}, routeProfile = deriveRouteCommercialProfile(v), predictiveParts = {}) {
+  const commercialValue = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
+  const congestion = Number(
+    predictiveParts.predicted_congestion_score ||
+    v.congestion_score ||
+    v.port_congestion_score ||
+    v.congestion_exposure_score ||
+    deriveCongestionScore(v, metrics) ||
+    0
+  );
+  const workFeasibility = Number(
+    v.work_feasibility_score ||
+    v.cleaning_window_score ||
+    (predictiveParts.predicted_work_window_hours ? Math.min(100, Number(predictiveParts.predicted_work_window_hours) * 3) : 0)
+  );
+  const biofoulingExposure = Number(
+    predictiveParts.biofouling_exposure_score ||
+    v.biofouling_exposure_score ||
+    v.biofouling_risk_score ||
+    v.biofouling_score ||
+    0
+  );
+  const routeBonus = deriveRouteBonus(v, routeProfile);
+  const score = Math.min(100, Math.round(
+    commercialValue * 0.30 +
+    congestion * 0.18 +
+    workFeasibility * 0.24 +
+    biofoulingExposure * 0.18 +
+    routeBonus * 0.10
+  ));
+  return {
+    route_bonus: routeBonus,
+    predicted_cleaning_opportunity_score: score,
+    cleaning_opportunity_band: cleaningOpportunityBand(score)
+  };
+}
+
 function derivePredictiveSignals(v = {}, metrics = {}, routeProfile = deriveRouteCommercialProfile(v), routePattern = deriveRoutePattern(v, metrics, routeProfile), arrivalPrediction = deriveArrivalPrediction(v, metrics, routeProfile, routePattern)) {
   const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
   const type = String([v.vessel_type_group, v.vessel_type, v.commercial_segment].filter(Boolean).join(" ")).toLowerCase();
@@ -378,14 +435,11 @@ function derivePredictiveSignals(v = {}, metrics = {}, routeProfile = deriveRout
     Math.round(routeProfile.biosecurity_exposure_score * 0.16) +
     predictedCongestionScore * 0.16
   ));
-  const predictedCleaningOpportunityScore = Math.min(100, Math.round(
-    Number(v.commercial_value_score || v.total_sales_priority_score || 0) * 0.28 +
-    anchorageProbability * 0.18 +
-    (predictedWorkWindowHours ? Math.min(100, predictedWorkWindowHours * 3) : 0) * 0.16 +
-    biofoulingExposureScore * 0.18 +
-    predictedCongestionScore * 0.14 +
-    Number(arrivalPrediction.arrival_opportunity_score || 0) * 0.06
-  ));
+  const cleaningOpportunity = deriveCleaningOpportunityPrediction(v, metrics, routeProfile, {
+    predicted_congestion_score: predictedCongestionScore,
+    predicted_work_window_hours: predictedWorkWindowHours,
+    biofouling_exposure_score: biofoulingExposureScore
+  });
   return {
     predicted_congestion_score: predictedCongestionScore,
     congestion_forecast_band: forecastBand(predictedCongestionScore),
@@ -400,7 +454,9 @@ function derivePredictiveSignals(v = {}, metrics = {}, routeProfile = deriveRout
     idle_exposure: idleExposure,
     anchorage_exposure: anchorageExposure,
     biofouling_exposure_score: biofoulingExposureScore,
-    predicted_cleaning_opportunity_score: predictedCleaningOpportunityScore
+    route_bonus: cleaningOpportunity.route_bonus,
+    predicted_cleaning_opportunity_score: cleaningOpportunity.predicted_cleaning_opportunity_score,
+    cleaning_opportunity_band: cleaningOpportunity.cleaning_opportunity_band
   };
 }
 
@@ -1391,7 +1447,8 @@ function buildCommercialSignals(v = {}, metrics = {}) {
     high_regulation_route: routeProfile.high_regulation_route,
     compliance_priority: routeProfile.compliance_priority,
     ...routePattern,
-    ...arrivalPrediction
+    ...arrivalPrediction,
+    ...predictiveSignals
   };
 }
 

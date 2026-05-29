@@ -326,6 +326,8 @@ function normalizeSnapshot(row = {}) {
     workFeasibilityScore,
     arrivalOpportunityScore: Number(merged.arrival_opportunity_score || 0)
   }));
+  const routeBonus = Number(merged.route_bonus || deriveRouteBonus(merged));
+  const predictedCleaningOpportunityScore = Number(merged.predicted_cleaning_opportunity_score || derivePredictedCleaningOpportunityScore({ ...merged, route_bonus: routeBonus }));
   return {
     vessel_id: merged.vessel_id,
     vessel_name: merged.vessel_name,
@@ -406,7 +408,9 @@ function normalizeSnapshot(row = {}) {
     idle_exposure: Number(merged.idle_exposure || 0),
     anchorage_exposure: Number(merged.anchorage_exposure || 0),
     biofouling_exposure_score: Number(merged.biofouling_exposure_score || deriveBiofoulingExposureScore(merged)),
-    predicted_cleaning_opportunity_score: Number(merged.predicted_cleaning_opportunity_score || derivePredictedCleaningOpportunityScore(merged)),
+    route_bonus: routeBonus,
+    predicted_cleaning_opportunity_score: predictedCleaningOpportunityScore,
+    cleaning_opportunity_band: merged.cleaning_opportunity_band || cleaningOpportunityBand(predictedCleaningOpportunityScore),
     arrival_opportunity_score: Number(merged.arrival_opportunity_score || arrivalPrediction.arrival_opportunity_score || 0),
     predicted_arrival_window_hours: Number(merged.predicted_arrival_window_hours ?? arrivalPrediction.predicted_arrival_window_hours ?? 0),
     predicted_arrival_pipeline: Boolean(merged.predicted_arrival_pipeline || arrivalPrediction.predicted_arrival_pipeline),
@@ -762,14 +766,35 @@ function deriveBiofoulingExposureScore(v = {}) {
   );
 }
 
+function deriveRouteBonus(v = {}) {
+  const explicit = Number(v.route_bonus || 0);
+  if (explicit > 0) return boundedScore(explicit);
+  const biosecurity = Number(v.biosecurity_exposure_score || 0);
+  const esg = Number(v.esg_sensitivity_score || 0);
+  const fuel = Number(v.fuel_efficiency_sensitivity_score || 0);
+  const highRoute = highRegulationRoute(v) ? 40 : 0;
+  return boundedScore(Math.max(
+    highRoute,
+    biosecurity * 0.35,
+    esg * 0.25,
+    fuel * 0.25
+  ));
+}
+
+function cleaningOpportunityBand(score) {
+  const value = Number(score || 0);
+  if (value >= 70) return "HIGH";
+  if (value >= 40) return "MEDIUM";
+  return "LOW";
+}
+
 function derivePredictedCleaningOpportunityScore(v = {}) {
   return boundedScore(
-    commercialScore(v) * 0.28 +
-    deriveAnchorageProbability(v) * 0.18 +
-    (Number(v.predicted_work_window_hours || v.work_window_hours || 0) ? Math.min(100, Number(v.predicted_work_window_hours || v.work_window_hours || 0) * 3) : 0) * 0.16 +
+    commercialScore(v) * 0.30 +
+    derivePredictedCongestionScore(v) * 0.18 +
+    deriveWorkFeasibilityScore(v) * 0.24 +
     deriveBiofoulingExposureScore(v) * 0.18 +
-    derivePredictedCongestionScore(v) * 0.14 +
-    Number(v.arrival_opportunity_score || 0) * 0.06
+    deriveRouteBonus(v) * 0.10
   );
 }
 
@@ -1816,8 +1841,10 @@ function buildPredictedArrivals(records = []) {
       repeat_operator_count: Number(v.repeat_operator_count || 0),
       repeat_caller_score: Number(v.repeat_caller_score || 0),
       repeat_operator_score: Number(v.repeat_operator_score || 0),
+      route_bonus: Number(v.route_bonus || deriveRouteBonus(v)),
       biofouling_exposure_score: Number(v.biofouling_exposure_score || 0),
       predicted_cleaning_opportunity_score: Number(v.predicted_cleaning_opportunity_score || 0),
+      cleaning_opportunity_band: v.cleaning_opportunity_band || cleaningOpportunityBand(v.predicted_cleaning_opportunity_score),
       predicted_arrival_window_hours: Number(v.predicted_arrival_window_hours || 0),
       arrival_prediction_source: v.arrival_prediction_source || "",
       route_pattern_known: Boolean(v.route_pattern_known),
@@ -1867,7 +1894,9 @@ function buildLeadPipeline(records = []) {
       contact_readiness_score: Number(v.contact_readiness_score || 0),
       work_feasibility_score: Number(v.work_feasibility_score || 0),
       arrival_opportunity_score: Number(v.arrival_opportunity_score || 0),
+      route_bonus: Number(v.route_bonus || deriveRouteBonus(v)),
       predicted_cleaning_opportunity_score: Number(v.predicted_cleaning_opportunity_score || 0),
+      cleaning_opportunity_band: v.cleaning_opportunity_band || cleaningOpportunityBand(v.predicted_cleaning_opportunity_score),
       anchorage_probability: Number(v.anchorage_probability || 0),
       predicted_congestion_score: Number(v.predicted_congestion_score || 0),
       congestion_forecast_band: v.congestion_forecast_band || "low",
@@ -1914,7 +1943,9 @@ function buildAlertCandidates(records = []) {
       gt: v.gt,
       anchorage_hours: v.anchorage_hours || 0,
       commercial_value_score: commercialScore(v),
+      route_bonus: Number(v.route_bonus || deriveRouteBonus(v)),
       predicted_cleaning_opportunity_score: Number(v.predicted_cleaning_opportunity_score || 0),
+      cleaning_opportunity_band: v.cleaning_opportunity_band || cleaningOpportunityBand(v.predicted_cleaning_opportunity_score),
       outbound_pilot_scheduled: Boolean(v.outbound_pilot_scheduled),
       why_now: v.why_now || deriveWhyNow(v),
       candidate_summary_ko: v.candidate_summary_ko || deriveCandidateSummaryKo(v),
