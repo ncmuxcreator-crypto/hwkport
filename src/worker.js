@@ -157,7 +157,7 @@ function hasCommercialRank(v = {}) {
 }
 
 function withinCommercialPercentile(v = {}, percent = 20) {
-  if (!hasCommercialRank(v)) return true;
+  if (!hasCommercialRank(v)) return false;
   return Number(v.global_percentile ?? 101) <= percent || Number(v.port_percentile ?? 101) <= percent;
 }
 
@@ -1911,15 +1911,16 @@ function buildScoringDiagnostics(records = []) {
   const congestionScores = records.map(deriveCongestionScore);
   const workScores = records.map(v => Number(v.work_feasibility_score || 0) || Number(v.cleaning_window_score || 0));
   const waitingDays = records.map(commercialWaitingDays);
-  const salesTargetCount = records.filter(isSalesCandidate).length;
-  const immediateTargetCount = records.filter(isImmediateTarget).length;
-  const percentileRankPresentCount = records.filter(hasCommercialRank).length;
-  const percentileRankMissingCount = records.length - percentileRankPresentCount;
+  const salesTargetCount = buckets.sales_candidates.length;
+  const immediateTargetCount = buckets.immediate_targets.length;
+  const rankedTargetRows = buckets.target_vessels;
+  const percentileRankPresentCount = rankedTargetRows.filter(hasCommercialRank).length;
+  const percentileRankMissingCount = rankedTargetRows.length - percentileRankPresentCount;
   const thresholdOnlySalesTargetCount = records.filter(v => commercialScore(v) >= SALES_CANDIDATE_THRESHOLD && !isDepartedRecord(v) && !isHardCandidateExcluded(v)).length;
   const percentileLogicActive = percentileRankPresentCount > 0;
-  const onlyThresholdLogicActive = percentileRankMissingCount === records.length;
-  const targetRatio = records.length ? Math.round((salesTargetCount / records.length) * 1000) / 10 : 0;
-  const immediateTargetRatio = records.length ? Math.round((immediateTargetCount / records.length) * 1000) / 10 : 0;
+  const onlyThresholdLogicActive = false;
+  const targetRatio = rankedTargetRows.length ? Math.round((salesTargetCount / rankedTargetRows.length) * 1000) / 10 : 0;
+  const immediateTargetRatio = rankedTargetRows.length ? Math.round((immediateTargetCount / rankedTargetRows.length) * 1000) / 10 : 0;
   const avg = values => values.length ? Math.round(values.reduce((sum, value) => sum + Number(value || 0), 0) / values.length) : 0;
   const percentileValue = (values, p) => {
     const sorted = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
@@ -1967,7 +1968,7 @@ function buildScoringDiagnostics(records = []) {
     waiting_10d_plus_count: waitingDays.filter(value => value >= 10).length,
     work_feasibility_score_avg: avg(workScores),
     sales_target_count: salesTargetCount,
-    sales_target_count_calculation: "score >= 65 AND not departed/excluded AND global_percentile <= 20 OR port_percentile <= 20; rows without percentile rank currently pass percentile guard",
+    sales_target_count_calculation: "score >= 65 AND not departed/excluded AND global_percentile <= 20 OR port_percentile <= 20",
     sales_target_threshold_only_count: thresholdOnlySalesTargetCount,
     percentile_logic_active: percentileLogicActive,
     only_threshold_logic_active: onlyThresholdLogicActive,
@@ -1977,7 +1978,7 @@ function buildScoringDiagnostics(records = []) {
       immediate_targets: "score >= 75 AND top 10% global/port AND current/near-term work feasibility",
       sales_targets: "score >= 65 AND top 20% global/port",
       watchlist: "score >= 50 OR top 40% global/port",
-      percentile_fallback: "if rank fields are missing, percentile guard passes to avoid hiding rows"
+      percentile_fallback: "if rank fields are missing, percentile guard fails so target ratio cannot inflate"
     },
     watchlist_count: records.filter(v => {
       const value = commercialScore(v);
