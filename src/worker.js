@@ -782,19 +782,40 @@ function deriveSalesAngle(v = {}) {
 }
 
 function deriveWhyNow(v = {}) {
-  const parts = [];
+  const port = v.port_name || v.port || "해당 항만";
+  const berth = v.anchorage_name || v.berth_name || v.berth || v.laidupFcltyNm || "";
+  const typeText = String(v.vessel_type_group || v.vessel_type || v.vsslKndNm || "상선")
+    .replace(/bulk_carrier|bulk/i, "벌크선")
+    .replace(/crude_tanker/i, "원유운반선")
+    .replace(/product_tanker/i, "석유제품운반선")
+    .replace(/tanker/i, "탱커")
+    .replace(/container/i, "컨테이너선")
+    .replace(/pctc/i, "자동차운반선")
+    .replace(/lng_lpg|lng|lpg/i, "가스운반선");
   const stayHours = Number(v.stay_hours || v.current_call_stay_hours || 0);
   const anchorageHours = Number(v.anchorage_hours || 0);
   const workWindowHours = Number(v.work_window_hours || 0);
-  if (anchorageHours >= 24 || v.is_anchorage_waiting) parts.push(`묘박/대기 ${Math.round(anchorageHours)}시간`);
-  if (stayHours >= 48 && !v.atd) parts.push(`체류 ${Math.round(stayHours)}시간`);
-  if (workWindowHours > 0) parts.push(`출항 전 작업 가능 시간 ${Math.round(workWindowHours)}시간`);
-  if (highRegulationRoute(v)) parts.push("민감 항로");
-  if (Number(v.gt || v.grtg || v.intrlGrtg || 0) >= 30000) parts.push("대형 상선");
-  if (v.pilot_schedule_matched) parts.push("도선 스케줄 확인");
-  return parts.length
-    ? `${parts.slice(0, 3).join(" · ")} 때문에 지금 영업 판단이 필요합니다.`
-    : "상업 점수와 항만 체류 신호를 기준으로 모니터링이 필요합니다.";
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const score = Number(v.commercial_value_score || v.total_sales_priority_score || 0);
+  const congestion = Number(v.congestion_score || v.port_congestion_score || v.congestion_exposure_score || 0);
+  const workFeasibility = Number(v.work_feasibility_score || v.cleaning_window_score || 0);
+  const location = berth ? `${port} ${berth}` : port;
+  const duration = anchorageHours >= 24 || v.is_anchorage_waiting
+    ? `묘박/대기 ${Math.round(anchorageHours / 24 * 10) / 10}일째`
+    : stayHours >= 24
+      ? `체류 ${Math.round(stayHours / 24 * 10) / 10}일째`
+      : "현재 항만 체류 중";
+  const vesselValue = gt >= 5000 ? `GT ${Math.round(gt).toLocaleString("ko-KR")} ${typeText}` : `${typeText}`;
+  const signals = [];
+  if (!v.atd && (stayHours > 0 || anchorageHours > 0)) signals.push("아직 출항 완료가 확인되지 않았습니다");
+  if (workWindowHours > 0) signals.push(`출항 전 약 ${Math.round(workWindowHours)}시간의 작업 가능 시간이 보입니다`);
+  if (!v.outbound_pilot_scheduled && !/outbound/i.test(String(v.pilot_direction || v.movement_type || ""))) signals.push("출항도선 신호가 강하지 않습니다");
+  if (workFeasibility >= 60) signals.push("작업 가능성이 높습니다");
+  if (congestion >= 50) signals.push("체선/대기 신호가 누적되고 있습니다");
+  if (highRegulationRoute(v)) signals.push("민감 항로 신호가 있습니다");
+  if (v.agent_name || v.agent || v.operator_name || v.operator) signals.push("연락 경로 단서가 있습니다");
+  if (score >= 75) signals.push("상업 가치 점수가 즉시 검토권입니다");
+  return `${location}에서 ${duration}인 ${vesselValue}으로, ${signals.slice(0, 3).join(" · ") || "상업 신호 보강이 필요합니다"}.`;
 }
 
 function deriveCandidateSummaryKo(v = {}) {
@@ -847,10 +868,13 @@ function isAlertCandidate(v = {}) {
 
 function deriveRecommendedNextAction(v = {}, leadPriorityScore = deriveLeadPriorityScore(v)) {
   const outboundSoon = String(v.pilot_direction || v.movement_type || "").toLowerCase() === "outbound" || (v.etd && !v.atd && Number(v.work_window_hours || 0) <= 12);
-  if (!hasValue(v.agent_name || v.agent)) return "대리점 확인";
-  if (!hasValue(v.operator_name || v.operator)) return "운영선사 확인";
+  const score = commercialScore(v);
+  const contactKnown = hasValue(v.agent_name || v.agent || v.operator_name || v.operator);
+  if (!hasValue(v.agent_name || v.agent)) return score >= IMMEDIATE_TARGET_THRESHOLD ? "대리점 확인 후 견적 제안" : "대리점 확인";
+  if (!hasValue(v.operator_name || v.operator)) return score >= IMMEDIATE_TARGET_THRESHOLD ? "운영선사 확인 후 견적 제안" : "운영선사 확인";
   if (outboundSoon) return "도선/출항 전 재확인";
-  if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD) return "견적 제안";
+  if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD || (score >= IMMEDIATE_TARGET_THRESHOLD && contactKnown)) return "대리점 확인 후 견적 제안";
+  if (score >= SALES_CANDIDATE_THRESHOLD) return "선박 스케줄 확인 후 영업 검토";
   return "선박 스케줄 확인";
 }
 

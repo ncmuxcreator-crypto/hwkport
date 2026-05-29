@@ -30,7 +30,7 @@ create table if not exists vessel_snapshots (
   id bigserial primary key,
   snapshot_id bigserial,
   run_id text,
-  snapshot_date date not null,
+  snapshot_date date not null default current_date,
   source_name text,
   master_vessel_id text,
   port_code text,
@@ -128,8 +128,9 @@ create table if not exists active_dataset_pointer (
 create index if not exists idx_port_calls_collected_at on port_calls(collected_at desc);
 create index if not exists idx_port_calls_port on port_calls(port);
 create index if not exists idx_port_calls_risk_score on port_calls(risk_score desc);
-create index if not exists idx_vessel_snapshots_date on vessel_snapshots(snapshot_date desc);
 
+alter table vessel_snapshots add column if not exists snapshot_date date default current_date;
+alter table vessel_snapshots alter column snapshot_date set default current_date;
 alter table vessel_snapshots add column if not exists vessel_name text;
 alter table vessel_snapshots add column if not exists operator text;
 alter table vessel_snapshots add column if not exists source text;
@@ -239,6 +240,7 @@ alter table vessel_snapshots add column if not exists data_quality_band text;
 alter table vessel_snapshots add column if not exists source_confidence_score int default 0;
 alter table vessel_snapshots add column if not exists port_call_identity text;
 alter table vessel_snapshots add column if not exists sub_port text;
+create index if not exists idx_vessel_snapshots_date on vessel_snapshots(snapshot_date desc);
 create index if not exists idx_vessel_snapshots_port_call_identity on vessel_snapshots(port_call_identity);
 
 create table if not exists vessel_entities (
