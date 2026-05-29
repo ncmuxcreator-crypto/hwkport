@@ -1269,6 +1269,11 @@ export async function saveToSupabase(records, options = {}) {
     if ((r.commercial_value_score || r.total_sales_priority_score || 0) >= 75 || r.is_immediate_candidate) current.immediate_target_count += 1;
     current.operator_call_count += Number(r.repeat_call_count || r.calls_last_12m || 1);
     current.contact_score_total += Number(r.contact_readiness_score || 0);
+    current.commercial_total = (current.commercial_total || 0) + Number(r.commercial_value_score || r.total_sales_priority_score || 0);
+    current.biofouling_total = (current.biofouling_total || 0) + Number(r.biofouling_exposure_score || r.biofouling_risk_score || r.biofouling_score || 0);
+    current.congestion_total = (current.congestion_total || 0) + Number(r.congestion_score || r.port_congestion_score || 0);
+    current.route_exposure_total = (current.route_exposure_total || 0) + Number(r.route_bonus || r.biosecurity_exposure_score || 0);
+    current.operator_quality_total = (current.operator_quality_total || 0) + Number(r.operator_confidence || r.contact_readiness_score || 0);
     current.contact_score_count += 1;
     current.top_vessels.push(r);
   }
@@ -1285,6 +1290,11 @@ export async function saveToSupabase(records, options = {}) {
       operator_call_count: row.operator_call_count,
       operator_vessel_count: row.vessels.size,
       operator_port_count: row.ports.size,
+      average_commercial_value: row.contact_score_count ? Math.round((row.commercial_total || 0) / row.contact_score_count) : 0,
+      average_biofouling_exposure: row.contact_score_count ? Math.round((row.biofouling_total || 0) / row.contact_score_count) : 0,
+      average_congestion_exposure: row.contact_score_count ? Math.round((row.congestion_total || 0) / row.contact_score_count) : 0,
+      route_exposure_score: row.contact_score_count ? Math.round((row.route_exposure_total || 0) / row.contact_score_count) : 0,
+      operator_quality_score: row.contact_score_count ? Math.round((row.operator_quality_total || 0) / row.contact_score_count) : 0,
       repeat_operator_score: Math.min(100, Number(row.top_vessels[0]?.repeat_operator_score || 0) || (row.operator_call_count >= 5 ? 30 : row.operator_call_count >= 3 ? 20 : row.operator_call_count >= 2 ? 10 : 0)),
       fleet_opportunity_score: Math.min(100, Math.round(
         Math.min(35, row.target_vessel_count * 9) +
@@ -1294,6 +1304,8 @@ export async function saveToSupabase(records, options = {}) {
         Math.min(10, row.contact_score_total / Math.max(1, row.contact_score_count) / 10)
       )),
       contact_readiness_avg: row.contact_score_count ? Math.round(row.contact_score_total / row.contact_score_count) : 0,
+      fleet_alert: row.immediate_target_count >= 2 || row.target_vessel_count >= 4 ? "HIGH_FLEET_OPPORTUNITY" : null,
+      fleet_alerts: row.immediate_target_count >= 2 || row.target_vessel_count >= 4 ? ["HIGH_FLEET_OPPORTUNITY"] : [],
       top_vessels: row.top_vessels
         .slice()
         .sort((a, b) => Number(b.commercial_value_score || b.total_sales_priority_score || 0) - Number(a.commercial_value_score || a.total_sales_priority_score || 0))

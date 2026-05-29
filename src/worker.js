@@ -2280,6 +2280,11 @@ function buildFleetOpportunityRows(records = []) {
         route_regions: new Set(),
         congestion_exposed: 0,
         contact_ready: 0,
+        commercial_total: 0,
+        biofouling_total: 0,
+        congestion_total: 0,
+        route_exposure_total: 0,
+        operator_quality_total: 0,
         top_vessels: []
       });
     }
@@ -2296,6 +2301,11 @@ function buildFleetOpportunityRows(records = []) {
     if (record.route_region && record.route_region !== "unknown") fleet.route_regions.add(record.route_region);
     if (deriveCongestionScore(record) >= 40 || Number(record.anchorage_hours || 0) >= 72) fleet.congestion_exposed += 1;
     if (Number(record.contact_readiness_score || 0) >= 60 || ["contact_available", "high_confidence_contact"].includes(record.contact_path_status)) fleet.contact_ready += 1;
+    fleet.commercial_total += score;
+    fleet.biofouling_total += Number(record.biofouling_exposure_score || record.biofouling_risk_score || record.biofouling_score || 0);
+    fleet.congestion_total += Number(record.congestion_score || record.port_congestion_score || 0);
+    fleet.route_exposure_total += Number(record.route_bonus || record.biosecurity_exposure_score || 0);
+    fleet.operator_quality_total += Number(record.operator_confidence || record.contact_readiness_score || 0);
     fleet.top_vessels.push(record);
   }
 
@@ -2304,6 +2314,12 @@ function buildFleetOpportunityRows(records = []) {
       const operatorVesselCount = fleet.vessels.size;
       const operatorPortCount = [...fleet.ports].filter(Boolean).length;
       const operatorCallCount = Math.max(operatorVesselCount, fleet.repeat_call_total);
+      const divisor = Math.max(1, fleet.top_vessels.length);
+      const averageCommercialValue = Math.round(fleet.commercial_total / divisor);
+      const averageBiofoulingExposure = Math.round(fleet.biofouling_total / divisor);
+      const averageCongestionExposure = Math.round(fleet.congestion_total / divisor);
+      const routeExposureScore = Math.round(fleet.route_exposure_total / divisor);
+      const operatorQualityScore = Math.round(fleet.operator_quality_total / divisor);
       const repeatOperatorScore = boundedScore(
         repeatScoreFromCalls(operatorCallCount) +
         Math.min(25, operatorVesselCount * 4) +
@@ -2311,13 +2327,15 @@ function buildFleetOpportunityRows(records = []) {
         Math.min(15, fleet.repeated_vessels * 5)
       );
       const fleetOpportunityScore = boundedScore(
-        Math.min(35, fleet.target_vessels * 9) +
-        Math.min(30, fleet.immediate_targets * 15) +
-        repeatOperatorScore * 0.25 +
-        Math.min(15, fleet.congestion_exposed * 5) +
-        Math.min(10, fleet.contact_ready * 3) +
-        Math.min(8, fleet.route_regions.size * 3)
+        Math.min(20, operatorVesselCount * 4) +
+        Math.min(24, fleet.target_vessels * 8) +
+        Math.min(22, fleet.immediate_targets * 12) +
+        repeatOperatorScore * 0.15 +
+        Math.min(12, routeExposureScore * 0.12) +
+        Math.min(10, operatorQualityScore * 0.10)
       );
+      const alertCodes = [];
+      if (fleetOpportunityScore >= 70 || fleet.immediate_targets >= 2 || fleet.target_vessels >= 4) alertCodes.push("HIGH_FLEET_OPPORTUNITY");
       const topVessels = sortCommercialPriority(fleet.top_vessels).slice(0, 5).map(v => ({
         vessel_name: v.vessel_name,
         port_name: v.port_name || v.port,
@@ -2335,10 +2353,17 @@ function buildFleetOpportunityRows(records = []) {
         operator_port_count: operatorPortCount,
         repeat_operator_score: repeatOperatorScore,
         fleet_opportunity_score: fleetOpportunityScore,
+        average_commercial_value: averageCommercialValue,
+        average_biofouling_exposure: averageBiofoulingExposure,
+        average_congestion_exposure: averageCongestionExposure,
+        route_exposure_score: routeExposureScore,
+        operator_quality_score: operatorQualityScore,
+        fleet_alerts: alertCodes,
+        fleet_alert: alertCodes[0] || "",
         contact_ready_count: fleet.contact_ready,
         route_concentration_count: fleet.route_regions.size,
         top_vessels: topVessels,
-        why_now: `${fleet.operator_name} 선사는 현재 한국 항만에 ${operatorVesselCount}척이 확인되며, 영업대상 ${fleet.target_vessels}척·즉시후보 ${fleet.immediate_targets}척이 포함됩니다.`,
+        why_now: `${fleet.operator_name} 선사는 현재 한국 항만에 ${operatorVesselCount}척이 확인되며, 영업대상 ${fleet.target_vessels}척·즉시후보 ${fleet.immediate_targets}척이 포함됩니다. 평균 상업가치 ${averageCommercialValue}점, 평균 Biofouling Exposure ${averageBiofoulingExposure}점입니다.`,
         recommended_action: fleet.contact_ready > 0 ? "운영선사 선대 담당팀 접촉" : "운영선사/대리점 연락 경로 확인"
       };
     })
@@ -2500,7 +2525,7 @@ function buildDashboardSummary(allRecords = [], source = {}) {
     predicted_cleaning_opportunities: predictedCleaningOpportunities,
     lead_pipeline: buildLeadPipeline(activeRecords).slice(0, 8),
     contact_ready_vessels: buildContactReadyVessels(activeRecords).slice(0, 5),
-    fleet_opportunities: buildFleetOpportunityRows(activeRecords).slice(0, 5),
+    fleet_opportunities: buildFleetOpportunityRows(activeRecords).slice(0, 10),
     alert_candidates: buildAlertCandidates(activeRecords).slice(0, 5),
     port_opportunities: buildPortOpportunityRanking(buckets.target_vessels).slice(0, 5),
     congestion_summary: buildPortHeatmap(buckets.target_vessels).slice(0, 12),

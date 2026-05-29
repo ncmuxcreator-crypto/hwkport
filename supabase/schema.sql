@@ -462,8 +462,15 @@ create table if not exists operator_fleet_opportunities (
   operator_call_count int default 0,
   operator_vessel_count int default 0,
   operator_port_count int default 0,
+  average_commercial_value int default 0,
+  average_biofouling_exposure int default 0,
+  average_congestion_exposure int default 0,
+  route_exposure_score int default 0,
+  operator_quality_score int default 0,
   repeat_operator_score int default 0,
   fleet_opportunity_score int default 0,
+  fleet_alert text,
+  fleet_alerts jsonb default '[]'::jsonb,
   contact_readiness_avg int default 0,
   top_vessels jsonb default '[]'::jsonb,
   payload jsonb default '{}'::jsonb,
@@ -890,6 +897,13 @@ create index if not exists idx_operator_contact_history_status on operator_conta
 create index if not exists idx_operator_fleet_opportunities_run on operator_fleet_opportunities(run_id);
 create index if not exists idx_operator_fleet_opportunities_score on operator_fleet_opportunities(fleet_opportunity_score desc);
 create index if not exists idx_operator_fleet_opportunities_operator on operator_fleet_opportunities(operator_normalized);
+alter table operator_fleet_opportunities add column if not exists average_commercial_value int default 0;
+alter table operator_fleet_opportunities add column if not exists average_biofouling_exposure int default 0;
+alter table operator_fleet_opportunities add column if not exists average_congestion_exposure int default 0;
+alter table operator_fleet_opportunities add column if not exists route_exposure_score int default 0;
+alter table operator_fleet_opportunities add column if not exists operator_quality_score int default 0;
+alter table operator_fleet_opportunities add column if not exists fleet_alert text;
+alter table operator_fleet_opportunities add column if not exists fleet_alerts jsonb default '[]'::jsonb;
 alter table predicted_arrivals add column if not exists predicted_congestion_score int default 0;
 alter table predicted_arrivals add column if not exists congestion_forecast_band text;
 alter table predicted_arrivals add column if not exists anchorage_probability int default 0;
