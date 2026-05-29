@@ -168,6 +168,13 @@ alter table vessel_snapshots add column if not exists agent_source text;
 alter table vessel_snapshots add column if not exists manager_name text;
 alter table vessel_snapshots add column if not exists owner_name text;
 alter table vessel_snapshots add column if not exists contact_readiness_score int default 0;
+alter table vessel_snapshots add column if not exists contact_path_available boolean default false;
+alter table vessel_snapshots add column if not exists operator_website text;
+alter table vessel_snapshots add column if not exists operator_email text;
+alter table vessel_snapshots add column if not exists operator_phone text;
+alter table vessel_snapshots add column if not exists agent_website text;
+alter table vessel_snapshots add column if not exists agent_email text;
+alter table vessel_snapshots add column if not exists agent_phone text;
 alter table vessel_snapshots add column if not exists previous_port text;
 alter table vessel_snapshots add column if not exists destination_port text;
 alter table vessel_snapshots add column if not exists next_port text;
@@ -264,6 +271,10 @@ create table if not exists operator_master (
   operator_id text primary key,
   operator_name text not null,
   operator_normalized text not null unique,
+  website text,
+  country text,
+  fleet_size int,
+  segment text,
   operator_group text,
   source text,
   confidence int default 0,
@@ -276,6 +287,10 @@ create table if not exists agent_master (
   agent_id text primary key,
   agent_name text not null,
   agent_normalized text not null unique,
+  email text,
+  phone text,
+  website text,
+  location text,
   agent_group text,
   source text,
   first_seen timestamptz default now(),
@@ -287,6 +302,8 @@ create table if not exists agent_operator_links (
   link_id text primary key,
   agent_id text,
   operator_id text,
+  agent_name text,
+  operator_name text,
   agent_normalized text not null,
   operator_normalized text not null,
   source text,
@@ -296,6 +313,23 @@ create table if not exists agent_operator_links (
   last_seen timestamptz default now(),
   payload jsonb default '{}'::jsonb,
   unique(agent_normalized, operator_normalized, source)
+);
+
+create table if not exists contact_master (
+  contact_id text primary key,
+  company_name text not null,
+  company_normalized text not null,
+  contact_type text not null,
+  email text,
+  phone text,
+  website text,
+  source text,
+  confidence int default 0,
+  last_verified timestamptz,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  payload jsonb default '{}'::jsonb,
+  unique(company_normalized, contact_type, source)
 );
 
 create table if not exists vessel_operator_history (
@@ -638,6 +672,18 @@ alter table commercial_leads add column if not exists alert_candidate boolean de
 alter table commercial_leads add column if not exists information_enrichment_needed boolean default false;
 create index if not exists idx_commercial_leads_follow_up_due on commercial_leads(follow_up_due);
 create index if not exists idx_commercial_leads_alert on commercial_leads(alert_candidate);
+alter table operator_master add column if not exists website text;
+alter table operator_master add column if not exists country text;
+alter table operator_master add column if not exists fleet_size int;
+alter table operator_master add column if not exists segment text;
+alter table agent_master add column if not exists email text;
+alter table agent_master add column if not exists phone text;
+alter table agent_master add column if not exists website text;
+alter table agent_master add column if not exists location text;
+alter table agent_operator_links add column if not exists agent_name text;
+alter table agent_operator_links add column if not exists operator_name text;
+create index if not exists idx_contact_master_company on contact_master(company_normalized);
+create index if not exists idx_contact_master_type on contact_master(contact_type);
 alter table predicted_arrivals add column if not exists predicted_congestion_score int default 0;
 alter table predicted_arrivals add column if not exists congestion_forecast_band text;
 alter table predicted_arrivals add column if not exists anchorage_probability int default 0;

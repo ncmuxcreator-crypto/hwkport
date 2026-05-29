@@ -339,6 +339,13 @@ export async function saveToSupabase(records, options = {}) {
     manager_name: r.manager_name || null,
     owner_name: r.owner_name || null,
     contact_readiness_score: Number(r.contact_readiness_score || 0),
+    contact_path_available: Boolean(r.contact_path_available || r.operator_name || r.operator || r.agent_name || r.agent),
+    operator_website: r.operator_website || r.operator_url || null,
+    operator_email: r.operator_email || null,
+    operator_phone: r.operator_phone || null,
+    agent_website: r.agent_website || r.agent_url || null,
+    agent_email: r.agent_email || null,
+    agent_phone: r.agent_phone || null,
     previous_port: r.previous_port || null,
     destination_port: r.destination_port || r.destination || r.next_port || null,
     next_port: r.next_port || null,
@@ -510,6 +517,10 @@ export async function saveToSupabase(records, options = {}) {
         operator_id: stableEntityId("OP", operatorNormalized),
         operator_name: operatorName,
         operator_normalized: operatorNormalized,
+        website: r.operator_website || r.operator_url || null,
+        country: r.operator_country || null,
+        fleet_size: r.operator_fleet_size ? Number(r.operator_fleet_size) : null,
+        segment: r.operator_segment || r.commercial_segment || null,
         source: r.operator_source || "collector",
         confidence: Number(r.operator_confidence || 0),
         last_seen: now,
@@ -536,6 +547,10 @@ export async function saveToSupabase(records, options = {}) {
         agent_id: stableEntityId("AG", agentNormalized),
         agent_name: agentName,
         agent_normalized: agentNormalized,
+        email: r.agent_email || null,
+        phone: r.agent_phone || null,
+        website: r.agent_website || r.agent_url || null,
+        location: r.agent_location || r.port_name || r.port || null,
         source: r.agent_source || "collector",
         last_seen: now,
         payload: {
@@ -563,6 +578,8 @@ export async function saveToSupabase(records, options = {}) {
         link_id: stableEntityId("AGOP", `${agentNormalized}-${operatorNormalized}-${r.operator_source || "collector"}`),
         agent_id: stableEntityId("AG", agentNormalized),
         operator_id: stableEntityId("OP", operatorNormalized),
+        agent_name: agentName,
+        operator_name: operatorName,
         agent_normalized: agentNormalized,
         operator_normalized: operatorNormalized,
         source: r.operator_source || r.agent_source || "collector",
@@ -577,6 +594,54 @@ export async function saveToSupabase(records, options = {}) {
   for (let index = 0; index < agentOperatorLinks.length; index += batchSize) {
     const batch = agentOperatorLinks.slice(index, index + batchSize);
     const { error } = await supabase.from("agent_operator_links").upsert(batch, { onConflict: "agent_normalized,operator_normalized,source" });
+    if (error) throw error;
+  }
+
+  const contactRows = uniqueBy(records
+    .flatMap(r => {
+      const out = [];
+      const operatorName = r.operator_name || r.operator;
+      const operatorNormalized = r.operator_normalized || normalizeCompanyName(operatorName);
+      if (operatorName && operatorNormalized) {
+        out.push({
+          contact_id: stableEntityId("CT", `${operatorNormalized}-operator-${r.operator_source || "collector"}`),
+          company_name: operatorName,
+          company_normalized: operatorNormalized,
+          contact_type: "operator",
+          email: r.operator_email || null,
+          phone: r.operator_phone || null,
+          website: r.operator_website || r.operator_url || null,
+          source: r.operator_source || "collector",
+          confidence: Number(r.operator_confidence || 0),
+          last_verified: r.contact_last_verified || null,
+          updated_at: now,
+          payload: r
+        });
+      }
+      const agentName = r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm;
+      const agentNormalized = r.agent_normalized || normalizeCompanyName(agentName);
+      if (agentName && agentNormalized) {
+        out.push({
+          contact_id: stableEntityId("CT", `${agentNormalized}-agent-${r.agent_source || "collector"}`),
+          company_name: agentName,
+          company_normalized: agentNormalized,
+          contact_type: "agent",
+          email: r.agent_email || null,
+          phone: r.agent_phone || null,
+          website: r.agent_website || r.agent_url || null,
+          source: r.agent_source || "collector",
+          confidence: Number(r.agent_confidence || r.operator_confidence || 0),
+          last_verified: r.contact_last_verified || null,
+          updated_at: now,
+          payload: r
+        });
+      }
+      return out;
+    }), row => `${row.company_normalized}|${row.contact_type}|${row.source}`);
+
+  for (let index = 0; index < contactRows.length; index += batchSize) {
+    const batch = contactRows.slice(index, index + batchSize);
+    const { error } = await supabase.from("contact_master").upsert(batch, { onConflict: "company_normalized,contact_type,source" });
     if (error) throw error;
   }
 

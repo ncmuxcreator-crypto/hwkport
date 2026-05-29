@@ -627,10 +627,14 @@ function inferOperatorInfo(v = {}) {
     operatorInferred = true;
   }
 
-  const contactPathAvailable = Boolean(operatorName || currentAgent);
+  const companyContactAvailable = hasValue(v.operator_website || v.operator_url || v.agent_website || v.agent_url || v.operator_email || v.agent_email || v.operator_phone || v.agent_phone || v.contact_email || v.contact_phone);
+  const repeatSignal = Number(v.repeat_operator_score || v.repeat_caller_score || 0) > 0 ? 5 : 0;
+  const contactPathAvailable = Boolean(operatorName || currentAgent || companyContactAvailable);
   const contactReadinessScore = Math.min(100, Math.round(
     (operatorName ? Math.min(55, 20 + Number(operatorConfidence || 0) * 0.35) : 0) +
     (currentAgent ? 35 : 0) +
+    (companyContactAvailable ? 10 : 0) +
+    repeatSignal +
     (manager ? 5 : 0) +
     (owner ? 5 : 0)
   ));
@@ -641,10 +645,16 @@ function inferOperatorInfo(v = {}) {
     operator_inferred: operatorInferred,
     operator_confidence: operatorName ? Math.max(1, Math.min(100, Math.round(operatorConfidence || 60))) : 0,
     operator_source: operatorName ? (operatorSource || "source_field") : "",
+    operator_website: v.operator_website || v.operator_url || "",
+    operator_email: v.operator_email || "",
+    operator_phone: v.operator_phone || "",
     agent_name: currentAgent || "",
     agent: currentAgent || "",
     agent_normalized: normalizedAgent,
     agent_source: currentAgent ? (v.agent_source || (v.satmntEntrpsNm || v.entrpsCdNm ? "port_operation" : "source_field")) : "",
+    agent_website: v.agent_website || v.agent_url || "",
+    agent_email: v.agent_email || "",
+    agent_phone: v.agent_phone || "",
     manager_name: manager || "",
     owner_name: owner || "",
     contact_path_available: contactPathAvailable,

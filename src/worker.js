@@ -78,9 +78,13 @@ function deriveSalesAccessibilityScore(v = {}) {
 
 function deriveContactReadinessScore(v = {}) {
   const accessibility = deriveSalesAccessibilityScore(v);
+  const companyContactAvailable = hasValue(v.operator_website || v.operator_url || v.agent_website || v.agent_url || v.operator_email || v.agent_email || v.operator_phone || v.agent_phone || v.contact_email || v.contact_phone);
+  const repeatSignal = Number(v.repeat_operator_score || v.repeat_caller_score || 0) > 0 ? 5 : 0;
   return Math.min(100, Math.round(
     (accessibility / 5) * 55 +
     (hasValue(v.agent_name || v.agent || v.satmntEntrpsNm || v.entrpsCdNm) ? 35 : 0) +
+    (companyContactAvailable ? 10 : 0) +
+    repeatSignal +
     (hasValue(v.manager_name || v.manager) ? 5 : 0) +
     (hasValue(v.owner_name || v.owner) ? 5 : 0)
   ));
@@ -179,6 +183,9 @@ function normalizeSnapshot(row = {}) {
     operator_inferred: Boolean(merged.operator_inferred),
     operator_confidence: Number(merged.operator_confidence || 0),
     operator_source: merged.operator_source || "",
+    operator_website: merged.operator_website || merged.operator_url || "",
+    operator_email: merged.operator_email || "",
+    operator_phone: merged.operator_phone || "",
     destination: merged.destination || "",
     previous_port: merged.previous_port || "",
     next_port: merged.next_port || "",
@@ -199,6 +206,9 @@ function normalizeSnapshot(row = {}) {
     agent: merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm || "",
     agent_normalized: merged.agent_normalized || normalizeCompanyName(merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm || ""),
     agent_source: merged.agent_source || (merged.satmntEntrpsNm || merged.entrpsCdNm ? "port_operation" : ""),
+    agent_website: merged.agent_website || merged.agent_url || "",
+    agent_email: merged.agent_email || "",
+    agent_phone: merged.agent_phone || "",
     manager_name: merged.manager_name || merged.manager || merged.ship_manager || "",
     owner_name: merged.owner_name || merged.owner || merged.ship_owner || "",
     contact_path_available: Boolean(merged.contact_path_available || merged.operator_name || merged.operator || merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm),
@@ -1343,7 +1353,7 @@ function pageRows(records = [], searchParams = new URLSearchParams()) {
 function vesselGroupRows(allRecords = [], group = "target") {
   const usefulRows = allRecords.filter(v => !isSyntheticSample(v) && hasUsefulVesselIdentity(v));
   const rows = group === "all"
-    ? usefulRows.filter(v => commercialScore(v) < SALES_CANDIDATE_THRESHOLD)
+    ? usefulRows
     : usefulRows.filter(v => commercialScore(v) >= SALES_CANDIDATE_THRESHOLD && !isHardCandidateExcluded(v));
   return sortCommercialPriority(dedupeCandidateRows(rows));
 }
@@ -1367,7 +1377,10 @@ function vesselCsv(records = []) {
     ["vessel_type_group", "선종그룹"],
     ["gt", "GT"],
     ["operator_name", "운영선사"],
+    ["operator_website", "운영선사웹사이트"],
     ["agent_name", "대리점/신고업체"],
+    ["agent_website", "대리점웹사이트"],
+    ["contact_readiness_score", "연락준비도"],
     ["commercial_value_score", "상업가치점수"],
     ["data_confidence_score", "데이터신뢰도"],
     ["congestion_score", "체선점수"],
@@ -1642,7 +1655,8 @@ function buildStatus(records, source) {
   const countFunnel = buildCountFunnel(records, buckets);
   const high = records.filter(v => (v.risk_score || 0) >= 70);
   const displayableRows = buckets.target_vessels.length || records.length;
-  const monitoringVessels = records.filter(v => !isSyntheticSample(v) && hasUsefulVesselIdentity(v) && commercialScore(v) < SALES_CANDIDATE_THRESHOLD);
+  const allDisplayVessels = vesselGroupRows(records, "all");
+  const monitoringVessels = allDisplayVessels.filter(v => commercialScore(v) < SALES_CANDIDATE_THRESHOLD);
   const dataMode = buckets.target_vessels.length ? "supabase_live_snapshot" : records.length ? "supabase_snapshot_no_targets" : "no_live_data";
   const usingSnapshotFallback = Boolean(source.pointer?.fallback_pointer && records.length);
   return {
@@ -1655,6 +1669,7 @@ function buildStatus(records, source) {
     completed_at: new Date().toISOString(),
     record_count: buckets.target_vessels.length,
     all_collected_vessel_count: records.length,
+    all_display_vessel_count: allDisplayVessels.length,
     monitoring_vessel_count: monitoringVessels.length,
     commercial_target_vessel_count: buckets.sales_candidates.length,
     target_vessel_count: buckets.target_vessels.length,
