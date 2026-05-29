@@ -1884,6 +1884,79 @@ function buildImoRecoveryKpis(records = []) {
   };
 }
 
+function confidenceBand(score = 0) {
+  const value = Number(score || 0);
+  if (value >= 80) return "HIGH";
+  if (value >= 60) return "MEDIUM";
+  if (value >= 40) return "LOW";
+  return "UNMATCHED";
+}
+
+function buildMatchingDiagnostics(records = []) {
+  const sourceRows = records.filter(v => v.enrichment_source || v.pilot_source_url || v.berth_data_source || v.pnc_source_url || v.ulsan_source || v.secondary_enrichment_source);
+  const matchedRows = records.filter(v => v.pilot_schedule_matched || v.secondary_enrichment_matched || Number(v.match_score || v.pilot_match_score || v.berth_match_confidence || v.enrichment_confidence || 0) >= 40);
+  const sourceMatched = pattern => matchedRows.filter(v => pattern.test(String([v.enrichment_source, v.pilot_source_url, v.berth_data_source, v.pnc_source_url, v.ulsan_source, v.secondary_enrichment_source, v.source].filter(Boolean).join(" ")).toLowerCase()));
+  const sourceCollected = pattern => sourceRows.filter(v => pattern.test(String([v.enrichment_source, v.pilot_source_url, v.berth_data_source, v.pnc_source_url, v.ulsan_source, v.secondary_enrichment_source, v.source].filter(Boolean).join(" ")).toLowerCase()));
+  const matchScores = matchedRows.map(v => Number(v.match_score || v.pilot_match_score || v.berth_match_confidence || v.enrichment_confidence || 0));
+  const scoreAvg = values => values.length ? Math.round(values.reduce((sum, value) => sum + Number(value || 0), 0) / values.length) : 0;
+  const rate = (matched, total) => total ? Math.round((matched / total) * 100) : 0;
+  const pilotRows = sourceCollected(/pilot|도선/);
+  const pncRows = sourceCollected(/pnc|pnit|newport|busan/);
+  const ulsanRows = sourceCollected(/ulsan|울산/);
+  const berthRows = sourceCollected(/berth|terminal|facility|선석|터미널/);
+  const pilotMatched = sourceMatched(/pilot|도선/);
+  const pncMatched = sourceMatched(/pnc|pnit|newport|busan/);
+  const ulsanMatched = sourceMatched(/ulsan|울산/);
+  const berthMatched = sourceMatched(/berth|terminal|facility|선석|터미널/);
+  return {
+    enrichment_rows_collected: sourceRows.length,
+    enrichment_rows_matched: matchedRows.length,
+    enrichment_rows_unmatched: Math.max(0, sourceRows.length - matchedRows.length),
+    enrichment_match_rate: rate(matchedRows.length, sourceRows.length),
+    enrichment_high_confidence_matches: matchScores.filter(score => score >= 80).length,
+    enrichment_medium_confidence_matches: matchScores.filter(score => score >= 60 && score < 80).length,
+    enrichment_low_confidence_matches: matchScores.filter(score => score >= 40 && score < 60).length,
+    pilot_rows_collected: pilotRows.length,
+    pilot_rows_matched: pilotMatched.length,
+    pilot_match_rate: rate(pilotMatched.length, pilotRows.length),
+    pnc_rows_collected: pncRows.length,
+    pnc_rows_matched: pncMatched.length,
+    pnc_match_rate: rate(pncMatched.length, pncRows.length),
+    ulsan_rows_collected: ulsanRows.length,
+    ulsan_rows_matched: ulsanMatched.length,
+    ulsan_match_rate: rate(ulsanMatched.length, ulsanRows.length),
+    berth_rows_collected: berthRows.length,
+    berth_rows_matched: berthMatched.length,
+    berth_match_rate: rate(berthMatched.length, berthRows.length),
+    match_score_avg: scoreAvg(matchScores),
+    match_memory_ready: true,
+    matching_memory_table: "enrichment_match_candidates",
+    alias_memory_sources: ["berth_aliases.csv", "terminal_aliases.csv", "enrichment_match_candidates"]
+  };
+}
+
+function buildPredictionDiagnostics(records = []) {
+  const predicted = records.filter(v => v.predicted_arrival_time || v.predicted_arrival_pipeline || Number(v.arrival_opportunity_score || 0) > 0);
+  const matched = predicted.filter(v => v.actual_arrival_time || v.ata);
+  const errors = matched
+    .map(v => Number(v.prediction_error_hours ?? derivePredictionAccuracy(v).prediction_error_hours))
+    .filter(Number.isFinite);
+  const avgError = errors.length ? Math.round((errors.reduce((sum, value) => sum + value, 0) / errors.length) * 10) / 10 : null;
+  const routeConfidences = records.map(v => Number(v.route_pattern_confidence || 0)).filter(value => value > 0);
+  const avgRouteConfidence = routeConfidences.length ? Math.round(routeConfidences.reduce((sum, value) => sum + value, 0) / routeConfidences.length) : 0;
+  return {
+    predicted_arrivals_count: predicted.length,
+    predictions_matched_to_actual_count: matched.length,
+    avg_prediction_error_hours: avgError,
+    prediction_accuracy_band: avgError === null ? "insufficient_data" : avgError <= 6 ? "high" : avgError <= 24 ? "medium" : "low",
+    route_pattern_confidence_avg: avgRouteConfidence,
+    route_patterns_known_count: records.filter(v => v.route_pattern_known).length,
+    vessel_route_history_ready_count: records.filter(v => v.previous_port || v.destination_port || v.next_port || v.route_from_port || v.route_to_port).length,
+    predicted_cleaning_opportunity_count: records.filter(v => Number(v.predicted_cleaning_opportunity_score || 0) > 0).length,
+    prediction_feedback_tables: ["predicted_arrivals", "vessel_route_history", "route_patterns"]
+  };
+}
+
 function buildHighValueTargets(records = []) {
   return sortCommercialPriority(records)
     .filter(v => v.high_value_target || (Number(v.gt || 0) >= 30000 && /bulk|bulk_carrier|tanker|pctc/.test(String(v.vessel_type_group || v.vessel_type || "").toLowerCase())))
@@ -2053,6 +2126,15 @@ function buildScoringDiagnostics(records = []) {
     score_50_59_count: scoreRangeCount(50, 59),
     score_40_49_count: scoreRangeCount(40, 49),
     score_0_39_count: scores.filter(score => score < 40).length,
+    score_distribution: {
+      score_90_plus_count: scoreRangeCount(90),
+      score_80_89_count: scoreRangeCount(80, 89),
+      score_70_79_count: scoreRangeCount(70, 79),
+      score_60_69_count: scoreRangeCount(60, 69),
+      score_50_59_count: scoreRangeCount(50, 59),
+      score_40_49_count: scoreRangeCount(40, 49),
+      score_0_39_count: scores.filter(score => score < 40).length
+    },
     total_collected: records.length,
     target_vessels_5000gt_plus: records.filter(v => Number(v.gt || v.grtg || v.intrlGrtg || 0) >= COMMERCIAL_GT_THRESHOLD).length,
     ...buckets,
@@ -2106,14 +2188,11 @@ function buildScoringDiagnostics(records = []) {
       watchlist: "score >= 50 OR top 40% global/port",
       percentile_fallback: "if rank fields are missing, percentile guard fails so target ratio cannot inflate"
     },
-    watchlist_count: records.filter(v => {
-      const score = Number(v.commercial_value_score || v.total_sales_priority_score || 0);
-      return score >= 50 && score < SALES_CANDIDATE_THRESHOLD;
-    }).length,
+    watchlist_count: records.filter(v => !isSalesCandidate(v) && isWatchlistVessel(v)).length,
     immediate_target_count: immediateTargetCount,
     target_ratio: targetRatio,
     immediate_target_ratio: immediateTargetRatio,
-    target_ratio_warning: targetRatio > 30 ? "Target qualification is too broad." : "",
+    target_ratio_warning: targetRatio > 30 ? "영업대상 기준이 너무 넓습니다." : "",
     immediate_target_ratio_warning: immediateTargetRatio > 15 ? "즉시영업후보 기준이 너무 넓습니다." : "",
     global_percentile_distribution: percentileDistribution(records.map(v => v.global_percentile)),
     port_percentile_distribution: percentileDistribution(records.map(v => v.port_percentile)),
@@ -3032,11 +3111,12 @@ try {
   const targetVesselsRaw = allCollectedVessels.filter(isMainCommercialVessel);
   annotateCommercialRanks(targetVesselsRaw);
   for (const vessel of targetVesselsRaw) {
+    const score = Number(vessel.commercial_value_score || vessel.total_sales_priority_score || vessel.cleaning_candidate_score || 0);
     vessel.is_cleaning_candidate = isSalesCandidate(vessel);
     vessel.is_immediate_candidate = isImmediateTarget(vessel);
     vessel.is_operating_candidate = vessel.is_cleaning_candidate;
     vessel.is_operating_immediate_candidate = vessel.is_immediate_candidate;
-    vessel.candidate_band = isImmediateTarget(vessel) ? "immediate_target" : isSalesCandidate(vessel) ? "sales_candidate" : isWatchlistVessel(vessel) ? "watchlist" : "general";
+    vessel.candidate_band = isImmediateTarget(vessel) && score >= CRITICAL_TARGET_THRESHOLD ? "critical" : isImmediateTarget(vessel) ? "immediate_target" : isSalesCandidate(vessel) ? "sales_target" : isWatchlistVessel(vessel) ? "watchlist" : "general";
     vessel.sales_priority_band = vessel.candidate_band;
   }
   const targetVessels = targetVesselsRaw.slice(0, MAX_TARGET_VESSELS);
@@ -3054,8 +3134,10 @@ try {
   const scoredVessels = vessels.filter(v => typeof v.commercial_value_score === "number");
   const salesCandidates = sortCommercialPriority(dedupeCandidateRows(vessels.filter(isSalesCandidate)));
   const immediateTargets = sortCommercialPriority(dedupeCandidateRows(vessels.filter(isImmediateTarget)));
-  const scoringDiagnostics = buildScoringDiagnostics(vessels);
+  const scoringDiagnostics = buildScoringDiagnostics(allCollectedVessels);
   const operatorDiagnostics = buildOperatorDiagnostics(vessels, salesCandidates, immediateTargets);
+  const matchingDiagnostics = buildMatchingDiagnostics(allCollectedVessels);
+  const predictionDiagnostics = buildPredictionDiagnostics(allCollectedVessels);
   const countFunnel = buildCountFunnel({
     rawRecords: collectedRows,
     allCollected: allCollectedVessels,
@@ -3084,6 +3166,8 @@ try {
     immediate_target_count: immediateTargets.length,
     scoring_diagnostics: scoringDiagnostics,
     operator_diagnostics: operatorDiagnostics,
+    matching_diagnostics: matchingDiagnostics,
+    prediction_diagnostics: predictionDiagnostics,
     count_funnel: countFunnel,
     basic_info_coverage: buildBasicInfoCoverage(vessels),
     imo_recovery_kpis: buildImoRecoveryKpis(vessels),
@@ -3144,7 +3228,12 @@ try {
   fs.mkdirSync("dashboard/api/quality", { recursive: true });
   fs.mkdirSync("dashboard/api/review", { recursive: true });
   fs.writeFileSync("dashboard/api/quality/basic-info-coverage.json", JSON.stringify(buildBasicInfoCoverage(vessels), null, 2));
+  fs.writeFileSync("dashboard/api/quality/scoring-diagnostics.json", JSON.stringify(scoringDiagnostics, null, 2));
+  fs.writeFileSync("dashboard/api/quality/matching-diagnostics.json", JSON.stringify(matchingDiagnostics, null, 2));
+  fs.writeFileSync("dashboard/api/quality/imo-recovery.json", JSON.stringify(buildImoRecoveryKpis(vessels), null, 2));
+  fs.writeFileSync("dashboard/api/quality/prediction-feedback.json", JSON.stringify(predictionDiagnostics, null, 2));
   fs.writeFileSync("dashboard/api/review/basic-info-missing.json", JSON.stringify(buildBasicInfoMissingReview(vessels), null, 2));
+  fs.writeFileSync("dashboard/api/predicted-arrivals.json", JSON.stringify(arrivalPipeline, null, 2));
   fs.writeFileSync("dashboard/api/vessels.json", JSON.stringify(vessels, null, 2));
   fs.writeFileSync("data/latest-lite.json", JSON.stringify(vessels, null, 2));
   fs.writeFileSync("dashboard/api/candidates.json", JSON.stringify(candidateList, null, 2));

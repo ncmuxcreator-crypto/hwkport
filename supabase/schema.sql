@@ -224,6 +224,11 @@ create index if not exists idx_vessel_snapshots_route_region on vessel_snapshots
 create index if not exists idx_vessel_snapshots_predicted_arrival_time on vessel_snapshots(predicted_arrival_time);
 create index if not exists idx_vessel_snapshots_lead_priority on vessel_snapshots(lead_priority_score desc);
 create index if not exists idx_vessel_snapshots_predicted_cleaning_opportunity on vessel_snapshots(predicted_cleaning_opportunity_score desc);
+alter table vessel_snapshots add column if not exists global_rank int;
+alter table vessel_snapshots add column if not exists global_percentile numeric;
+alter table vessel_snapshots add column if not exists port_rank int;
+alter table vessel_snapshots add column if not exists port_percentile numeric;
+alter table vessel_snapshots add column if not exists route_pattern_confidence int default 0;
 
 create table if not exists vessel_entities (
   hybrid_entity_key text primary key,
@@ -361,6 +366,7 @@ create table if not exists route_patterns (
   avg_waiting_hours numeric default 0,
   avg_stay_hours numeric default 0,
   congestion_probability int default 0,
+  route_pattern_confidence int default 0,
   observation_count int default 0,
   first_seen timestamptz default now(),
   last_seen timestamptz default now(),
@@ -382,6 +388,10 @@ create table if not exists vessel_route_history (
   route_region text,
   arrival_opportunity_score int default 0,
   predicted_arrival_time timestamptz,
+  actual_arrival_time timestamptz,
+  prediction_error_hours numeric,
+  prediction_confidence int default 0,
+  route_pattern_id text,
   arrival_prediction_confidence int default 0,
   created_at timestamptz default now(),
   payload jsonb default '{}'::jsonb
@@ -398,6 +408,10 @@ create table if not exists predicted_arrivals (
   port_code text,
   port_name text,
   predicted_arrival_time timestamptz,
+  actual_arrival_time timestamptz,
+  prediction_error_hours numeric,
+  prediction_confidence int default 0,
+  route_pattern_id text,
   arrival_prediction_confidence int default 0,
   predicted_congestion int default 0,
   predicted_cleaning_window int default 0,
@@ -415,6 +429,16 @@ create table if not exists predicted_arrivals (
   created_at timestamptz default now(),
   payload jsonb default '{}'::jsonb
 );
+
+alter table route_patterns add column if not exists route_pattern_confidence int default 0;
+alter table vessel_route_history add column if not exists actual_arrival_time timestamptz;
+alter table vessel_route_history add column if not exists prediction_error_hours numeric;
+alter table vessel_route_history add column if not exists prediction_confidence int default 0;
+alter table vessel_route_history add column if not exists route_pattern_id text;
+alter table predicted_arrivals add column if not exists actual_arrival_time timestamptz;
+alter table predicted_arrivals add column if not exists prediction_error_hours numeric;
+alter table predicted_arrivals add column if not exists prediction_confidence int default 0;
+alter table predicted_arrivals add column if not exists route_pattern_id text;
 
 create table if not exists enrichment_match_candidates (
   match_id text primary key,
