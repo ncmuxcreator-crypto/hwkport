@@ -977,13 +977,31 @@ function isBetterSnapshotRepresentative(next = {}, current = {}) {
     (commercialScore(next) === commercialScore(current) && deriveCongestionScore(next) === deriveCongestionScore(current) && Number(next.data_confidence_score || 0) === Number(current.data_confidence_score || 0) && candidateTimestamp(next) > candidateTimestamp(current));
 }
 
+function snapshotRepresentativeKey(record = {}, index = 0) {
+  const portCode = String(record.port_code || portCodeFromName(record.port || record.port_name) || "");
+  if (hasValue(record.port_call_identity)) return `PORTCALL|${portCode}|${record.port_call_identity}`;
+  if (hasValue(record.snapshot_id)) return `SNAPSHOT|${record.snapshot_id}`;
+  if (hasValue(record.master_vessel_id) && hasValue(record.ata || record.eta || record.etryptYear || record.etryptCo)) {
+    return `MASTER_TIME|${record.master_vessel_id}|${portCode}|${record.ata || record.eta || record.etryptYear || ""}|${record.etryptCo || ""}`;
+  }
+  if (hasValue(record.call_sign) && hasValue(record.etryptYear || record.etryptCo)) {
+    return `CALL_PORTCALL|${record.call_sign}|${portCode}|${record.etryptYear || ""}|${record.etryptCo || ""}`;
+  }
+  const normalizedName = String(record.normalized_vessel_name || record.vessel_name || record.name || "")
+    .normalize("NFKC")
+    .toUpperCase()
+    .replace(/[^A-Z0-9가-힣]+/g, "");
+  const time = record.ata || record.eta || record.atd || record.etd || record.collected_at || index;
+  return `NAME_PORT_TIME|${normalizedName || record.hybrid_entity_key || record.vessel_id || `ROW-${index}`}|${portCode}|${time}`;
+}
+
 function latestPerVesselPort(records) {
   const byKey = new Map();
-  for (const record of records) {
-    const key = candidateDedupeKey(record);
+  records.forEach((record, index) => {
+    const key = snapshotRepresentativeKey(record, index);
     const old = byKey.get(key);
     if (!old || isBetterSnapshotRepresentative(record, old)) byKey.set(key, record);
-  }
+  });
   return [...byKey.values()];
 }
 
