@@ -1340,6 +1340,52 @@ function pageRows(records = [], searchParams = new URLSearchParams()) {
   };
 }
 
+function vesselGroupRows(allRecords = [], group = "target") {
+  const usefulRows = allRecords.filter(v => !isSyntheticSample(v) && hasUsefulVesselIdentity(v));
+  const rows = group === "all"
+    ? usefulRows.filter(v => commercialScore(v) < SALES_CANDIDATE_THRESHOLD)
+    : usefulRows.filter(v => commercialScore(v) >= SALES_CANDIDATE_THRESHOLD && !isHardCandidateExcluded(v));
+  return sortCommercialPriority(dedupeCandidateRows(rows));
+}
+
+function csvCell(value) {
+  const text = Array.isArray(value) ? value.join("|") : String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function vesselCsv(records = []) {
+  const columns = [
+    ["vessel_name", "선박명"],
+    ["call_sign", "호출부호"],
+    ["imo", "IMO"],
+    ["mmsi", "MMSI"],
+    ["port_name", "항만"],
+    ["port_code", "항만코드"],
+    ["berth_name", "선석/시설"],
+    ["anchorage_name", "묘박지"],
+    ["vessel_type", "선종"],
+    ["vessel_type_group", "선종그룹"],
+    ["gt", "GT"],
+    ["operator_name", "운영선사"],
+    ["agent_name", "대리점/신고업체"],
+    ["commercial_value_score", "상업가치점수"],
+    ["data_confidence_score", "데이터신뢰도"],
+    ["congestion_score", "체선점수"],
+    ["biofouling_risk_score", "바이오파울링위험도"],
+    ["cii_pressure_score", "CII압박도"],
+    ["stay_hours", "체류시간"],
+    ["anchorage_hours", "묘박시간"],
+    ["status_bucket", "상태"],
+    ["candidate_band", "후보밴드"],
+    ["reason_codes", "후보선정사유"]
+  ];
+  const lines = [columns.map(([, label]) => csvCell(label)).join(",")];
+  for (const record of records) {
+    lines.push(columns.map(([key]) => csvCell(record[key])).join(","));
+  }
+  return `\uFEFF${lines.join("\r\n")}`;
+}
+
 function publicVesselId(v = {}) {
   return encodeURIComponent(String(v.master_vessel_id || v.hybrid_entity_key || v.vessel_id || candidateDedupeKey(v)));
 }
@@ -1610,6 +1656,7 @@ function buildStatus(records, source) {
     record_count: buckets.target_vessels.length,
     all_collected_vessel_count: records.length,
     monitoring_vessel_count: monitoringVessels.length,
+    commercial_target_vessel_count: buckets.sales_candidates.length,
     target_vessel_count: buckets.target_vessels.length,
     staying_vessel_count: buckets.staying_vessels.length,
     arrival_pipeline_count: buckets.arrival_pipeline.length,
@@ -1692,13 +1739,25 @@ async function apiResponse(url, env) {
   if (pathname.endsWith("/review/congestion-watchlist.json")) return json(buildCongestionWatchlist(records), { headers: corsHeaders() });
   if (pathname.endsWith("/quality/basic-info-coverage.json")) return json(buildBasicInfoCoverage(records), { headers: corsHeaders() });
   if (pathname.endsWith("/review/basic-info-missing.json")) return json(buildBasicInfoMissing(records), { headers: corsHeaders() });
+  if (pathname === "/api/vessels.csv" || pathname.endsWith("/vessels.csv")) {
+    const group = String(searchParams.get("group") || "target").toLowerCase();
+    const sourceRows = vesselGroupRows(allRecords, group);
+    return new Response(vesselCsv(sourceRows), {
+      headers: {
+        ...corsHeaders(),
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="hwk-${group === "all" ? "monitoring-vessels" : "sales-target-vessels"}.csv"`
+      }
+    });
+  }
   if (pathname === "/api/vessels" || pathname.endsWith("/vessels.json")) {
     const group = String(searchParams.get("group") || "target").toLowerCase();
-    const usefulRows = allRecords.filter(v => !isSyntheticSample(v) && hasUsefulVesselIdentity(v));
-    const sourceRows = group === "all"
-      ? sortCommercialPriority(dedupeCandidateRows(usefulRows.filter(v => commercialScore(v) < SALES_CANDIDATE_THRESHOLD)))
-      : sortCommercialPriority(dedupeCandidateRows(usefulRows.filter(v => commercialScore(v) >= SALES_CANDIDATE_THRESHOLD && !isHardCandidateExcluded(v))));
-    return json(pageRows(sourceRows, searchParams), { headers: corsHeaders() });
+    const sourceRows = vesselGroupRows(allRecords, group);
+    const groupCounts = {
+      target: vesselGroupRows(allRecords, "target").length,
+      all: vesselGroupRows(allRecords, "all").length
+    };
+    return json({ ...pageRows(sourceRows, searchParams), groupCounts }, { headers: corsHeaders() });
   }
   const vesselMatch = pathname.match(new RegExp("^/api/vessels/([^/]+)$"));
   if (vesselMatch) {
