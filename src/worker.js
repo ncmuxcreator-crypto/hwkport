@@ -453,6 +453,14 @@ function isExplicitlyExcluded(v = {}) {
     v.excluded_from_commercial_targets === true;
 }
 
+function isHardCandidateExcluded(v = {}) {
+  const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
+  return status === "excluded_non_commercial_type" ||
+    status === "excluded_departure_only" ||
+    v.excluded_from_commercial_targets === true ||
+    isSyntheticSample(v);
+}
+
 function isSyntheticSample(v = {}) {
   const text = [v.vessel_name, v.name, v.source_name, v.data_mode, v.payload?.data_mode].filter(Boolean).join(" ").toLowerCase();
   return /sample|demo|yeosu target|mv hf zhoushan|maersk demo/.test(text);
@@ -748,11 +756,11 @@ function deriveCommercialProxyScore(v = {}, scores = {}) {
 }
 
 function isSalesCandidate(v = {}) {
-  return !isExplicitlyExcluded(v) && commercialScore(v) >= SALES_CANDIDATE_THRESHOLD;
+  return !isHardCandidateExcluded(v) && commercialScore(v) >= SALES_CANDIDATE_THRESHOLD;
 }
 
 function isImmediateTarget(v = {}) {
-  return !isExplicitlyExcluded(v) && commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD;
+  return !isHardCandidateExcluded(v) && commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD;
 }
 
 function supabaseBase(env) {
@@ -1502,7 +1510,25 @@ function buildAnchorage(records) {
 }
 
 function buildScoringDiagnostics(records = []) {
+  const buckets = buildVisibilityBuckets(records);
+  const funnel = buildCountFunnel(records, buckets);
+  const scoreBuckets = records.reduce((acc, v) => {
+    const value = commercialScore(v);
+    if (value < 20) acc.score_0_20 += 1;
+    else if (value < 35) acc.score_20_35 += 1;
+    else if (value < SALES_CANDIDATE_THRESHOLD) acc.score_35_50 += 1;
+    else if (value < IMMEDIATE_TARGET_THRESHOLD) acc.score_50_75 += 1;
+    else acc.score_75_plus += 1;
+    return acc;
+  }, { score_0_20: 0, score_20_35: 0, score_35_50: 0, score_50_75: 0, score_75_plus: 0 });
   return {
+    raw_collected_rows: funnel.raw_api_rows,
+    normalized_rows: records.length,
+    all_vessels_count: records.length,
+    target_vessels_count: buckets.target_vessels.length,
+    sales_candidates_count: buckets.sales_candidates.length,
+    immediate_targets_count: buckets.immediate_targets.length,
+    ...scoreBuckets,
     congestion_score_calculated_count: records.filter(v => deriveCongestionScore(v) > 0).length,
     congestion_score_zero_but_stay_exists_count: records.filter(v => (Number(v.stay_hours || v.current_call_stay_hours || v.cumulative_stay_hours || 0) > 0 || Number(v.anchorage_hours || 0) > 0) && deriveCongestionScore(v) <= 0).length,
     anchorage_hours_detected_count: records.filter(v => Number(v.anchorage_hours || 0) > 0).length,

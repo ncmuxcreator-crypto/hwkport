@@ -256,6 +256,19 @@ export async function saveToSupabase(records, options = {}) {
   const diagnostics = options.diagnostics || {};
   const promotion = shouldPromoteRun(records, diagnostics);
   const runStatus = options.status === "failed" ? "failed" : promotion.promotable ? "promotable" : records.length ? "degraded_not_promoted" : "no_live_data";
+  const exclusionReasonCounts = records.reduce((acc, r) => {
+    const score = Number(r.commercial_value_score || r.total_sales_priority_score || r.cleaning_candidate_score || 0);
+    const excluded = r.commercial_relevance_status === "excluded_non_commercial_type" ||
+      r.commercial_relevance_status === "excluded_departure_only" ||
+      r.excluded_from_commercial_targets === true ||
+      /sample|demo|yeosu target|mv hf zhoushan|maersk demo/i.test([r.vessel_name, r.name, r.source, r.source_name, r.data_mode].filter(Boolean).join(" "));
+    if (score >= 50 && excluded) {
+      const reason = r.exclusion_reason || r.commercial_relevance_status || "excluded";
+      acc[reason] = (acc[reason] || 0) + 1;
+    }
+    return acc;
+  }, {});
+  const highScoreNotPromotedCount = Object.values(exclusionReasonCounts).reduce((sum, count) => sum + Number(count || 0), 0);
 
   await supabase.from("data_collection_runs").insert({
     run_id: runId,
@@ -276,6 +289,9 @@ export async function saveToSupabase(records, options = {}) {
     candidates_count: records.filter(r => (r.commercial_value_score || r.total_sales_priority_score || 0) >= 50 || r.is_cleaning_candidate).length,
     sales_candidates_count: records.filter(r => (r.commercial_value_score || r.total_sales_priority_score || 0) >= 50 || r.is_cleaning_candidate).length,
     immediate_targets_count: records.filter(r => (r.commercial_value_score || r.total_sales_priority_score || 0) >= 75 || r.is_immediate_candidate).length,
+    high_score_not_promoted_count: highScoreNotPromotedCount,
+    candidate_promotion_error: highScoreNotPromotedCount > 0,
+    exclusion_reason_counts: exclusionReasonCounts,
     imo_missing_count: records.filter(r => !r.imo).length,
     imo_recovered_count: records.filter(r => r.imo_recovered_from_seed || r.vessel_master_seed_match && r.imo).length,
     high_value_low_confidence_count: records.filter(r => (r.commercial_value_score || 0) >= 35 && ((r.data_confidence_score || 0) < 60 || !r.imo)).length,

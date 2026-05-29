@@ -1099,14 +1099,26 @@ function isExplicitlyExcluded(v = {}) {
     v.excluded_from_commercial_targets === true;
 }
 
+function isSyntheticSample(v = {}) {
+  const text = [v.vessel_name, v.name, v.source, v.source_name, v.data_mode].filter(Boolean).join(" ").toLowerCase();
+  return /sample|demo|yeosu target|mv hf zhoushan|maersk demo/.test(text);
+}
+
+function isHardCandidateExcluded(v = {}) {
+  return v.commercial_relevance_status === "excluded_non_commercial_type" ||
+    v.commercial_relevance_status === "excluded_departure_only" ||
+    v.excluded_from_commercial_targets === true ||
+    isSyntheticSample(v);
+}
+
 function isSalesCandidate(v = {}) {
   const score = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
-  return !isExplicitlyExcluded(v) && score >= SALES_CANDIDATE_THRESHOLD;
+  return !isHardCandidateExcluded(v) && score >= SALES_CANDIDATE_THRESHOLD;
 }
 
 function isImmediateTarget(v = {}) {
   const score = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
-  return !isExplicitlyExcluded(v) && score >= IMMEDIATE_TARGET_THRESHOLD;
+  return !isHardCandidateExcluded(v) && score >= IMMEDIATE_TARGET_THRESHOLD;
 }
 
 function commercialExclusionReason(v = {}) {

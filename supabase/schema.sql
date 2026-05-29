@@ -659,6 +659,10 @@ alter table data_collection_runs add column if not exists unknown_gt_review_coun
 alter table data_collection_runs add column if not exists staying_vessels_count int default 0;
 alter table data_collection_runs add column if not exists arrival_pipeline_count int default 0;
 alter table data_collection_runs add column if not exists sales_candidates_count int default 0;
+alter table data_collection_runs add column if not exists immediate_targets_count int default 0;
+alter table data_collection_runs add column if not exists high_score_not_promoted_count int default 0;
+alter table data_collection_runs add column if not exists candidate_promotion_error boolean default false;
+alter table data_collection_runs add column if not exists exclusion_reason_counts jsonb default '{}'::jsonb;
 alter table data_collection_runs add column if not exists imo_missing_count int default 0;
 alter table data_collection_runs add column if not exists imo_recovered_count int default 0;
 alter table data_collection_runs add column if not exists high_value_low_confidence_count int default 0;
