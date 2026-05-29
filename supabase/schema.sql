@@ -194,9 +194,19 @@ alter table vessel_snapshots add column if not exists work_feasibility_score int
 alter table vessel_snapshots add column if not exists lead_status text default 'monitor';
 alter table vessel_snapshots add column if not exists lead_priority_score int default 0;
 alter table vessel_snapshots add column if not exists why_now text;
+alter table vessel_snapshots add column if not exists candidate_summary_ko text;
 alter table vessel_snapshots add column if not exists sales_angle text;
 alter table vessel_snapshots add column if not exists recommended_next_action text;
+alter table vessel_snapshots add column if not exists recommended_action text;
 alter table vessel_snapshots add column if not exists lead_timeline jsonb default '[]'::jsonb;
+alter table vessel_snapshots add column if not exists last_contacted_at timestamptz;
+alter table vessel_snapshots add column if not exists follow_up_due timestamptz;
+alter table vessel_snapshots add column if not exists quote_status text default 'not_started';
+alter table vessel_snapshots add column if not exists notes text;
+alter table vessel_snapshots add column if not exists actual_arrival_time timestamptz;
+alter table vessel_snapshots add column if not exists prediction_error_hours numeric;
+alter table vessel_snapshots add column if not exists alert_candidate boolean default false;
+alter table vessel_snapshots add column if not exists information_enrichment_needed boolean default false;
 alter table vessel_snapshots drop constraint if exists vessel_snapshots_snapshot_date_vessel_id_port_key;
 create index if not exists idx_vessel_snapshots_hybrid_entity_key on vessel_snapshots(hybrid_entity_key);
 create index if not exists idx_vessel_snapshots_collected_at on vessel_snapshots(collected_at desc);
@@ -411,9 +421,19 @@ create table if not exists commercial_leads (
   anchorage_probability int default 0,
   predicted_congestion_score int default 0,
   why_now text,
+  candidate_summary_ko text,
   sales_angle text,
   recommended_next_action text,
+  recommended_action text,
   lead_timeline jsonb default '[]'::jsonb,
+  last_contacted_at timestamptz,
+  follow_up_due timestamptz,
+  quote_status text default 'not_started',
+  notes text,
+  actual_arrival_time timestamptz,
+  prediction_error_hours numeric,
+  alert_candidate boolean default false,
+  information_enrichment_needed boolean default false,
   payload jsonb default '{}'::jsonb,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -606,6 +626,18 @@ create index if not exists idx_commercial_leads_priority on commercial_leads(lea
 alter table commercial_leads add column if not exists predicted_cleaning_opportunity_score int default 0;
 alter table commercial_leads add column if not exists anchorage_probability int default 0;
 alter table commercial_leads add column if not exists predicted_congestion_score int default 0;
+alter table commercial_leads add column if not exists candidate_summary_ko text;
+alter table commercial_leads add column if not exists recommended_action text;
+alter table commercial_leads add column if not exists last_contacted_at timestamptz;
+alter table commercial_leads add column if not exists follow_up_due timestamptz;
+alter table commercial_leads add column if not exists quote_status text default 'not_started';
+alter table commercial_leads add column if not exists notes text;
+alter table commercial_leads add column if not exists actual_arrival_time timestamptz;
+alter table commercial_leads add column if not exists prediction_error_hours numeric;
+alter table commercial_leads add column if not exists alert_candidate boolean default false;
+alter table commercial_leads add column if not exists information_enrichment_needed boolean default false;
+create index if not exists idx_commercial_leads_follow_up_due on commercial_leads(follow_up_due);
+create index if not exists idx_commercial_leads_alert on commercial_leads(alert_candidate);
 alter table predicted_arrivals add column if not exists predicted_congestion_score int default 0;
 alter table predicted_arrivals add column if not exists congestion_forecast_band text;
 alter table predicted_arrivals add column if not exists anchorage_probability int default 0;

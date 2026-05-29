@@ -305,9 +305,19 @@ function normalizeSnapshot(row = {}) {
     lead_status: merged.lead_status || deriveLeadStatus(merged, leadPriorityScore),
     lead_priority_score: leadPriorityScore,
     why_now: merged.why_now || deriveWhyNow(merged),
+    candidate_summary_ko: merged.candidate_summary_ko || deriveCandidateSummaryKo(merged),
     sales_angle: merged.sales_angle || deriveSalesAngle(merged),
     recommended_next_action: merged.recommended_next_action || deriveRecommendedNextAction(merged, leadPriorityScore),
+    recommended_action: merged.recommended_action || merged.recommended_next_action || deriveRecommendedNextAction(merged, leadPriorityScore),
     lead_timeline: Array.isArray(merged.lead_timeline) ? merged.lead_timeline : deriveLeadTimeline(merged),
+    last_contacted_at: merged.last_contacted_at || "",
+    follow_up_due: merged.follow_up_due || "",
+    quote_status: merged.quote_status || "not_started",
+    notes: merged.notes || "",
+    actual_arrival_time: merged.actual_arrival_time || merged.ata || "",
+    prediction_error_hours: merged.prediction_error_hours ?? derivePredictionErrorHours(merged),
+    alert_candidate: Boolean(merged.alert_candidate || isAlertCandidate(merged)),
+    information_enrichment_needed: Boolean(merged.information_enrichment_needed || (Math.max(Number(merged.commercial_value_score || merged.total_sales_priority_score || 0), candidateScore) >= SALES_CANDIDATE_THRESHOLD && Number(merged.data_confidence_score || 0) < 60)),
     commercial_value_band: merged.commercial_value_band || merged.sales_priority_band || "low_priority",
     data_confidence_score: Number(merged.data_confidence_score || 0),
     data_confidence_band: merged.data_confidence_band || "review",
@@ -575,6 +585,36 @@ function deriveWhyNow(v = {}) {
   return parts.length
     ? `${parts.slice(0, 3).join(" · ")} 때문에 지금 영업 판단이 필요합니다.`
     : "상업 점수와 항만 체류 신호를 기준으로 모니터링이 필요합니다.";
+}
+
+function deriveCandidateSummaryKo(v = {}) {
+  const pieces = [];
+  if (Number(v.gt || v.grtg || v.intrlGrtg || 0) >= 50000) pieces.push("대형 상선");
+  if (v.is_anchorage_waiting || Number(v.anchorage_hours || 0) >= 24) pieces.push("묘박/대기 신호");
+  if (Number(v.stay_hours || v.current_call_stay_hours || 0) >= 48 && !v.atd) pieces.push("장기 체류");
+  if (Number(v.predicted_cleaning_opportunity_score || 0) >= 60) pieces.push("예측 작업 기회");
+  if (highRegulationRoute(v)) pieces.push("민감 항로");
+  if (v.contact_path_available || v.agent_name || v.agent) pieces.push("연락 경로 확인");
+  return pieces.length ? `${pieces.slice(0, 4).join(" · ")} 기반 영업 후보입니다.` : "상업 점수 기준으로 모니터링이 필요한 선박입니다.";
+}
+
+function parseDate(value) {
+  if (!value) return null;
+  const parsed = new Date(String(value).replace(" ", "T"));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function derivePredictionErrorHours(v = {}) {
+  const predicted = parseDate(v.predicted_arrival_time);
+  const actual = parseDate(v.actual_arrival_time || v.ata);
+  return predicted && actual ? Math.round(Math.abs(actual.getTime() - predicted.getTime()) / 36e5 * 10) / 10 : null;
+}
+
+function isAlertCandidate(v = {}) {
+  return Number(v.gt || v.grtg || v.intrlGrtg || 0) >= 50000 ||
+    Number(v.anchorage_hours || 0) >= 48 ||
+    commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD ||
+    (String(v.pilot_direction || v.movement_type || "").toLowerCase() !== "outbound" && !v.outbound_pilot_scheduled && Number(v.predicted_cleaning_opportunity_score || 0) >= 60);
 }
 
 function deriveRecommendedNextAction(v = {}, leadPriorityScore = deriveLeadPriorityScore(v)) {
@@ -1152,6 +1192,7 @@ function buildLeadPipeline(records = []) {
         lead_priority_score: leadPriorityScore,
         lead_status: v.lead_status || deriveLeadStatus(v, leadPriorityScore),
         why_now: v.why_now || deriveWhyNow(v),
+        candidate_summary_ko: v.candidate_summary_ko || deriveCandidateSummaryKo(v),
         sales_angle: v.sales_angle || deriveSalesAngle(v),
         recommended_next_action: v.recommended_next_action || deriveRecommendedNextAction(v, leadPriorityScore),
         lead_timeline: Array.isArray(v.lead_timeline) ? v.lead_timeline : deriveLeadTimeline(v)
@@ -1192,15 +1233,45 @@ function buildLeadPipeline(records = []) {
       lead_priority_score: Number(v.lead_priority_score || 0),
       lead_status: v.lead_status || "monitor",
       why_now: v.why_now || "",
+      candidate_summary_ko: v.candidate_summary_ko || "",
       sales_angle: v.sales_angle || "",
       recommended_next_action: v.recommended_next_action || "",
+      recommended_action: v.recommended_action || v.recommended_next_action || "",
       lead_timeline: v.lead_timeline || [],
+      last_contacted_at: v.last_contacted_at || "",
+      follow_up_due: v.follow_up_due || "",
+      quote_status: v.quote_status || "not_started",
+      notes: v.notes || "",
+      actual_arrival_time: v.actual_arrival_time || v.ata || "",
+      prediction_error_hours: v.prediction_error_hours ?? null,
+      alert_candidate: Boolean(v.alert_candidate),
+      information_enrichment_needed: Boolean(v.information_enrichment_needed),
       eta: v.eta || v.eta_candidate || "",
       etb: v.etb || v.etb_candidate || "",
       etd: v.etd || v.etd_candidate || "",
       atd: v.atd || "",
       pilot_time: v.pilot_time || v.movement_time || "",
       work_window_hours: Number(v.work_window_hours || 0),
+      reason_codes: v.reason_codes || []
+    }));
+}
+
+function buildAlertCandidates(records = []) {
+  return sortCommercialPriority(dedupeCandidateRows(records.filter(isAlertCandidate)))
+    .slice(0, 100)
+    .map(v => ({
+      vessel_name: v.vessel_name,
+      port: v.port,
+      port_code: v.port_code,
+      gt: v.gt,
+      anchorage_hours: v.anchorage_hours || 0,
+      commercial_value_score: commercialScore(v),
+      predicted_cleaning_opportunity_score: Number(v.predicted_cleaning_opportunity_score || 0),
+      outbound_pilot_scheduled: Boolean(v.outbound_pilot_scheduled),
+      why_now: v.why_now || deriveWhyNow(v),
+      candidate_summary_ko: v.candidate_summary_ko || deriveCandidateSummaryKo(v),
+      recommended_action: v.recommended_action || v.recommended_next_action || deriveRecommendedNextAction(v),
+      information_enrichment_needed: Boolean(v.information_enrichment_needed),
       reason_codes: v.reason_codes || []
     }));
 }
@@ -1243,6 +1314,7 @@ function buildDashboardSummary(allRecords = [], source = {}) {
     immediate_targets: immediateTargets,
     opportunities,
     lead_pipeline: buildLeadPipeline(allRecords).slice(0, 8),
+    alert_candidates: buildAlertCandidates(allRecords).slice(0, 5),
     congestion_summary: buildPortHeatmap(buckets.target_vessels).slice(0, 12),
     candidate_counts: {
       target_vessels: buckets.target_vessels.length,
@@ -1408,7 +1480,19 @@ function buildScoringDiagnostics(records = []) {
     repeat_caller_signal_count: records.filter(v => Number(v.repeat_caller_score || 0) > 0).length,
     repeat_operator_signal_count: records.filter(v => Number(v.repeat_operator_score || 0) > 0).length,
     biofouling_exposure_nonzero_count: records.filter(v => Number(v.biofouling_exposure_score || 0) > 0).length,
-    predicted_cleaning_opportunity_nonzero_count: records.filter(v => Number(v.predicted_cleaning_opportunity_score || 0) > 0).length
+    predicted_cleaning_opportunity_nonzero_count: records.filter(v => Number(v.predicted_cleaning_opportunity_score || 0) > 0).length,
+    alert_candidate_count: records.filter(isAlertCandidate).length,
+    information_enrichment_needed_count: records.filter(v => v.information_enrichment_needed).length,
+    high_score_not_promoted_count: records.filter(v => commercialScore(v) >= SALES_CANDIDATE_THRESHOLD && !isSalesCandidate(v)).length,
+    candidate_promotion_error: records.some(v => commercialScore(v) >= SALES_CANDIDATE_THRESHOLD && !isSalesCandidate(v) && !v.exclusion_reason),
+    exclusion_reason_counts: records.reduce((acc, v) => {
+      if (commercialScore(v) >= SALES_CANDIDATE_THRESHOLD && !isSalesCandidate(v)) {
+        const reason = v.exclusion_reason || exclusionReason(v) || "unknown";
+        acc[reason] = (acc[reason] || 0) + 1;
+      }
+      return acc;
+    }, {}),
+    prediction_error_measured_count: records.filter(v => Number.isFinite(Number(v.prediction_error_hours))).length
   };
 }
 
@@ -1523,6 +1607,7 @@ async function apiResponse(url, env) {
   if (pathname.endsWith("/arrival-pipeline.json")) return json(buckets.arrival_pipeline, { headers: corsHeaders() });
   if (pathname.endsWith("/predicted-arrivals.json")) return json(buildPredictedArrivals(allRecords), { headers: corsHeaders() });
   if (pathname.endsWith("/lead-pipeline.json")) return json(buildLeadPipeline(allRecords), { headers: corsHeaders() });
+  if (pathname.endsWith("/alert-candidates.json")) return json(buildAlertCandidates(allRecords), { headers: corsHeaders() });
   if (pathname.endsWith("/pilot-only-arrival-review.json") || pathname.endsWith("/review/pilot-only-arrivals.json")) return json(buckets.pilot_only_arrival_review, { headers: corsHeaders() });
   if (pathname.endsWith("/imo-recovery-queue.json")) return json(buildUnknownImo(records), { headers: corsHeaders() });
   if (pathname.endsWith("/imo-recovery-priority.json")) return json(buildUnknownImo(records), { headers: corsHeaders() });
