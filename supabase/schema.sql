@@ -229,6 +229,7 @@ alter table vessel_snapshots add column if not exists candidate_summary_ko text;
 alter table vessel_snapshots add column if not exists sales_angle text;
 alter table vessel_snapshots add column if not exists recommended_next_action text;
 alter table vessel_snapshots add column if not exists recommended_action text;
+alter table vessel_snapshots add column if not exists action_priority text default 'LOW';
 alter table vessel_snapshots add column if not exists lead_timeline jsonb default '[]'::jsonb;
 alter table vessel_snapshots add column if not exists last_contacted_at timestamptz;
 alter table vessel_snapshots add column if not exists follow_up_due timestamptz;
@@ -648,6 +649,7 @@ create table if not exists commercial_leads (
   sales_angle text,
   recommended_next_action text,
   recommended_action text,
+  action_priority text default 'LOW',
   lead_timeline jsonb default '[]'::jsonb,
   last_contacted_at timestamptz,
   follow_up_due timestamptz,
@@ -871,6 +873,7 @@ alter table commercial_leads add column if not exists repeat_operator_count int 
 alter table commercial_leads add column if not exists fleet_opportunity_score int default 0;
 alter table commercial_leads add column if not exists candidate_summary_ko text;
 alter table commercial_leads add column if not exists recommended_action text;
+alter table commercial_leads add column if not exists action_priority text default 'LOW';
 alter table commercial_leads add column if not exists last_contacted_at timestamptz;
 alter table commercial_leads add column if not exists follow_up_due timestamptz;
 alter table commercial_leads add column if not exists quote_status text default 'not_started';

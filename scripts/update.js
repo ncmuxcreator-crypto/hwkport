@@ -1566,13 +1566,32 @@ function deriveWhyNow(v = {}, metrics = {}) {
 function deriveRecommendedNextAction(v = {}, leadPriorityScore = 0) {
   const outboundSoon = String(v.pilot_direction || v.movement_type || "").toLowerCase() === "outbound" || (v.etd && !v.atd && Number(v.work_window_hours || 0) <= 12);
   const score = Number(v.commercial_value_score || v.total_sales_priority_score || 0);
-  const contactKnown = v.agent_name || v.agent || v.operator_name || v.operator;
-  if (!v.agent_name && !v.agent) return score >= IMMEDIATE_TARGET_THRESHOLD ? "대리점 확인 후 견적 제안" : "대리점 확인";
-  if (!v.operator_name && !v.operator) return score >= IMMEDIATE_TARGET_THRESHOLD ? "운영선사 확인 후 견적 제안" : "운영선사 확인";
+  const contactReadiness = Number(v.contact_readiness_score || 0);
+  const workFeasibility = Number(v.work_feasibility_score || v.cleaning_window_score || 0);
+  const arrivalWindow = Number(v.predicted_arrival_window_hours);
+  const hasAgent = Boolean(v.agent_name || v.agent);
+  const hasOperator = Boolean(v.operator_name || v.operator);
   if (outboundSoon) return "도선/출항 전 재확인";
-  if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD || (score >= IMMEDIATE_TARGET_THRESHOLD && contactKnown)) return "대리점 확인 후 견적 제안";
+  if (Number.isFinite(arrivalWindow) && arrivalWindow > 0 && arrivalWindow <= 48) return "ETA 48h 전 연락";
+  if (!hasAgent) return "대리점 확인";
+  if (!hasOperator) return "운영선사 확인";
+  if (score >= IMMEDIATE_TARGET_THRESHOLD && contactReadiness >= 60 && workFeasibility >= 50) return "견적 발송";
+  if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD || score >= IMMEDIATE_TARGET_THRESHOLD) return "대리점 확인 후 견적 제안";
   if (score >= SALES_CANDIDATE_THRESHOLD) return "선박 스케줄 확인 후 영업 검토";
   return "선박 스케줄 확인";
+}
+
+function deriveActionPriority(v = {}, action = "") {
+  const score = Number(v.commercial_value_score || v.total_sales_priority_score || 0);
+  const workFeasibility = Number(v.work_feasibility_score || v.cleaning_window_score || 0);
+  const contactReadiness = Number(v.contact_readiness_score || 0);
+  const arrivalWindow = Number(v.predicted_arrival_window_hours);
+  if (/견적 발송|출항 전 재확인/.test(action)) return "HIGH";
+  if (score >= IMMEDIATE_TARGET_THRESHOLD && (workFeasibility >= 50 || contactReadiness >= 60)) return "HIGH";
+  if (Number.isFinite(arrivalWindow) && arrivalWindow > 0 && arrivalWindow <= 48) return "HIGH";
+  if (/대리점 확인|운영선사 확인|ETA 48h 전 연락/.test(action)) return "MEDIUM";
+  if (score >= SALES_CANDIDATE_THRESHOLD) return "MEDIUM";
+  return "LOW";
 }
 
 function deriveLeadTimeline(v = {}, metrics = {}) {
@@ -1622,6 +1641,7 @@ function deriveLeadPipelineFields(v = {}, metrics = {}) {
     workFeasibilityScore * 0.25
   );
   const autoLeadCreated = commercialValueScore >= IMMEDIATE_TARGET_THRESHOLD;
+  const recommendedAction = deriveRecommendedNextAction(v, leadPriorityScore);
   return {
     work_feasibility_score: workFeasibilityScore,
     lead_priority_score: leadPriorityScore,
@@ -1631,7 +1651,9 @@ function deriveLeadPipelineFields(v = {}, metrics = {}) {
     why_now: deriveWhyNow(v, metrics),
     candidate_summary_ko: deriveCandidateSummaryKo(v),
     sales_angle: deriveSalesAngle(v, metrics),
-    recommended_next_action: deriveRecommendedNextAction(v, leadPriorityScore),
+    recommended_next_action: recommendedAction,
+    recommended_action: recommendedAction,
+    action_priority: deriveActionPriority(v, recommendedAction),
     lead_timeline: deriveLeadTimeline(v, metrics),
     ...derivePredictionAccuracy(v),
     alert_candidate: isAlertCandidate(v),

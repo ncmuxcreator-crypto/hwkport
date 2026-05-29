@@ -410,6 +410,7 @@ function normalizeSnapshot(row = {}) {
   const routeBonus = Number(merged.route_bonus || deriveRouteBonus(merged));
   const biofoulingExposure = deriveBiofoulingExposureEngine(merged);
   const predictedCleaningOpportunityScore = Number(merged.predicted_cleaning_opportunity_score || derivePredictedCleaningOpportunityScore({ ...merged, route_bonus: routeBonus, biofouling_exposure_score: biofoulingExposure.biofouling_exposure_score }));
+  const recommendedAction = merged.recommended_action || merged.recommended_next_action || deriveRecommendedNextAction(merged, leadPriorityScore);
   return {
     vessel_id: merged.vessel_id,
     vessel_name: merged.vessel_name,
@@ -596,8 +597,9 @@ function normalizeSnapshot(row = {}) {
     why_now: merged.why_now || deriveWhyNow(merged),
     candidate_summary_ko: merged.candidate_summary_ko || deriveCandidateSummaryKo(merged),
     sales_angle: merged.sales_angle || deriveSalesAngle(merged),
-    recommended_next_action: merged.recommended_next_action || deriveRecommendedNextAction(merged, leadPriorityScore),
-    recommended_action: merged.recommended_action || merged.recommended_next_action || deriveRecommendedNextAction(merged, leadPriorityScore),
+    recommended_next_action: recommendedAction,
+    recommended_action: recommendedAction,
+    action_priority: merged.action_priority || deriveActionPriority(merged, recommendedAction),
     lead_timeline: Array.isArray(merged.lead_timeline) ? merged.lead_timeline : deriveLeadTimeline(merged),
     last_contacted_at: merged.last_contacted_at || "",
     follow_up_due: merged.follow_up_due || "",
@@ -1282,13 +1284,30 @@ function isAlertCandidate(v = {}) {
 function deriveRecommendedNextAction(v = {}, leadPriorityScore = deriveLeadPriorityScore(v)) {
   const outboundSoon = String(v.pilot_direction || v.movement_type || "").toLowerCase() === "outbound" || (v.etd && !v.atd && Number(v.work_window_hours || 0) <= 12);
   const score = commercialScore(v);
-  const contactKnown = hasValue(v.agent_name || v.agent || v.operator_name || v.operator);
-  if (!hasValue(v.agent_name || v.agent)) return score >= IMMEDIATE_TARGET_THRESHOLD ? "대리점 확인 후 견적 제안" : "대리점 확인";
-  if (!hasValue(v.operator_name || v.operator)) return score >= IMMEDIATE_TARGET_THRESHOLD ? "운영선사 확인 후 견적 제안" : "운영선사 확인";
+  const contactReadiness = Number(v.contact_readiness_score || 0);
+  const workFeasibility = Number(v.work_feasibility_score || v.cleaning_window_score || 0);
+  const arrivalWindow = Number(v.predicted_arrival_window_hours);
   if (outboundSoon) return "도선/출항 전 재확인";
-  if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD || (score >= IMMEDIATE_TARGET_THRESHOLD && contactKnown)) return "대리점 확인 후 견적 제안";
+  if (Number.isFinite(arrivalWindow) && arrivalWindow > 0 && arrivalWindow <= 48) return "ETA 48h 전 연락";
+  if (!hasValue(v.agent_name || v.agent)) return "대리점 확인";
+  if (!hasValue(v.operator_name || v.operator)) return "운영선사 확인";
+  if (score >= IMMEDIATE_TARGET_THRESHOLD && contactReadiness >= 60 && workFeasibility >= 50) return "견적 발송";
+  if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD || score >= IMMEDIATE_TARGET_THRESHOLD) return "대리점 확인 후 견적 제안";
   if (score >= SALES_CANDIDATE_THRESHOLD) return "선박 스케줄 확인 후 영업 검토";
   return "선박 스케줄 확인";
+}
+
+function deriveActionPriority(v = {}, action = "") {
+  const score = commercialScore(v);
+  const workFeasibility = Number(v.work_feasibility_score || v.cleaning_window_score || 0);
+  const contactReadiness = Number(v.contact_readiness_score || 0);
+  const arrivalWindow = Number(v.predicted_arrival_window_hours);
+  if (/견적 발송|출항 전 재확인/.test(action)) return "HIGH";
+  if (score >= IMMEDIATE_TARGET_THRESHOLD && (workFeasibility >= 50 || contactReadiness >= 60)) return "HIGH";
+  if (Number.isFinite(arrivalWindow) && arrivalWindow > 0 && arrivalWindow <= 48) return "HIGH";
+  if (/대리점 확인|운영선사 확인|ETA 48h 전 연락/.test(action)) return "MEDIUM";
+  if (score >= SALES_CANDIDATE_THRESHOLD) return "MEDIUM";
+  return "LOW";
 }
 
 function deriveLeadTimeline(v = {}) {
@@ -2189,7 +2208,9 @@ function buildLeadPipeline(records = []) {
         why_now: v.why_now || deriveWhyNow(v),
         candidate_summary_ko: v.candidate_summary_ko || deriveCandidateSummaryKo(v),
         sales_angle: v.sales_angle || deriveSalesAngle(v),
-        recommended_next_action: v.recommended_next_action || deriveRecommendedNextAction(v, leadPriorityScore),
+        recommended_next_action: v.recommended_next_action || v.recommended_action || deriveRecommendedNextAction(v, leadPriorityScore),
+        recommended_action: v.recommended_action || v.recommended_next_action || deriveRecommendedNextAction(v, leadPriorityScore),
+        action_priority: v.action_priority || deriveActionPriority(v, v.recommended_action || v.recommended_next_action || deriveRecommendedNextAction(v, leadPriorityScore)),
         lead_timeline: Array.isArray(v.lead_timeline) ? v.lead_timeline : deriveLeadTimeline(v)
       };
     })
@@ -2238,6 +2259,7 @@ function buildLeadPipeline(records = []) {
       sales_angle: v.sales_angle || "",
       recommended_next_action: v.recommended_next_action || "",
       recommended_action: v.recommended_action || v.recommended_next_action || "",
+      action_priority: v.action_priority || deriveActionPriority(v, v.recommended_action || v.recommended_next_action || ""),
       lead_timeline: v.lead_timeline || [],
       last_contacted_at: v.last_contacted_at || "",
       follow_up_due: v.follow_up_due || "",
