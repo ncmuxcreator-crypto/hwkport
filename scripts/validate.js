@@ -268,7 +268,7 @@ if (!worker.includes("vessel_snapshots") || !worker.includes("SUPABASE_URL") || 
 if (!worker.includes("cumulative_stay_hours") || !worker.includes("CUMULATIVE_STAY_90D_PLUS")) {
   throw new Error("Worker must preserve cumulative stay beyond short port-call windows");
 }
-for (const route of ["/ports.json", "/candidates.json", "/hot-candidates.json", "/target-vessels.json", "/staying-vessels.json", "/arrival-pipeline.json", "/predicted-arrivals.json", "/lead-pipeline.json", "/imo-recovery-queue.json", "/high-value-targets.json", "/review/unknown-gt.json", "/review/high-value-low-confidence.json", "/review/congestion-watchlist.json", "target-vessels|staying-vessels|arrivals", "/api/ports/", "congestion", "anchorage", "/master/unknown-imo.json", "active_dataset_pointer"]) {
+for (const route of ["/dashboard-summary.json", "/api/vessels/", "pageRows", "/candidates/top.json", "/ports.json", "/candidates.json", "/hot-candidates.json", "/target-vessels.json", "/staying-vessels.json", "/arrival-pipeline.json", "/predicted-arrivals.json", "/lead-pipeline.json", "/imo-recovery-queue.json", "/high-value-targets.json", "/review/unknown-gt.json", "/review/high-value-low-confidence.json", "/review/congestion-watchlist.json", "target-vessels|staying-vessels|arrivals", "/api/ports/", "congestion", "anchorage", "/master/unknown-imo.json", "active_dataset_pointer"]) {
   if (!worker.includes(route)) throw new Error(`Worker missing port-first API route marker: ${route}`);
 }
 const referenceDictionaries = fs.readFileSync("scripts/lib/reference-dictionaries.js", "utf8");

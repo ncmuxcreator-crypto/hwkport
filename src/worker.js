@@ -1205,6 +1205,55 @@ function buildLeadPipeline(records = []) {
     }));
 }
 
+function pageRows(records = [], searchParams = new URLSearchParams()) {
+  const page = Math.max(1, Number(searchParams.get("page") || 1));
+  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || searchParams.get("limit") || 50)));
+  const start = (page - 1) * pageSize;
+  return {
+    page,
+    pageSize,
+    total: records.length,
+    totalPages: Math.max(1, Math.ceil(records.length / pageSize)),
+    data: records.slice(start, start + pageSize)
+  };
+}
+
+function publicVesselId(v = {}) {
+  return encodeURIComponent(String(v.master_vessel_id || v.hybrid_entity_key || v.vessel_id || candidateDedupeKey(v)));
+}
+
+function findVesselById(records = [], vesselId = "") {
+  const decoded = decodeURIComponent(vesselId || "");
+  return records.find(v => [
+    v.master_vessel_id,
+    v.hybrid_entity_key,
+    v.vessel_id,
+    candidateDedupeKey(v)
+  ].some(value => String(value || "") === decoded));
+}
+
+function buildDashboardSummary(allRecords = [], source = {}) {
+  const buckets = buildVisibilityBuckets(allRecords);
+  const immediateTargets = sortCommercialPriority(buckets.immediate_targets).slice(0, 5);
+  const immediateKeys = new Set(immediateTargets.map(candidateDedupeKey));
+  const opportunities = sortCommercialPriority(buckets.sales_candidates.filter(v => !immediateKeys.has(candidateDedupeKey(v)))).slice(0, 5);
+  return {
+    status: buildStatus(allRecords, source),
+    ports: buildPorts(buckets.target_vessels),
+    immediate_targets: immediateTargets,
+    opportunities,
+    lead_pipeline: buildLeadPipeline(allRecords).slice(0, 8),
+    congestion_summary: buildPortHeatmap(buckets.target_vessels).slice(0, 12),
+    candidate_counts: {
+      target_vessels: buckets.target_vessels.length,
+      sales_candidates: buckets.sales_candidates.length,
+      immediate_targets: buckets.immediate_targets.length,
+      staying_vessels: buckets.staying_vessels.length,
+      arrival_pipeline: buckets.arrival_pipeline.length
+    }
+  };
+}
+
 function portCodeFromName(port = "") {
   const text = String(port || "").toLowerCase();
   if (/busan|부산/.test(text)) return "020";
@@ -1459,11 +1508,14 @@ function buildStatus(records, source) {
   };
 }
 
-async function apiResponse(pathname, env) {
+async function apiResponse(url, env) {
+  const pathname = typeof url === "string" ? url : url.pathname;
+  const searchParams = typeof url === "string" ? new URLSearchParams() : url.searchParams;
   const source = await fetchSupabaseRows(env);
   const allRecords = latestPerVesselPort(source.rows);
   const buckets = buildVisibilityBuckets(allRecords);
   const records = buckets.target_vessels;
+  if (pathname.endsWith("/dashboard-summary.json")) return json(buildDashboardSummary(allRecords, source), { headers: corsHeaders() });
   if (pathname.endsWith("/status.json")) return json(buildStatus(allRecords, source), { headers: corsHeaders() });
   if (pathname.endsWith("/all-collected-vessels.json")) return json(allRecords, { headers: corsHeaders() });
   if (pathname.endsWith("/target-vessels.json")) return json(buckets.target_vessels, { headers: corsHeaders() });
@@ -1480,8 +1532,17 @@ async function apiResponse(pathname, env) {
   if (pathname.endsWith("/review/congestion-watchlist.json")) return json(buildCongestionWatchlist(records), { headers: corsHeaders() });
   if (pathname.endsWith("/quality/basic-info-coverage.json")) return json(buildBasicInfoCoverage(records), { headers: corsHeaders() });
   if (pathname.endsWith("/review/basic-info-missing.json")) return json(buildBasicInfoMissing(records), { headers: corsHeaders() });
-  if (pathname.endsWith("/vessels.json")) return json(records, { headers: corsHeaders() });
+  if (pathname === "/api/vessels" || pathname.endsWith("/vessels.json")) return json(pageRows(records, searchParams), { headers: corsHeaders() });
+  const vesselMatch = pathname.match(new RegExp("^/api/vessels/([^/]+)$"));
+  if (vesselMatch) {
+    const vessel = findVesselById(allRecords, vesselMatch[1]);
+    return json(vessel || { error: "not_found" }, { status: vessel ? 200 : 404, headers: corsHeaders() });
+  }
   if (pathname.endsWith("/candidates.json")) return json(buckets.sales_candidates, { headers: corsHeaders() });
+  if (pathname.endsWith("/candidates/top.json")) return json({
+    immediate_targets: sortCommercialPriority(buckets.immediate_targets).slice(0, 5),
+    opportunities: sortCommercialPriority(buckets.sales_candidates.filter(v => !isImmediateTarget(v))).slice(0, 5)
+  }, { headers: corsHeaders() });
   if (pathname.endsWith("/hot-candidates.json")) return json(buckets.immediate_targets, { headers: corsHeaders() });
   if (pathname.endsWith("/master/unknown-imo.json")) return json(buildUnknownImo(records), { headers: corsHeaders() });
   if (pathname.endsWith("/ports.json")) return json(buildPorts(records), { headers: corsHeaders() });
@@ -1509,7 +1570,7 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) {
-      const response = await apiResponse(url.pathname, env);
+      const response = await apiResponse(url, env);
       if (response) return response;
     }
     return env.ASSETS.fetch(request);
