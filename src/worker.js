@@ -541,7 +541,6 @@ function deriveStatusBucket(v = {}) {
 function deriveCommercialRelevance(v = {}) {
   const typeText = `${v.vessel_type || ""} ${v.vessel_name || ""}`.toLowerCase();
   if (/fishing|fishery|trawler|tug|pilot|patrol|government|navy|coast guard|workboat|barge|dredger|어선|예선|관공선|작업선|준설|순찰|해경/.test(typeText)) return "excluded_non_commercial_type";
-  if ((v.status_bucket || deriveStatusBucket(v)) === "departed") return "excluded_departure_only";
   const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
   if ((v.gt_status || "") === "target_vessel" || gt >= Number(v.commercial_gt_threshold || 5000)) return "target_vessel";
   if ((v.gt_status || "") === "unknown_gt_review" || gt <= 0) return "unknown_gt_review";
@@ -560,7 +559,6 @@ function isExplicitlyExcluded(v = {}) {
   const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
   const threshold = Number(v.commercial_gt_threshold || 5000);
   return status === "excluded_non_commercial_type" ||
-    status === "excluded_departure_only" ||
     (status === "non_target_small_vessel" && gt > 0 && gt < threshold) ||
     v.excluded_from_commercial_targets === true;
 }
@@ -568,7 +566,6 @@ function isExplicitlyExcluded(v = {}) {
 function isHardCandidateExcluded(v = {}) {
   const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
   return status === "excluded_non_commercial_type" ||
-    status === "excluded_departure_only" ||
     v.excluded_from_commercial_targets === true ||
     isSyntheticSample(v);
 }
@@ -590,7 +587,6 @@ function hasUsefulVesselIdentity(v = {}) {
 function exclusionReason(v = {}) {
   const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
   if (status === "excluded_non_commercial_type") return "excluded_non_commercial_type";
-  if (status === "excluded_departure_only") return "excluded_departure_only";
   if (status === "non_target_small_vessel" && Number(v.gt || v.grtg || v.intrlGrtg || 0) > 0 && Number(v.gt || v.grtg || v.intrlGrtg || 0) < Number(v.commercial_gt_threshold || 5000)) return "excluded_under_5000gt";
   if (v.excluded_from_commercial_targets === true) return v.exclusion_reason || "explicitly_excluded";
   return "";
@@ -871,8 +867,18 @@ function isSalesCandidate(v = {}) {
   return !isHardCandidateExcluded(v) && commercialScore(v) >= SALES_CANDIDATE_THRESHOLD;
 }
 
+function isCurrentActionableCandidate(v = {}) {
+  const status = String(v.status_bucket || deriveStatusBucket(v) || "").toLowerCase();
+  if (status === "departed") return false;
+  return ["arrived_staying", "berthed", "anchorage_waiting"].includes(status) ||
+    Boolean(v.is_anchorage_waiting) ||
+    Number(v.anchorage_hours || 0) > 0 ||
+    (Number(v.stay_hours || v.current_call_stay_hours || v.cumulative_stay_hours || 0) > 0 && !hasValue(v.atd)) ||
+    Number(v.work_window_hours || 0) > 0;
+}
+
 function isImmediateTarget(v = {}) {
-  return !isHardCandidateExcluded(v) && commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD;
+  return isSalesCandidate(v) && commercialScore(v) >= IMMEDIATE_TARGET_THRESHOLD && isCurrentActionableCandidate(v);
 }
 
 function supabaseBase(env) {
@@ -1871,7 +1877,7 @@ async function apiResponse(url, env) {
   if (pathname.endsWith("/dashboard-summary.json")) return json(buildDashboardSummary(allRecords, source), { headers: corsHeaders() });
   if (pathname.endsWith("/status.json")) return json(buildStatus(allRecords, source), { headers: corsHeaders() });
   if (pathname.endsWith("/all-collected-vessels.json")) return json(allRecords, { headers: corsHeaders() });
-  if (pathname.endsWith("/target-vessels.json")) return json(buckets.target_vessels, { headers: corsHeaders() });
+  if (pathname.endsWith("/target-vessels.json")) return json(buckets.canonical_scored_vessels, { headers: corsHeaders() });
   if (pathname.endsWith("/staying-vessels.json")) return json(buckets.staying_vessels, { headers: corsHeaders() });
   if (pathname.endsWith("/arrival-pipeline.json")) return json(buckets.arrival_pipeline, { headers: corsHeaders() });
   if (pathname.endsWith("/predicted-arrivals.json")) return json(buildPredictedArrivals(allRecords), { headers: corsHeaders() });
