@@ -557,8 +557,9 @@ function deriveStatusBucket(v = {}) {
   if ((facilityType === "berth" || /berth|moored|alongside/.test(status) || v.berth || v.berth_name || v.atb) && !atd) return "berthed";
   if (ata && !atd) return "arrived_staying";
   if (eta && !ata && eta >= now) return "arriving_soon";
-  if (atd) return "departed";
+  if (/departed|departure_completed|출항 완료/i.test(status)) return "departed";
   if (etd && etd >= now) return "arrived_staying";
+  if (ata || atd) return "arrived_staying";
   return "unknown";
 }
 
@@ -913,12 +914,12 @@ function isSalesCandidate(v = {}) {
 }
 
 function isCurrentActionableCandidate(v = {}) {
-  const status = String(v.status_bucket || deriveStatusBucket(v) || "").toLowerCase();
+  const status = String(v.status_bucket || v.operational_status || v.status || "").toLowerCase();
   if (status === "departed") return false;
   return ["arrived_staying", "berthed", "anchorage_waiting"].includes(status) ||
     Boolean(v.is_anchorage_waiting) ||
     Number(v.anchorage_hours || 0) > 0 ||
-    (Number(v.stay_hours || v.current_call_stay_hours || v.cumulative_stay_hours || 0) > 0 && !hasValue(v.atd)) ||
+    Number(v.stay_hours || v.current_call_stay_hours || v.cumulative_stay_hours || 0) > 0 ||
     Number(v.work_window_hours || 0) > 0;
 }
 

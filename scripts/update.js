@@ -1061,8 +1061,9 @@ function deriveStatusBucket(v = {}, metrics = {}) {
   if ((facilityType === "berth" || /berth|moored|alongside/.test(status) || v.berth || v.berth_name || v.atb) && !atd) return "berthed";
   if (ata && !atd) return "arrived_staying";
   if (eta && !ata && eta.getTime() >= now.getTime()) return "arriving_soon";
-  if (atd) return "departed";
+  if (/departed|departure_completed|출항 완료/i.test(status)) return "departed";
   if (etdCandidate && !atd) return "arrived_staying";
+  if (ata || atd) return "arrived_staying";
   return "unknown";
 }
 
