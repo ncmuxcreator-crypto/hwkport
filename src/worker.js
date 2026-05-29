@@ -970,12 +970,19 @@ async function fetchSupabaseRows(env) {
   return { rows: [], configured: true, error: "empty_active_dataset", pointer };
 }
 
+function isBetterSnapshotRepresentative(next = {}, current = {}) {
+  return commercialScore(next) > commercialScore(current) ||
+    (commercialScore(next) === commercialScore(current) && deriveCongestionScore(next) > deriveCongestionScore(current)) ||
+    (commercialScore(next) === commercialScore(current) && deriveCongestionScore(next) === deriveCongestionScore(current) && Number(next.data_confidence_score || 0) > Number(current.data_confidence_score || 0)) ||
+    (commercialScore(next) === commercialScore(current) && deriveCongestionScore(next) === deriveCongestionScore(current) && Number(next.data_confidence_score || 0) === Number(current.data_confidence_score || 0) && candidateTimestamp(next) > candidateTimestamp(current));
+}
+
 function latestPerVesselPort(records) {
   const byKey = new Map();
   for (const record of records) {
-    const key = `${record.vessel_id || record.vessel_name}|${record.port}`.toUpperCase();
+    const key = candidateDedupeKey(record);
     const old = byKey.get(key);
-    if (!old || String(record.updated_at || "") > String(old.updated_at || "")) byKey.set(key, record);
+    if (!old || isBetterSnapshotRepresentative(record, old)) byKey.set(key, record);
   }
   return [...byKey.values()];
 }
