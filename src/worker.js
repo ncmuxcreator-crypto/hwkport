@@ -131,6 +131,63 @@ function dedupeCandidateRows(records = []) {
   return [...byKey.values()];
 }
 
+function highScoreAuditRow(v = {}) {
+  return {
+    vessel_name: v.vessel_name || v.name || "",
+    port: v.port_name || v.port || "",
+    port_code: v.port_code || portCodeFromName(v.port || v.port_name),
+    score: commercialScore(v),
+    gt: Number(v.gt || v.grtg || v.intrlGrtg || 0),
+    vessel_type: v.vessel_type_group || v.vessel_type || v.vsslKndNm || "",
+    status_bucket: v.status_bucket || "",
+    candidate_key: candidateDedupeKey(v),
+    hard_excluded: isHardCandidateExcluded(v),
+    exclusion_reason: exclusionReason(v) || ""
+  };
+}
+
+function highScoreVisibilityAudit(records = [], threshold = 93) {
+  const usefulRows = records.filter(v => !isSyntheticSample(v) && hasUsefulVesselIdentity(v));
+  const sourceHighScoreRows = usefulRows.filter(v => commercialScore(v) >= threshold);
+  const targetRows = vesselGroupRows(records, "target");
+  const targetKeys = new Set(targetRows.map(candidateDedupeKey));
+  const visibleHighScoreRows = targetRows.filter(v => commercialScore(v) >= threshold);
+  const hiddenHighScoreRows = sourceHighScoreRows.filter(v => !targetKeys.has(candidateDedupeKey(v)));
+  const excludedHighScoreRows = sourceHighScoreRows.filter(isHardCandidateExcluded);
+  const groups = new Map();
+  for (const row of sourceHighScoreRows) {
+    const key = candidateDedupeKey(row);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const dedupedGroups = [...groups.entries()]
+    .filter(([, rows]) => rows.length > 1)
+    .map(([key, rows]) => {
+      const kept = sortCommercialPriority(rows)[0] || {};
+      return {
+        key,
+        count: rows.length,
+        kept_vessel_name: kept.vessel_name || kept.name || "",
+        kept_score: commercialScore(kept),
+        kept_port: kept.port_name || kept.port || "",
+        duplicate_examples: rows.slice(0, 4).map(highScoreAuditRow)
+      };
+    })
+    .slice(0, 12);
+
+  return {
+    threshold,
+    source_high_score_count: sourceHighScoreRows.length,
+    visible_high_score_count: visibleHighScoreRows.length,
+    hidden_high_score_count: hiddenHighScoreRows.length,
+    excluded_high_score_count: excludedHighScoreRows.length,
+    deduped_high_score_group_count: dedupedGroups.length,
+    hidden_high_score_examples: hiddenHighScoreRows.slice(0, 12).map(highScoreAuditRow),
+    excluded_high_score_examples: excludedHighScoreRows.slice(0, 12).map(highScoreAuditRow),
+    deduped_high_score_groups: dedupedGroups
+  };
+}
+
 function normalizeSnapshot(row = {}) {
   const payload = row.payload || row.raw_payload || {};
   const merged = { ...row, ...payload };
@@ -1694,6 +1751,7 @@ function buildStatus(records, source) {
     opportunity_usd: records.reduce((sum, v) => sum + (v.opportunity_usd || 0), 0),
     count_funnel: countFunnel,
     scoring_diagnostics: buildScoringDiagnostics(records),
+    high_score_visibility_audit: highScoreVisibilityAudit(records, 93),
     operator_diagnostics: buildOperatorDiagnostics(records, buckets),
     frontend_poll_interval_seconds: 900,
     source_runtime: {
@@ -1754,6 +1812,9 @@ async function apiResponse(url, env) {
   if (pathname.endsWith("/review/congestion-watchlist.json")) return json(buildCongestionWatchlist(records), { headers: corsHeaders() });
   if (pathname.endsWith("/quality/basic-info-coverage.json")) return json(buildBasicInfoCoverage(records), { headers: corsHeaders() });
   if (pathname.endsWith("/review/basic-info-missing.json")) return json(buildBasicInfoMissing(records), { headers: corsHeaders() });
+  if (pathname.endsWith("/quality/high-score-visibility-audit.json")) {
+    return json(highScoreVisibilityAudit(allRecords, Number(searchParams.get("threshold") || 93)), { headers: corsHeaders() });
+  }
   if (pathname === "/api/vessels.csv" || pathname.endsWith("/vessels.csv")) {
     const group = String(searchParams.get("group") || "target").toLowerCase();
     const sourceRows = vesselGroupRows(allRecords, group);
