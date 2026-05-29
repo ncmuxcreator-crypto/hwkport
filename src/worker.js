@@ -453,6 +453,20 @@ function isExplicitlyExcluded(v = {}) {
     v.excluded_from_commercial_targets === true;
 }
 
+function isSyntheticSample(v = {}) {
+  const text = [v.vessel_name, v.name, v.source_name, v.data_mode, v.payload?.data_mode].filter(Boolean).join(" ").toLowerCase();
+  return /sample|demo|yeosu target|mv hf zhoushan|maersk demo/.test(text);
+}
+
+function hasUsefulVesselIdentity(v = {}) {
+  const name = String(v.vessel_name || v.name || "").trim();
+  const port = String(v.port_name || v.port || v.port_code || "").trim();
+  const identity = String(v.call_sign || v.imo || v.mmsi || v.hybrid_entity_key || v.port_call_identity || "").trim();
+  if (!name && !identity) return false;
+  if (/^korea$/i.test(port) && !name && !identity) return false;
+  return true;
+}
+
 function exclusionReason(v = {}) {
   const status = v.commercial_relevance_status || deriveCommercialRelevance(v);
   if (status === "excluded_non_commercial_type") return "excluded_non_commercial_type";
@@ -1278,14 +1292,41 @@ function buildAlertCandidates(records = []) {
 
 function pageRows(records = [], searchParams = new URLSearchParams()) {
   const page = Math.max(1, Number(searchParams.get("page") || 1));
-  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || searchParams.get("limit") || 50)));
+  const pageSize = Math.min(200, Math.max(1, Number(searchParams.get("pageSize") || searchParams.get("limit") || 50)));
+  const sortKey = String(searchParams.get("sort") || "commercial");
+  const sortDir = String(searchParams.get("dir") || "desc") === "asc" ? "asc" : "desc";
+  const value = (v = {}) => ({
+    vessel: String(v.vessel_name || v.normalized_vessel_name || ""),
+    port: String(v.port_name || v.port || ""),
+    gt: Number(v.gt || v.grtg || v.intrlGrtg || 0),
+    type: String(v.vessel_type_group || v.vessel_type || v.vsslKndNm || ""),
+    eta: Date.parse(v.ata || v.eta || "") || 0,
+    etd: Date.parse(v.atd || v.etd || "") || 0,
+    stay: Number(v.stay_hours || v.current_call_stay_hours || v.cumulative_stay_hours || 0),
+    anchorage: Number(v.anchorage_hours || 0),
+    commercial: commercialScore(v),
+    confidence: Number(v.data_confidence_score || 0),
+    congestion: deriveCongestionScore(v),
+    band: commercialScore(v),
+    operator: String(v.operator_name || v.operator || ""),
+    agent: String(v.agent_name || v.agent || "")
+  }[sortKey] ?? "");
+  const sortedRecords = records.slice().sort((a, b) => {
+    const av = value(a);
+    const bv = value(b);
+    const result = typeof av === "number" && typeof bv === "number"
+      ? av - bv
+      : String(av).localeCompare(String(bv), "ko");
+    return sortDir === "asc" ? result : -result;
+  });
   const start = (page - 1) * pageSize;
   return {
     page,
     pageSize,
     total: records.length,
     totalPages: Math.max(1, Math.ceil(records.length / pageSize)),
-    data: records.slice(start, start + pageSize)
+    group: searchParams.get("group") || "target",
+    data: sortedRecords.slice(start, start + pageSize)
   };
 }
 
@@ -1617,7 +1658,13 @@ async function apiResponse(url, env) {
   if (pathname.endsWith("/review/congestion-watchlist.json")) return json(buildCongestionWatchlist(records), { headers: corsHeaders() });
   if (pathname.endsWith("/quality/basic-info-coverage.json")) return json(buildBasicInfoCoverage(records), { headers: corsHeaders() });
   if (pathname.endsWith("/review/basic-info-missing.json")) return json(buildBasicInfoMissing(records), { headers: corsHeaders() });
-  if (pathname === "/api/vessels" || pathname.endsWith("/vessels.json")) return json(pageRows(records, searchParams), { headers: corsHeaders() });
+  if (pathname === "/api/vessels" || pathname.endsWith("/vessels.json")) {
+    const group = String(searchParams.get("group") || "target").toLowerCase();
+    const sourceRows = group === "all"
+      ? allRecords.filter(v => !isSyntheticSample(v) && hasUsefulVesselIdentity(v))
+      : sortCommercialPriority(dedupeCandidateRows([...buckets.sales_candidates, ...buckets.immediate_targets]));
+    return json(pageRows(sourceRows, searchParams), { headers: corsHeaders() });
+  }
   const vesselMatch = pathname.match(new RegExp("^/api/vessels/([^/]+)$"));
   if (vesselMatch) {
     const vessel = findVesselById(allRecords, vesselMatch[1]);
