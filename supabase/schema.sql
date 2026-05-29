@@ -213,6 +213,8 @@ alter table vessel_snapshots add column if not exists biofouling_exposure_score 
 alter table vessel_snapshots add column if not exists biofouling_exposure_band text;
 alter table vessel_snapshots add column if not exists biofouling_exposure_reasons jsonb default '[]'::jsonb;
 alter table vessel_snapshots add column if not exists predicted_cleaning_opportunity_score int default 0;
+alter table vessel_snapshots add column if not exists cleaning_opportunity_band text;
+alter table vessel_snapshots add column if not exists opportunity_summary text;
 alter table vessel_snapshots add column if not exists arrival_opportunity_score int default 0;
 alter table vessel_snapshots add column if not exists predicted_arrival_pipeline boolean default false;
 alter table vessel_snapshots add column if not exists work_feasibility_score int default 0;
@@ -839,6 +841,8 @@ create index if not exists idx_commercial_leads_run_id on commercial_leads(run_i
 create index if not exists idx_commercial_leads_status on commercial_leads(lead_status);
 create index if not exists idx_commercial_leads_priority on commercial_leads(lead_priority_score desc);
 alter table commercial_leads add column if not exists predicted_cleaning_opportunity_score int default 0;
+alter table commercial_leads add column if not exists cleaning_opportunity_band text;
+alter table commercial_leads add column if not exists opportunity_summary text;
 alter table commercial_leads add column if not exists anchorage_probability int default 0;
 alter table commercial_leads add column if not exists predicted_congestion_score int default 0;
 alter table commercial_leads add column if not exists repeat_caller_score int default 0;
@@ -897,6 +901,8 @@ alter table predicted_arrivals add column if not exists biofouling_exposure_scor
 alter table predicted_arrivals add column if not exists biofouling_exposure_band text;
 alter table predicted_arrivals add column if not exists biofouling_exposure_reasons jsonb default '[]'::jsonb;
 alter table predicted_arrivals add column if not exists predicted_cleaning_opportunity_score int default 0;
+alter table predicted_arrivals add column if not exists cleaning_opportunity_band text;
+alter table predicted_arrivals add column if not exists opportunity_summary text;
 create index if not exists idx_predicted_arrivals_cleaning_opportunity on predicted_arrivals(predicted_cleaning_opportunity_score desc);
 create index if not exists idx_berth_aliases_normalized_alias on berth_aliases(normalized_alias);
 create index if not exists idx_terminal_aliases_normalized_alias on terminal_aliases(normalized_alias);

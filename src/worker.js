@@ -480,6 +480,7 @@ function normalizeSnapshot(row = {}) {
     route_bonus: routeBonus,
     predicted_cleaning_opportunity_score: predictedCleaningOpportunityScore,
     cleaning_opportunity_band: merged.cleaning_opportunity_band || cleaningOpportunityBand(predictedCleaningOpportunityScore),
+    opportunity_summary: merged.opportunity_summary || deriveOpportunitySummary({ ...merged, biofouling_exposure_score: biofoulingExposure.biofouling_exposure_score, predicted_cleaning_opportunity_score: predictedCleaningOpportunityScore }),
     arrival_opportunity_score: Number(merged.arrival_opportunity_score || arrivalPrediction.arrival_opportunity_score || 0),
     predicted_arrival_window_hours: Number(merged.predicted_arrival_window_hours ?? arrivalPrediction.predicted_arrival_window_hours ?? 0),
     predicted_arrival_pipeline: Boolean(merged.predicted_arrival_pipeline || arrivalPrediction.predicted_arrival_pipeline),
@@ -853,9 +854,11 @@ function deriveRouteBonus(v = {}) {
 
 function cleaningOpportunityBand(score) {
   const value = Number(score || 0);
-  if (value >= 70) return "HIGH";
-  if (value >= 40) return "MEDIUM";
-  return "LOW";
+  if (value >= 90) return "Exceptional Opportunity";
+  if (value >= 75) return "High Opportunity";
+  if (value >= 60) return "Potential Opportunity";
+  if (value >= 40) return "Watch";
+  return "Low";
 }
 
 function biofoulingExposureBand(score) {
@@ -918,12 +921,31 @@ function deriveBiofoulingExposureEngine(v = {}) {
 
 function derivePredictedCleaningOpportunityScore(v = {}) {
   return boundedScore(
-    commercialScore(v) * 0.30 +
-    derivePredictedCongestionScore(v) * 0.18 +
-    deriveWorkFeasibilityScore(v) * 0.24 +
-    Number(v.biofouling_exposure_score || deriveBiofoulingExposureScore(v)) * 0.18 +
-    deriveRouteBonus(v) * 0.10
+    commercialScore(v) * 0.25 +
+    deriveWorkFeasibilityScore(v) * 0.25 +
+    Number(v.biofouling_exposure_score || deriveBiofoulingExposureScore(v)) * 0.20 +
+    Math.max(Number(v.anchorage_probability || 0), derivePredictedCongestionScore(v)) * 0.15 +
+    Number(v.arrival_opportunity_score || 0) * 0.10 +
+    Number(v.contact_readiness_score || deriveContactReadinessScore(v)) * 0.05
   );
+}
+
+function deriveOpportunitySummary(v = {}) {
+  const fragments = [];
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const type = String(v.vessel_type_group || v.vessel_type || "선종 확인 필요").replace(/_/g, " ");
+  const anchorageDays = Number(v.anchorage_hours || 0) / 24;
+  const stayDays = Number(v.stay_hours || v.current_call_stay_hours || v.cumulative_stay_hours || 0) / 24;
+  if (gt > 0) fragments.push(`GT ${Math.round(gt).toLocaleString("en-US")} ${type}`);
+  else fragments.push(`${type} 선박`);
+  if (anchorageDays >= 1) fragments.push(`묘박/대기 ${Math.round(anchorageDays * 10) / 10}일`);
+  else if (stayDays >= 1) fragments.push(`항만 체류 ${Math.round(stayDays * 10) / 10}일`);
+  if (Number(v.biofouling_exposure_score || deriveBiofoulingExposureScore(v)) >= 60) fragments.push("바이오파울링 노출 높음");
+  if (deriveWorkFeasibilityScore(v) >= 60) fragments.push("작업 가능성 높음");
+  if (Number(v.anchorage_probability || 0) >= 60) fragments.push("묘박 가능성 높음");
+  if (String(v.pilot_direction || v.movement_type || "").toLowerCase() !== "outbound" && !v.outbound_pilot_scheduled) fragments.push("출항 도선 미확인");
+  if (v.operator_name || v.operator || v.agent_name || v.agent) fragments.push("연락 경로 확인 가능");
+  return fragments.slice(0, 5).join(" · ");
 }
 
 function normalizePortToken(value = "") {
@@ -2103,6 +2125,31 @@ function buildPredictedArrivals(records = []) {
     }));
 }
 
+function buildPredictedCleaningOpportunities(records = []) {
+  return sortCommercialPriority(activeRecordsOnly(records)
+    .filter(hasUsefulVesselIdentity)
+    .map(v => {
+      const bio = deriveBiofoulingExposureEngine(v);
+      const score = Number(v.predicted_cleaning_opportunity_score || derivePredictedCleaningOpportunityScore({ ...v, biofouling_exposure_score: bio.biofouling_exposure_score }));
+      return {
+        ...v,
+        biofouling_exposure_score: Number(v.biofouling_exposure_score || bio.biofouling_exposure_score),
+        biofouling_exposure_band: v.biofouling_exposure_band || bio.biofouling_exposure_band,
+        biofouling_exposure_reasons: v.biofouling_exposure_reasons || bio.biofouling_exposure_reasons,
+        predicted_cleaning_opportunity_score: score,
+        cleaning_opportunity_band: v.cleaning_opportunity_band || cleaningOpportunityBand(score),
+        opportunity_summary: v.opportunity_summary || deriveOpportunitySummary({ ...v, biofouling_exposure_score: bio.biofouling_exposure_score, predicted_cleaning_opportunity_score: score })
+      };
+    })
+    .filter(v => Number(v.predicted_cleaning_opportunity_score || 0) >= 35 || Number(v.commercial_value_score || 0) >= 50)
+    .sort((a, b) =>
+      Number(b.predicted_cleaning_opportunity_score || 0) - Number(a.predicted_cleaning_opportunity_score || 0) ||
+      Number(b.work_feasibility_score || 0) - Number(a.work_feasibility_score || 0) ||
+      commercialScore(b) - commercialScore(a)
+    ))
+    .slice(0, 10);
+}
+
 function buildLeadPipeline(records = []) {
   return sortCommercialPriority(dedupeCandidateRows(records
     .filter(isMainCommercialVessel)
@@ -2442,6 +2489,7 @@ function buildDashboardSummary(allRecords = [], source = {}) {
   const immediateKeys = new Set(immediateTargets.map(candidateDedupeKey));
   const opportunities = sortCommercialPriority(buckets.sales_candidates.filter(v => !immediateKeys.has(candidateDedupeKey(v)))).slice(0, 5);
   const predictedArrivals = buildPredictedArrivals(activeRecords).slice(0, 10);
+  const predictedCleaningOpportunities = buildPredictedCleaningOpportunities(activeRecords).slice(0, 10);
   return {
     status: buildStatus(activeRecords, source),
     ports: buildPorts(buckets.target_vessels),
@@ -2449,6 +2497,7 @@ function buildDashboardSummary(allRecords = [], source = {}) {
     opportunities,
     predicted_arrivals: predictedArrivals,
     arrival_pipeline: predictedArrivals,
+    predicted_cleaning_opportunities: predictedCleaningOpportunities,
     lead_pipeline: buildLeadPipeline(activeRecords).slice(0, 8),
     contact_ready_vessels: buildContactReadyVessels(activeRecords).slice(0, 5),
     fleet_opportunities: buildFleetOpportunityRows(activeRecords).slice(0, 5),
@@ -2969,6 +3018,7 @@ async function apiResponse(url, env) {
   if (pathname.endsWith("/staying-vessels.json")) return json(buckets.staying_vessels, { headers: corsHeaders() });
   if (pathname.endsWith("/arrival-pipeline.json")) return json(buckets.arrival_pipeline, { headers: corsHeaders() });
   if (pathname.endsWith("/predicted-arrivals.json")) return json(buildPredictedArrivals(allRecords), { headers: corsHeaders() });
+  if (pathname.endsWith("/predicted-cleaning-opportunities.json")) return json(buildPredictedCleaningOpportunities(allRecords), { headers: corsHeaders() });
   if (pathname.endsWith("/lead-pipeline.json")) return json(buildLeadPipeline(allRecords), { headers: corsHeaders() });
   if (pathname.endsWith("/contact-ready-vessels.json")) return json(buildContactReadyVessels(allRecords), { headers: corsHeaders() });
   if (pathname.endsWith("/fleet-opportunities.json")) return json(buildFleetOpportunityRows(allRecords), { headers: corsHeaders() });

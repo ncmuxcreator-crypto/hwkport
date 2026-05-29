@@ -325,9 +325,11 @@ function deriveRouteBonus(v = {}, routeProfile = deriveRouteCommercialProfile(v)
 
 function cleaningOpportunityBand(score) {
   const value = Number(score || 0);
-  if (value >= 70) return "HIGH";
-  if (value >= 40) return "MEDIUM";
-  return "LOW";
+  if (value >= 90) return "Exceptional Opportunity";
+  if (value >= 75) return "High Opportunity";
+  if (value >= 60) return "Potential Opportunity";
+  if (value >= 40) return "Watch";
+  return "Low";
 }
 
 function biofoulingExposureBand(score) {
@@ -407,19 +409,50 @@ function deriveCleaningOpportunityPrediction(v = {}, metrics = {}, routeProfile 
     v.biofouling_score ||
     0
   );
+  const anchorageProbability = Number(predictiveParts.anchorage_probability || v.anchorage_probability || 0);
+  const arrivalOpportunity = Number(v.arrival_opportunity_score || predictiveParts.arrival_opportunity_score || 0);
+  const contactReadiness = Number(v.contact_readiness_score || 0);
   const routeBonus = deriveRouteBonus(v, routeProfile);
   const score = Math.min(100, Math.round(
-    commercialValue * 0.30 +
-    congestion * 0.18 +
-    workFeasibility * 0.24 +
-    biofoulingExposure * 0.18 +
-    routeBonus * 0.10
+    commercialValue * 0.25 +
+    workFeasibility * 0.25 +
+    biofoulingExposure * 0.20 +
+    Math.max(anchorageProbability, congestion) * 0.15 +
+    arrivalOpportunity * 0.10 +
+    contactReadiness * 0.05
   ));
+  const opportunitySummary = buildOpportunitySummary(v, {
+    commercialValue,
+    workFeasibility,
+    biofoulingExposure,
+    anchorageProbability,
+    arrivalOpportunity,
+    contactReadiness
+  });
   return {
     route_bonus: routeBonus,
     predicted_cleaning_opportunity_score: score,
-    cleaning_opportunity_band: cleaningOpportunityBand(score)
+    cleaning_opportunity_band: cleaningOpportunityBand(score),
+    opportunity_summary: opportunitySummary
   };
+}
+
+function buildOpportunitySummary(v = {}, parts = {}) {
+  const fragments = [];
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  const type = String(v.vessel_type_group || v.vessel_type || "선종 확인 필요").replace(/_/g, " ");
+  const anchorageDays = Number(v.anchorage_hours || 0) / 24;
+  const stayDays = Number(v.stay_hours || v.current_call_stay_hours || v.cumulative_stay_hours || 0) / 24;
+  if (gt > 0) fragments.push(`GT ${Math.round(gt).toLocaleString("en-US")} ${type}`);
+  else fragments.push(`${type} 선박`);
+  if (anchorageDays >= 1) fragments.push(`묘박/대기 ${Math.round(anchorageDays * 10) / 10}일`);
+  else if (stayDays >= 1) fragments.push(`항만 체류 ${Math.round(stayDays * 10) / 10}일`);
+  if (Number(parts.biofoulingExposure || v.biofouling_exposure_score || 0) >= 60) fragments.push("바이오파울링 노출 높음");
+  if (Number(parts.workFeasibility || v.work_feasibility_score || 0) >= 60) fragments.push("작업 가능성 높음");
+  if (Number(parts.anchorageProbability || v.anchorage_probability || 0) >= 60) fragments.push("묘박 가능성 높음");
+  if (String(v.pilot_direction || v.movement_type || "").toLowerCase() !== "outbound" && !v.outbound_pilot_scheduled) fragments.push("출항 도선 미확인");
+  if (v.operator_name || v.operator || v.agent_name || v.agent) fragments.push("연락 경로 확인 가능");
+  return fragments.slice(0, 5).join(" · ");
 }
 
 function derivePredictiveSignals(v = {}, metrics = {}, routeProfile = deriveRouteCommercialProfile(v), routePattern = deriveRoutePattern(v, metrics, routeProfile), arrivalPrediction = deriveArrivalPrediction(v, metrics, routeProfile, routePattern)) {
@@ -511,7 +544,8 @@ function derivePredictiveSignals(v = {}, metrics = {}, routeProfile = deriveRout
     biofouling_exposure_reasons: biofoulingExposure.biofouling_exposure_reasons,
     route_bonus: cleaningOpportunity.route_bonus,
     predicted_cleaning_opportunity_score: cleaningOpportunity.predicted_cleaning_opportunity_score,
-    cleaning_opportunity_band: cleaningOpportunity.cleaning_opportunity_band
+    cleaning_opportunity_band: cleaningOpportunity.cleaning_opportunity_band,
+    opportunity_summary: cleaningOpportunity.opportunity_summary
   };
 }
 
@@ -872,6 +906,22 @@ function buildPredictedArrivals(records = []) {
       biofouling_exposure_reasons: v.biofouling_exposure_reasons || [],
       arrival_window_bucket: Number(v.predicted_arrival_window_hours) <= 24 ? "ETA_LT_24H" : Number(v.predicted_arrival_window_hours) <= 72 ? "ETA_LT_72H" : Number(v.predicted_arrival_window_hours) <= 168 ? "ETA_LT_7D" : "ETA_UNKNOWN"
     }));
+}
+
+function buildPredictedCleaningOpportunities(records = []) {
+  return sortCommercialPriority(records
+    .filter(v => hasUsefulVesselIdentity(v) && (Number(v.predicted_cleaning_opportunity_score || 0) >= 35 || Number(v.commercial_value_score || 0) >= 50))
+    .sort((a, b) =>
+      Number(b.predicted_cleaning_opportunity_score || 0) - Number(a.predicted_cleaning_opportunity_score || 0) ||
+      Number(b.work_feasibility_score || 0) - Number(a.work_feasibility_score || 0) ||
+      Number(b.commercial_value_score || 0) - Number(a.commercial_value_score || 0)
+    )
+    .slice(0, 10)
+    .map(v => ({
+      ...v,
+      cleaning_opportunity_band: v.cleaning_opportunity_band || cleaningOpportunityBand(v.predicted_cleaning_opportunity_score),
+      opportunity_summary: v.opportunity_summary || buildOpportunitySummary(v)
+    })));
 }
 
 function hasValue(value) {
@@ -3839,6 +3889,7 @@ try {
   const portOpportunities = buildPortOpportunityRanking(vessels);
   const contactReadyVessels = buildContactReadyVessels(vessels);
   const fleetOpportunities = buildFleetOpportunityRows(vessels);
+  const predictedCleaningOpportunities = buildPredictedCleaningOpportunities(vessels);
   const candidateList = buildCandidateList(vessels).slice(0, MAX_CANDIDATES);
 
   const scoredVessels = vessels.filter(v => typeof v.commercial_value_score === "number");
@@ -3906,6 +3957,7 @@ try {
     commercial_command_center: commercialCommandCenter,
     contact_ready_vessels: contactReadyVessels.slice(0, 10),
     fleet_opportunities: fleetOpportunities.slice(0, 10),
+    predicted_cleaning_opportunities: predictedCleaningOpportunities.slice(0, 10),
     predicted_arrivals: arrivalPipeline.slice(0, 10),
     hot_vessel_count: hotVessels.length,
     port_opportunities: portOpportunities.slice(0, 10),
@@ -3958,6 +4010,7 @@ try {
   fs.writeFileSync("dashboard/api/candidates.json", JSON.stringify(candidateList, null, 2));
   fs.writeFileSync("dashboard/api/contact-ready-vessels.json", JSON.stringify(contactReadyVessels, null, 2));
   fs.writeFileSync("dashboard/api/fleet-opportunities.json", JSON.stringify(fleetOpportunities, null, 2));
+  fs.writeFileSync("dashboard/api/predicted-cleaning-opportunities.json", JSON.stringify(predictedCleaningOpportunities, null, 2));
   fs.writeFileSync("dashboard/api/candidate-summary.json", JSON.stringify(buildCandidateSummary(vessels), null, 2));
   fs.writeFileSync("dashboard/api/contact-queue.json", JSON.stringify(candidateList.slice(0, 50).map((v, index) => ({
     rank: index + 1,
