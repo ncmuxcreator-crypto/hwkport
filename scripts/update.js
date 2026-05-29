@@ -738,6 +738,102 @@ function deriveCommercialValue(v = {}, scoreParts = {}) {
   };
 }
 
+function boundedScore(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value || 0))));
+}
+
+function deriveWorkFeasibilityScore(v = {}, metrics = {}) {
+  const status = String(v.status_bucket || v.status || "").toLowerCase();
+  const anchorageHours = Number(metrics.anchorage_hours ?? v.anchorage_hours ?? 0);
+  const stayHours = Number(metrics.stay_hours ?? v.stay_hours ?? 0);
+  const workWindowHours = Number(metrics.work_window_hours ?? v.work_window_hours ?? 0);
+  const cleaningWindow = Number(v.cleaning_window_score || 0) * 5;
+  let score = cleaningWindow;
+  if (workWindowHours >= 12) score += 18;
+  if (workWindowHours >= 24) score += 12;
+  if (anchorageHours >= 24 || v.is_anchorage_waiting || status.includes("anchorage")) score += 22;
+  if (stayHours >= 48 && !v.atd) score += 16;
+  if (v.pilot_schedule_matched) score += 6;
+  if (String(v.pilot_direction || v.movement_type || "").toLowerCase() === "outbound") score -= 12;
+  if (/active|working|cargo|loading|discharging|작업|하역|진행/.test(String(v.terminal_activity || "").toLowerCase())) score -= 8;
+  return boundedScore(score);
+}
+
+function deriveLeadStatus(v = {}, leadPriorityScore = 0) {
+  const existing = String(v.lead_status || "").toLowerCase();
+  if (["contacted", "quoted", "scheduled", "won", "lost"].includes(existing)) return existing;
+  if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD && (v.contact_path_available || Number(v.contact_readiness_score || 0) >= 50)) return "contact_ready";
+  if (leadPriorityScore >= SALES_CANDIDATE_THRESHOLD) return "new_lead";
+  return "monitor";
+}
+
+function deriveSalesAngle(v = {}, metrics = {}) {
+  const routeProfile = deriveRouteCommercialProfile(v);
+  const type = String([v.vessel_type_group, v.vessel_type, v.commercial_segment].filter(Boolean).join(" ")).toLowerCase();
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  if (routeProfile.high_regulation_route) return "호주/브라질/북미/유럽 항로 컴플라이언스";
+  if (Number(metrics.work_window_hours ?? v.work_window_hours ?? 0) > 0 || (v.etd && !v.atd)) return "출항 전 작업 가능성";
+  if (Number(metrics.anchorage_hours ?? v.anchorage_hours ?? 0) >= 24 || v.is_anchorage_waiting) return "체선/묘박 기반 작업 가능성";
+  if (gt >= 30000 && /bulk|bulker|bulk_carrier|tanker|container|pctc|cruise/.test(type)) return "대형 벌크선 선체오염 리스크";
+  return "상업 후보 선박 우선 검토";
+}
+
+function deriveWhyNow(v = {}, metrics = {}) {
+  const parts = [];
+  const stayHours = Number(metrics.stay_hours ?? v.stay_hours ?? 0);
+  const anchorageHours = Number(metrics.anchorage_hours ?? v.anchorage_hours ?? 0);
+  const workWindowHours = Number(metrics.work_window_hours ?? v.work_window_hours ?? 0);
+  const routeProfile = deriveRouteCommercialProfile(v);
+  if (anchorageHours >= 24 || v.is_anchorage_waiting) parts.push(`묘박/대기 ${Math.round(anchorageHours)}시간`);
+  if (stayHours >= 48 && !v.atd) parts.push(`체류 ${Math.round(stayHours)}시간`);
+  if (workWindowHours > 0) parts.push(`출항 전 작업 가능 시간 ${Math.round(workWindowHours)}시간`);
+  if (routeProfile.high_regulation_route) parts.push(`${routeProfile.route_region} 항로 민감도`);
+  if (Number(v.gt || v.grtg || v.intrlGrtg || 0) >= 30000) parts.push("대형 상선");
+  if (v.pilot_schedule_matched) parts.push("도선 스케줄 확인");
+  return parts.length
+    ? `${parts.slice(0, 3).join(" · ")} 때문에 지금 영업 판단이 필요합니다.`
+    : "상업 점수와 항만 체류 신호를 기준으로 모니터링이 필요합니다.";
+}
+
+function deriveRecommendedNextAction(v = {}, leadPriorityScore = 0) {
+  const outboundSoon = String(v.pilot_direction || v.movement_type || "").toLowerCase() === "outbound" || (v.etd && !v.atd && Number(v.work_window_hours || 0) <= 12);
+  if (!v.agent_name && !v.agent) return "대리점 확인";
+  if (!v.operator_name && !v.operator) return "운영선사 확인";
+  if (outboundSoon) return "도선/출항 전 재확인";
+  if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD) return "견적 제안";
+  return "선박 스케줄 확인";
+}
+
+function deriveLeadTimeline(v = {}, metrics = {}) {
+  return [
+    { label: "ETA", value: v.eta || v.eta_candidate || null, source: v.eta_source || (v.eta_candidate ? "pilot_schedule" : "") },
+    { label: "ETB", value: v.etb || v.etb_candidate || null, source: v.etb_source || (v.etb_candidate ? "berth_or_pilot_schedule" : "") },
+    { label: "ETD", value: v.etd || v.etd_candidate || null, source: v.etd_source || "" },
+    { label: "ATD", value: v.atd || null, source: v.atd ? "port_operation" : "" },
+    { label: "도선", value: v.pilot_time || v.movement_time || null, source: v.pilot_schedule_matched ? "pilot_schedule" : "" },
+    { label: "작업창", value: Number(metrics.work_window_hours ?? v.work_window_hours ?? 0) > 0 ? `${Math.round(Number(metrics.work_window_hours ?? v.work_window_hours ?? 0))}시간` : null, source: metrics.work_window_status || v.work_window_status || "" }
+  ].filter(item => item.value);
+}
+
+function deriveLeadPipelineFields(v = {}, metrics = {}) {
+  const workFeasibilityScore = deriveWorkFeasibilityScore(v, metrics);
+  const leadPriorityScore = boundedScore(
+    Number(v.commercial_value_score || v.total_sales_priority_score || 0) * 0.45 +
+    Number(v.contact_readiness_score || 0) * 0.2 +
+    workFeasibilityScore * 0.2 +
+    Number(v.arrival_opportunity_score || 0) * 0.15
+  );
+  return {
+    work_feasibility_score: workFeasibilityScore,
+    lead_priority_score: leadPriorityScore,
+    lead_status: deriveLeadStatus(v, leadPriorityScore),
+    why_now: deriveWhyNow(v, metrics),
+    sales_angle: deriveSalesAngle(v, metrics),
+    recommended_next_action: deriveRecommendedNextAction(v, leadPriorityScore),
+    lead_timeline: deriveLeadTimeline(v, metrics)
+  };
+}
+
 function deriveDataConfidence(v = {}) {
   let score = 0;
   if (Number(v.gt || v.grtg || v.intrlGrtg || 0) > 0) score += 16;
@@ -1375,6 +1471,7 @@ function enrichSalesSignals(records) {
       enriched.sales_reason = enriched.reason_codes;
     }
     enriched.operator_fleet_badges = deriveFleetBadges(enriched);
+    Object.assign(enriched, deriveLeadPipelineFields(enriched, scheduleMetrics));
     enriched.recommended_action = enriched.candidate_next_action || recommendedAction(enriched);
     enriched.opportunity_usd = estimateOpportunity(enriched);
     return enriched;

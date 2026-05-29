@@ -333,6 +333,13 @@ export async function saveToSupabase(records, options = {}) {
     predicted_cleaning_window: Number(r.predicted_cleaning_window || 0),
     arrival_opportunity_score: Number(r.arrival_opportunity_score || 0),
     predicted_arrival_pipeline: Boolean(r.predicted_arrival_pipeline),
+    work_feasibility_score: Number(r.work_feasibility_score || 0),
+    lead_status: r.lead_status || "monitor",
+    lead_priority_score: Number(r.lead_priority_score || 0),
+    why_now: r.why_now || null,
+    sales_angle: r.sales_angle || null,
+    recommended_next_action: r.recommended_next_action || null,
+    lead_timeline: r.lead_timeline || [],
     data_quality_tier: r.data_quality_tier || null,
     risk_score: r.risk_score || 0,
     total_sales_priority_score: r.total_sales_priority_score || 0,
@@ -642,6 +649,37 @@ export async function saveToSupabase(records, options = {}) {
   for (let index = 0; index < predictedArrivalRows.length; index += batchSize) {
     const batch = predictedArrivalRows.slice(index, index + batchSize);
     const { error } = await supabase.from("predicted_arrivals").upsert(batch, { onConflict: "predicted_arrival_id" });
+    if (error) throw error;
+  }
+
+  const commercialLeadRows = uniqueBy(records
+    .filter(r => Number(r.lead_priority_score || r.commercial_value_score || r.total_sales_priority_score || r.arrival_opportunity_score || 0) >= 35)
+    .map(r => ({
+      lead_id: stableEntityId("LEAD", `${r.hybrid_entity_key || r.vessel_id}-${r.port_call_identity || r.port_code || r.port || ""}`),
+      run_id: runId,
+      master_vessel_id: fallbackMasterId(r),
+      hybrid_entity_key: r.hybrid_entity_key || r.vessel_id,
+      port_call_identity: r.port_call_identity || null,
+      vessel_name: r.vessel_name || null,
+      port_code: r.port_code || null,
+      port_name: r.port_name || r.port || null,
+      lead_status: r.lead_status || "monitor",
+      lead_priority_score: Number(r.lead_priority_score || 0),
+      commercial_value_score: Number(r.commercial_value_score || r.total_sales_priority_score || 0),
+      contact_readiness_score: Number(r.contact_readiness_score || 0),
+      work_feasibility_score: Number(r.work_feasibility_score || 0),
+      arrival_opportunity_score: Number(r.arrival_opportunity_score || 0),
+      why_now: r.why_now || null,
+      sales_angle: r.sales_angle || null,
+      recommended_next_action: r.recommended_next_action || null,
+      lead_timeline: r.lead_timeline || [],
+      payload: r,
+      updated_at: now
+    })), row => row.lead_id);
+
+  for (let index = 0; index < commercialLeadRows.length; index += batchSize) {
+    const batch = commercialLeadRows.slice(index, index + batchSize);
+    const { error } = await supabase.from("commercial_leads").upsert(batch, { onConflict: "lead_id" });
     if (error) throw error;
   }
 

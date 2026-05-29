@@ -178,6 +178,13 @@ alter table vessel_snapshots add column if not exists predicted_congestion int d
 alter table vessel_snapshots add column if not exists predicted_cleaning_window int default 0;
 alter table vessel_snapshots add column if not exists arrival_opportunity_score int default 0;
 alter table vessel_snapshots add column if not exists predicted_arrival_pipeline boolean default false;
+alter table vessel_snapshots add column if not exists work_feasibility_score int default 0;
+alter table vessel_snapshots add column if not exists lead_status text default 'monitor';
+alter table vessel_snapshots add column if not exists lead_priority_score int default 0;
+alter table vessel_snapshots add column if not exists why_now text;
+alter table vessel_snapshots add column if not exists sales_angle text;
+alter table vessel_snapshots add column if not exists recommended_next_action text;
+alter table vessel_snapshots add column if not exists lead_timeline jsonb default '[]'::jsonb;
 alter table vessel_snapshots drop constraint if exists vessel_snapshots_snapshot_date_vessel_id_port_key;
 create index if not exists idx_vessel_snapshots_hybrid_entity_key on vessel_snapshots(hybrid_entity_key);
 create index if not exists idx_vessel_snapshots_collected_at on vessel_snapshots(collected_at desc);
@@ -186,6 +193,7 @@ create index if not exists idx_vessel_snapshots_operator_normalized on vessel_sn
 create index if not exists idx_vessel_snapshots_agent_normalized on vessel_snapshots(agent_normalized);
 create index if not exists idx_vessel_snapshots_route_region on vessel_snapshots(route_region);
 create index if not exists idx_vessel_snapshots_predicted_arrival_time on vessel_snapshots(predicted_arrival_time);
+create index if not exists idx_vessel_snapshots_lead_priority on vessel_snapshots(lead_priority_score desc);
 
 create table if not exists vessel_entities (
   hybrid_entity_key text primary key,
@@ -360,6 +368,30 @@ create table if not exists enrichment_match_candidates (
   matched_at timestamptz default now(),
   reused_historical_match boolean default false,
   payload jsonb default '{}'::jsonb
+);
+
+create table if not exists commercial_leads (
+  lead_id text primary key,
+  run_id text,
+  master_vessel_id text,
+  hybrid_entity_key text,
+  port_call_identity text,
+  vessel_name text,
+  port_code text,
+  port_name text,
+  lead_status text default 'monitor',
+  lead_priority_score int default 0,
+  commercial_value_score int default 0,
+  contact_readiness_score int default 0,
+  work_feasibility_score int default 0,
+  arrival_opportunity_score int default 0,
+  why_now text,
+  sales_angle text,
+  recommended_next_action text,
+  lead_timeline jsonb default '[]'::jsonb,
+  payload jsonb default '{}'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 create table if not exists berth_aliases (
@@ -543,6 +575,9 @@ create index if not exists idx_pilot_schedule_events_run_id on pilot_schedule_ev
 create index if not exists idx_pilot_schedule_events_pilot_time on pilot_schedule_events(pilot_time desc);
 create index if not exists idx_enrichment_match_candidates_run_id on enrichment_match_candidates(run_id);
 create index if not exists idx_enrichment_match_candidates_score on enrichment_match_candidates(match_score desc);
+create index if not exists idx_commercial_leads_run_id on commercial_leads(run_id);
+create index if not exists idx_commercial_leads_status on commercial_leads(lead_status);
+create index if not exists idx_commercial_leads_priority on commercial_leads(lead_priority_score desc);
 create index if not exists idx_berth_aliases_normalized_alias on berth_aliases(normalized_alias);
 create index if not exists idx_terminal_aliases_normalized_alias on terminal_aliases(normalized_alias);
 

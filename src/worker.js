@@ -143,6 +143,13 @@ function normalizeSnapshot(row = {}) {
       ciiPressureScore
     })
   );
+  const workFeasibilityScore = Number(merged.work_feasibility_score || deriveWorkFeasibilityScore(merged));
+  const leadPriorityScore = Number(merged.lead_priority_score || deriveLeadPriorityScore(merged, {
+    commercialValueScore: Math.max(Number(merged.commercial_value_score || merged.total_sales_priority_score || 0), candidateScore),
+    contactReadinessScore: Number(merged.contact_readiness_score || deriveContactReadinessScore(merged)),
+    workFeasibilityScore,
+    arrivalOpportunityScore: Number(merged.arrival_opportunity_score || 0)
+  }));
   return {
     vessel_id: merged.vessel_id,
     vessel_name: merged.vessel_name,
@@ -241,6 +248,7 @@ function normalizeSnapshot(row = {}) {
     berth_hours: Number(merged.berth_hours || 0),
     anchorage_hours: Number(merged.anchorage_hours || 0),
     work_window_hours: Number(merged.work_window_hours || 0),
+    work_feasibility_score: workFeasibilityScore,
     terminal_name: merged.terminal_name || "",
     berth_status: merged.berth_status || "",
     berth_occupancy_proxy: Number(merged.berth_occupancy_proxy || 0),
@@ -282,6 +290,12 @@ function normalizeSnapshot(row = {}) {
     port_congestion_score: Math.max(Number(merged.port_congestion_score || 0), congestionScore),
     total_sales_priority_score: Math.max(Number(merged.total_sales_priority_score || 0), candidateScore),
     commercial_value_score: Math.max(Number(merged.commercial_value_score || merged.total_sales_priority_score || 0), candidateScore),
+    lead_status: merged.lead_status || deriveLeadStatus(merged, leadPriorityScore),
+    lead_priority_score: leadPriorityScore,
+    why_now: merged.why_now || deriveWhyNow(merged),
+    sales_angle: merged.sales_angle || deriveSalesAngle(merged),
+    recommended_next_action: merged.recommended_next_action || deriveRecommendedNextAction(merged, leadPriorityScore),
+    lead_timeline: Array.isArray(merged.lead_timeline) ? merged.lead_timeline : deriveLeadTimeline(merged),
     commercial_value_band: merged.commercial_value_band || merged.sales_priority_band || "low_priority",
     data_confidence_score: Number(merged.data_confidence_score || 0),
     data_confidence_band: merged.data_confidence_band || "review",
@@ -428,6 +442,97 @@ function exclusionReason(v = {}) {
 
 function commercialScore(v = {}) {
   return Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
+}
+
+function boundedScore(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value || 0))));
+}
+
+function deriveWorkFeasibilityScore(v = {}) {
+  const status = String(v.status_bucket || v.status || "").toLowerCase();
+  const anchorageHours = Number(v.anchorage_hours || 0);
+  const stayHours = Number(v.stay_hours || v.current_call_stay_hours || 0);
+  const workWindowHours = Number(v.work_window_hours || 0);
+  let score = Number(v.cleaning_window_score || 0) * 5;
+  if (workWindowHours >= 12) score += 18;
+  if (workWindowHours >= 24) score += 12;
+  if (anchorageHours >= 24 || v.is_anchorage_waiting || status.includes("anchorage")) score += 22;
+  if (stayHours >= 48 && !v.atd) score += 16;
+  if (v.pilot_schedule_matched) score += 6;
+  if (String(v.pilot_direction || v.movement_type || "").toLowerCase() === "outbound") score -= 12;
+  if (/active|working|cargo|loading|discharging|작업|하역|진행/.test(String(v.terminal_activity || "").toLowerCase())) score -= 8;
+  return boundedScore(score);
+}
+
+function deriveLeadPriorityScore(v = {}, parts = {}) {
+  return boundedScore(
+    Number(parts.commercialValueScore ?? commercialScore(v)) * 0.45 +
+    Number(parts.contactReadinessScore ?? v.contact_readiness_score ?? deriveContactReadinessScore(v)) * 0.2 +
+    Number(parts.workFeasibilityScore ?? v.work_feasibility_score ?? deriveWorkFeasibilityScore(v)) * 0.2 +
+    Number(parts.arrivalOpportunityScore ?? v.arrival_opportunity_score ?? 0) * 0.15
+  );
+}
+
+function deriveLeadStatus(v = {}, leadPriorityScore = deriveLeadPriorityScore(v)) {
+  const existing = String(v.lead_status || "").toLowerCase();
+  if (["contacted", "quoted", "scheduled", "won", "lost"].includes(existing)) return existing;
+  if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD && (v.contact_path_available || Number(v.contact_readiness_score || 0) >= 50)) return "contact_ready";
+  if (leadPriorityScore >= SALES_CANDIDATE_THRESHOLD) return "new_lead";
+  return "monitor";
+}
+
+function routeRegionText(v = {}) {
+  return String([v.route_region, v.destination_port, v.next_port, v.destination, v.previous_port].filter(Boolean).join(" ")).toLowerCase();
+}
+
+function highRegulationRoute(v = {}) {
+  return Boolean(v.high_regulation_route) || /australia|new zealand|brazil|north_america|europe|california|vancouver|usa|canada|호주|뉴질랜드|브라질|유럽|북미/.test(routeRegionText(v));
+}
+
+function deriveSalesAngle(v = {}) {
+  const type = String([v.vessel_type_group, v.vessel_type, v.commercial_segment].filter(Boolean).join(" ")).toLowerCase();
+  const gt = Number(v.gt || v.grtg || v.intrlGrtg || 0);
+  if (highRegulationRoute(v)) return "호주/브라질/북미/유럽 항로 컴플라이언스";
+  if (Number(v.work_window_hours || 0) > 0 || (v.etd && !v.atd)) return "출항 전 작업 가능성";
+  if (Number(v.anchorage_hours || 0) >= 24 || v.is_anchorage_waiting) return "체선/묘박 기반 작업 가능성";
+  if (gt >= 30000 && /bulk|bulker|bulk_carrier|tanker|container|pctc|cruise/.test(type)) return "대형 벌크선 선체오염 리스크";
+  return "상업 후보 선박 우선 검토";
+}
+
+function deriveWhyNow(v = {}) {
+  const parts = [];
+  const stayHours = Number(v.stay_hours || v.current_call_stay_hours || 0);
+  const anchorageHours = Number(v.anchorage_hours || 0);
+  const workWindowHours = Number(v.work_window_hours || 0);
+  if (anchorageHours >= 24 || v.is_anchorage_waiting) parts.push(`묘박/대기 ${Math.round(anchorageHours)}시간`);
+  if (stayHours >= 48 && !v.atd) parts.push(`체류 ${Math.round(stayHours)}시간`);
+  if (workWindowHours > 0) parts.push(`출항 전 작업 가능 시간 ${Math.round(workWindowHours)}시간`);
+  if (highRegulationRoute(v)) parts.push("민감 항로");
+  if (Number(v.gt || v.grtg || v.intrlGrtg || 0) >= 30000) parts.push("대형 상선");
+  if (v.pilot_schedule_matched) parts.push("도선 스케줄 확인");
+  return parts.length
+    ? `${parts.slice(0, 3).join(" · ")} 때문에 지금 영업 판단이 필요합니다.`
+    : "상업 점수와 항만 체류 신호를 기준으로 모니터링이 필요합니다.";
+}
+
+function deriveRecommendedNextAction(v = {}, leadPriorityScore = deriveLeadPriorityScore(v)) {
+  const outboundSoon = String(v.pilot_direction || v.movement_type || "").toLowerCase() === "outbound" || (v.etd && !v.atd && Number(v.work_window_hours || 0) <= 12);
+  if (!hasValue(v.agent_name || v.agent)) return "대리점 확인";
+  if (!hasValue(v.operator_name || v.operator)) return "운영선사 확인";
+  if (outboundSoon) return "도선/출항 전 재확인";
+  if (leadPriorityScore >= IMMEDIATE_TARGET_THRESHOLD) return "견적 제안";
+  return "선박 스케줄 확인";
+}
+
+function deriveLeadTimeline(v = {}) {
+  return [
+    { label: "ETA", value: v.eta || v.eta_candidate || null, source: v.eta_source || (v.eta_candidate ? "pilot_schedule" : "") },
+    { label: "ETB", value: v.etb || v.etb_candidate || null, source: v.etb_source || (v.etb_candidate ? "berth_or_pilot_schedule" : "") },
+    { label: "ETD", value: v.etd || v.etd_candidate || null, source: v.etd_source || "" },
+    { label: "ATD", value: v.atd || null, source: v.atd ? "port_operation" : "" },
+    { label: "도선", value: v.pilot_time || v.movement_time || null, source: v.pilot_schedule_matched ? "pilot_schedule" : "" },
+    { label: "작업창", value: Number(v.work_window_hours || 0) > 0 ? `${Math.round(Number(v.work_window_hours || 0))}시간` : null, source: v.work_window_status || "" }
+  ].filter(item => item.value);
 }
 
 function numericMax(...values) {
@@ -965,6 +1070,61 @@ function buildPredictedArrivals(records = []) {
     }));
 }
 
+function buildLeadPipeline(records = []) {
+  return sortCommercialPriority(dedupeCandidateRows(records
+    .filter(isMainCommercialVessel)
+    .map(v => {
+      const leadPriorityScore = Number(v.lead_priority_score || deriveLeadPriorityScore(v));
+      return {
+        ...v,
+        work_feasibility_score: Number(v.work_feasibility_score || deriveWorkFeasibilityScore(v)),
+        lead_priority_score: leadPriorityScore,
+        lead_status: v.lead_status || deriveLeadStatus(v, leadPriorityScore),
+        why_now: v.why_now || deriveWhyNow(v),
+        sales_angle: v.sales_angle || deriveSalesAngle(v),
+        recommended_next_action: v.recommended_next_action || deriveRecommendedNextAction(v, leadPriorityScore),
+        lead_timeline: Array.isArray(v.lead_timeline) ? v.lead_timeline : deriveLeadTimeline(v)
+      };
+    })
+    .filter(v => Number(v.lead_priority_score || 0) >= 35 || commercialScore(v) >= SALES_CANDIDATE_THRESHOLD || Number(v.arrival_opportunity_score || 0) >= 35)))
+    .sort((a, b) =>
+      Number(b.lead_priority_score || 0) - Number(a.lead_priority_score || 0) ||
+      commercialScore(b) - commercialScore(a) ||
+      Number(b.work_feasibility_score || 0) - Number(a.work_feasibility_score || 0) ||
+      Number(b.contact_readiness_score || 0) - Number(a.contact_readiness_score || 0)
+    )
+    .map(v => ({
+      vessel_name: v.vessel_name,
+      port: v.port,
+      port_code: v.port_code || portCodeFromName(v.port),
+      port_name: v.port_name || v.port,
+      berth_name: v.berth_name || v.berth || "",
+      anchorage_name: v.anchorage_name || v.anchorage_zone || "",
+      operator_name: v.operator_name || v.operator || "",
+      agent_name: v.agent_name || v.agent || "",
+      gt: v.gt,
+      vessel_type: v.vessel_type,
+      vessel_type_group: v.vessel_type_group,
+      commercial_value_score: commercialScore(v),
+      contact_readiness_score: Number(v.contact_readiness_score || 0),
+      work_feasibility_score: Number(v.work_feasibility_score || 0),
+      arrival_opportunity_score: Number(v.arrival_opportunity_score || 0),
+      lead_priority_score: Number(v.lead_priority_score || 0),
+      lead_status: v.lead_status || "monitor",
+      why_now: v.why_now || "",
+      sales_angle: v.sales_angle || "",
+      recommended_next_action: v.recommended_next_action || "",
+      lead_timeline: v.lead_timeline || [],
+      eta: v.eta || v.eta_candidate || "",
+      etb: v.etb || v.etb_candidate || "",
+      etd: v.etd || v.etd_candidate || "",
+      atd: v.atd || "",
+      pilot_time: v.pilot_time || v.movement_time || "",
+      work_window_hours: Number(v.work_window_hours || 0),
+      reason_codes: v.reason_codes || []
+    }));
+}
+
 function portCodeFromName(port = "") {
   const text = String(port || "").toLowerCase();
   if (/busan|부산/.test(text)) return "020";
@@ -1170,6 +1330,7 @@ function buildStatus(records, source) {
     scored_vessel_count: buckets.target_vessels.filter(v => typeof v.commercial_value_score === "number").length,
     sales_candidate_count: buckets.sales_candidates.length,
     immediate_target_count: buckets.immediate_targets.length,
+    lead_pipeline_count: buildLeadPipeline(records).length,
     imo_missing_count: buckets.target_vessels.filter(v => !v.imo).length,
     imo_recovery_kpis: buildImoRecoveryKpis(buckets.target_vessels),
     high_value_low_confidence_count: buildHighValueLowConfidence(buckets.target_vessels).length,
@@ -1222,6 +1383,7 @@ async function apiResponse(pathname, env) {
   if (pathname.endsWith("/staying-vessels.json")) return json(buckets.staying_vessels, { headers: corsHeaders() });
   if (pathname.endsWith("/arrival-pipeline.json")) return json(buckets.arrival_pipeline, { headers: corsHeaders() });
   if (pathname.endsWith("/predicted-arrivals.json")) return json(buildPredictedArrivals(allRecords), { headers: corsHeaders() });
+  if (pathname.endsWith("/lead-pipeline.json")) return json(buildLeadPipeline(allRecords), { headers: corsHeaders() });
   if (pathname.endsWith("/pilot-only-arrival-review.json") || pathname.endsWith("/review/pilot-only-arrivals.json")) return json(buckets.pilot_only_arrival_review, { headers: corsHeaders() });
   if (pathname.endsWith("/imo-recovery-queue.json")) return json(buildUnknownImo(records), { headers: corsHeaders() });
   if (pathname.endsWith("/imo-recovery-priority.json")) return json(buildUnknownImo(records), { headers: corsHeaders() });
