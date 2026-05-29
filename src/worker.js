@@ -145,6 +145,29 @@ function deriveContactPathStatus(v = {}) {
   return "unknown";
 }
 
+function deriveContactPriority(v = {}) {
+  const hasOperator = hasValue(v.operator_name || v.operator);
+  const hasAgent = hasValue(v.agent_name || v.agent || v.satmntEntrpsNm || v.entrpsCdNm);
+  const confidence = Number(v.operator_confidence || 0);
+  const status = v.contact_path_status || deriveContactPathStatus(v);
+  if ((hasOperator && hasAgent) || status === "high_confidence_contact" || status === "contact_available") return "HIGH";
+  if ((hasOperator && confidence >= 45) || v.operator_inferred || status === "operator_known") return "MEDIUM";
+  return "LOW";
+}
+
+function contactPathLabelKo(v = {}) {
+  const status = v.contact_path_status || deriveContactPathStatus(v);
+  const priority = v.contact_priority || deriveContactPriority({ ...v, contact_path_status: status });
+  const labels = {
+    high_confidence_contact: "고신뢰 연락처 확인",
+    contact_available: "회사 연락처 확인",
+    agent_known: "대리점 경로 확인",
+    operator_known: "운영선사 경로 확인",
+    unknown: "연락 경로 확인 필요"
+  };
+  return `${labels[status] || labels.unknown} · ${priority}`;
+}
+
 function deriveSalesAccessibilityScore(v = {}) {
   const source = String(v.operator_source || "");
   const confidence = Number(v.operator_confidence || 0);
@@ -444,6 +467,8 @@ function normalizeSnapshot(row = {}) {
     owner_name: merged.owner_name || merged.owner || merged.ship_owner || "",
     contact_path_available: Boolean(merged.contact_path_available || merged.operator_name || merged.operator || merged.agent_name || merged.agent || merged.satmntEntrpsNm || merged.entrpsCdNm),
     contact_path_status: merged.contact_path_status || deriveContactPathStatus(merged),
+    contact_priority: merged.contact_priority || deriveContactPriority(merged),
+    contact_path_label_ko: merged.contact_path_label_ko || contactPathLabelKo(merged),
     destination_port: merged.destination_port || merged.destination || merged.next_port || "",
     route_region: merged.route_region || "unknown",
     route_from_port: merged.route_from_port || arrivalPrediction.route_from_port || merged.previous_port || "",
@@ -2252,6 +2277,8 @@ function buildContactReadyVessels(records = []) {
       agent_website: v.agent_website || v.agent_url || "",
       contact_readiness_score: Number(v.contact_readiness_score || 0),
       contact_path_status: v.contact_path_status || deriveContactPathStatus(v),
+      contact_priority: v.contact_priority || deriveContactPriority(v),
+      contact_path_label_ko: v.contact_path_label_ko || contactPathLabelKo(v),
       contact_path_available: Boolean(v.contact_path_available),
       lead_status: v.lead_status || deriveLeadStatus(v, Number(v.lead_priority_score || deriveLeadPriorityScore(v))),
       lead_priority_score: Number(v.lead_priority_score || deriveLeadPriorityScore(v)),

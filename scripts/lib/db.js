@@ -434,6 +434,8 @@ export async function saveToSupabase(records, options = {}) {
     contact_intelligence_score: Number(r.contact_intelligence_score || 0),
     contact_path_available: Boolean(r.contact_path_available || r.operator_name || r.operator || r.agent_name || r.agent),
     contact_path_status: r.contact_path_status || (r.contact_path_available ? "contact_available" : r.agent_name || r.agent ? "agent_known" : r.operator_name || r.operator ? "operator_known" : "unknown"),
+    contact_priority: r.contact_priority || null,
+    contact_path_label_ko: r.contact_path_label_ko || null,
     operator_website: r.operator_website || r.operator_url || null,
     operator_email: r.operator_email || null,
     operator_phone: r.operator_phone || null,
@@ -814,6 +816,8 @@ export async function saveToSupabase(records, options = {}) {
       agent_source: r.agent_source || null,
       contact_readiness_score: Number(r.contact_readiness_score || 0),
       contact_path_status: r.contact_path_status || (r.contact_path_available ? "contact_available" : r.agent_name || r.agent ? "agent_known" : r.operator_name || r.operator ? "operator_known" : "unknown"),
+      contact_priority: r.contact_priority || null,
+      contact_path_label_ko: r.contact_path_label_ko || null,
       collected_at: now,
       payload: r
     })), row => row.history_id);
@@ -828,7 +832,9 @@ export async function saveToSupabase(records, options = {}) {
     const batch = operatorHistoryRows.slice(index, index + batchSize).map(row => ({
       ...row,
       contact_path_available: Boolean(row.payload?.contact_path_available || row.operator_name || row.agent_name),
-      contact_path_status: row.contact_path_status || row.payload?.contact_path_status || (row.payload?.contact_path_available ? "contact_available" : row.agent_name ? "agent_known" : row.operator_name ? "operator_known" : "unknown")
+      contact_path_status: row.contact_path_status || row.payload?.contact_path_status || (row.payload?.contact_path_available ? "contact_available" : row.agent_name ? "agent_known" : row.operator_name ? "operator_known" : "unknown"),
+      contact_priority: row.contact_priority || row.payload?.contact_priority || null,
+      contact_path_label_ko: row.contact_path_label_ko || row.payload?.contact_path_label_ko || null
     }));
     const { error } = await supabase.from("operator_history").upsert(batch, { onConflict: "history_id" });
     if (error) throw error;
@@ -847,6 +853,8 @@ export async function saveToSupabase(records, options = {}) {
       agent_name: row.agent_name,
       agent_normalized: row.agent_normalized,
       contact_path_status: row.contact_path_status || row.payload?.contact_path_status || (row.payload?.contact_path_available ? "contact_available" : row.agent_name ? "agent_known" : row.operator_name ? "operator_known" : "unknown"),
+      contact_priority: row.contact_priority || row.payload?.contact_priority || null,
+      contact_path_label_ko: row.contact_path_label_ko || row.payload?.contact_path_label_ko || null,
       contact_path_available: Boolean(row.payload?.contact_path_available || row.operator_name || row.agent_name),
       contact_readiness_score: Number(row.contact_readiness_score || 0),
       lead_status: row.payload?.lead_status || "monitor",
@@ -980,6 +988,8 @@ export async function saveToSupabase(records, options = {}) {
       commercial_value_score: Number(r.commercial_value_score || r.total_sales_priority_score || 0),
       contact_readiness_score: Number(r.contact_readiness_score || 0),
       contact_path_status: r.contact_path_status || (r.contact_path_available ? "contact_available" : r.agent_name || r.agent ? "agent_known" : r.operator_name || r.operator ? "operator_known" : "unknown"),
+      contact_priority: r.contact_priority || null,
+      contact_path_label_ko: r.contact_path_label_ko || null,
       work_feasibility_score: Number(r.work_feasibility_score || 0),
       repeat_caller_score: Number(r.repeat_caller_score || 0),
       repeat_operator_score: Number(r.repeat_operator_score || 0),

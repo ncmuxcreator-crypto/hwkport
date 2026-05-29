@@ -176,6 +176,8 @@ alter table vessel_snapshots add column if not exists owner_name text;
 alter table vessel_snapshots add column if not exists contact_readiness_score int default 0;
 alter table vessel_snapshots add column if not exists contact_intelligence_score int default 0;
 alter table vessel_snapshots add column if not exists contact_path_available boolean default false;
+alter table vessel_snapshots add column if not exists contact_priority text default 'LOW';
+alter table vessel_snapshots add column if not exists contact_path_label_ko text;
 alter table vessel_snapshots add column if not exists operator_website text;
 alter table vessel_snapshots add column if not exists operator_email text;
 alter table vessel_snapshots add column if not exists operator_phone text;
@@ -400,6 +402,8 @@ create table if not exists operator_contact_history (
   agent_name text,
   agent_normalized text,
   contact_path_status text default 'unknown',
+  contact_priority text default 'LOW',
+  contact_path_label_ko text,
   contact_path_available boolean default false,
   contact_readiness_score int default 0,
   lead_status text default 'monitor',
@@ -425,6 +429,8 @@ create table if not exists vessel_operator_history (
   agent_source text,
   contact_readiness_score int default 0,
   contact_path_status text default 'unknown',
+  contact_priority text default 'LOW',
+  contact_path_label_ko text,
   collected_at timestamptz default now(),
   payload jsonb default '{}'::jsonb
 );
@@ -868,6 +874,8 @@ alter table commercial_leads add column if not exists prediction_error_hours num
 alter table commercial_leads add column if not exists alert_candidate boolean default false;
 alter table commercial_leads add column if not exists information_enrichment_needed boolean default false;
 alter table commercial_leads add column if not exists contact_path_status text default 'unknown';
+alter table commercial_leads add column if not exists contact_priority text default 'LOW';
+alter table commercial_leads add column if not exists contact_path_label_ko text;
 create index if not exists idx_commercial_leads_follow_up_due on commercial_leads(follow_up_due);
 create index if not exists idx_commercial_leads_alert on commercial_leads(alert_candidate);
 alter table operator_master add column if not exists website text;
@@ -888,8 +896,16 @@ alter table contact_master add column if not exists purchasing_email text;
 alter table contact_master add column if not exists technical_email text;
 alter table contact_master add column if not exists country text;
 alter table vessel_snapshots add column if not exists contact_path_status text default 'unknown';
+alter table vessel_snapshots add column if not exists contact_priority text default 'LOW';
+alter table vessel_snapshots add column if not exists contact_path_label_ko text;
 alter table vessel_operator_history add column if not exists contact_path_status text default 'unknown';
+alter table vessel_operator_history add column if not exists contact_priority text default 'LOW';
+alter table vessel_operator_history add column if not exists contact_path_label_ko text;
 alter table operator_history add column if not exists contact_path_status text default 'unknown';
+alter table operator_history add column if not exists contact_priority text default 'LOW';
+alter table operator_history add column if not exists contact_path_label_ko text;
+alter table operator_contact_history add column if not exists contact_priority text default 'LOW';
+alter table operator_contact_history add column if not exists contact_path_label_ko text;
 create index if not exists idx_contact_master_company on contact_master(company_normalized);
 create index if not exists idx_contact_master_type on contact_master(contact_type);
 create index if not exists idx_operator_contact_history_run on operator_contact_history(run_id);
