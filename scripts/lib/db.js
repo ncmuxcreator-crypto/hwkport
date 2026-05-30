@@ -478,6 +478,40 @@ function buildWhyScoredHigh(record = {}) {
   return reasons.length ? `${prefix} scored high because of ${reasons.join(", ")}.` : `${prefix} has commercially relevant signals.`;
 }
 
+function kstSnapshotDate(value = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(value));
+}
+
+function average(values = []) {
+  const numbers = values.map(scoreNumber).filter(value => Number.isFinite(value));
+  if (!numbers.length) return 0;
+  return Math.round((numbers.reduce((sum, value) => sum + value, 0) / numbers.length) * 10) / 10;
+}
+
+function historicalBand(record = {}) {
+  const score = commercialScore(record);
+  if (score >= 75) return "immediate_target";
+  if (score >= 65) return "sales_target";
+  if (score >= 50) return "watchlist";
+  return record.candidate_band || record.sales_priority_band || "general";
+}
+
+function groupBy(records = [], keyFn) {
+  const map = new Map();
+  for (const record of records) {
+    const key = keyFn(record);
+    if (!key) continue;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(record);
+  }
+  return map;
+}
+
 function evaluateFoundationRules(record = {}) {
   const score = commercialScore(record);
   const gt = scoreNumber(record.gt || record.grtg || record.intrlGrtg);
@@ -677,6 +711,13 @@ function buildPortCallId(record = {}) {
   return stableEntityId("PCALL", `${portCode}-${vesselIdentity}-${arrivalKey}`);
 }
 
+function eventTimeBucket(value, fallback = new Date()) {
+  const date = new Date(value || fallback);
+  if (Number.isNaN(date.getTime())) return kstSnapshotDate(fallback);
+  date.setUTCMinutes(0, 0, 0);
+  return date.toISOString();
+}
+
 function isAnchorageState(record = {}) {
   const facility = String(record.facility_type || "").toLowerCase();
   const status = String(record.status_bucket || record.status || "").toLowerCase();
@@ -720,8 +761,9 @@ async function fetchPreviousSnapshotMap(supabase) {
 }
 
 function eventRow(record, runId, now, type, eventTime, confidence, reason, previous = null) {
+  const bucket = eventTimeBucket(eventTime, now);
   return {
-    event_uid: stableEntityId("EVT", `${runId}-${lifecycleKey(record)}-${type}-${eventTime || now}`),
+    event_uid: stableEntityId("EVT", `${fallbackMasterId(record)}-${buildPortCallId(record)}-${type}-${bucket}`),
     hybrid_entity_key: record.hybrid_entity_key || record.vessel_id,
     master_vessel_id: fallbackMasterId(record),
     run_id: runId,
@@ -737,9 +779,11 @@ function eventRow(record, runId, now, type, eventTime, confidence, reason, previ
     port: record.port || record.port_name || null,
     previous_snapshot: previous ? compactPayload(previous) : {},
     payload: {
-      ...storagePayload(record),
       event_reason: reason,
-      event_source: "snapshot_diff"
+      event_source: "snapshot_diff",
+      event_time_bucket: bucket,
+      commercial_value_score: commercialScore(record),
+      candidate_band: candidateLabel(record)
     }
   };
 }
@@ -768,6 +812,188 @@ function buildLifecycleEvents(records = [], previousMap = new Map(), runId, now)
     if (record.atd && !previous?.atd) rows.push(eventRow(record, runId, now, "PORT_DEPARTURE", record.atd, 90, "ATD newly detected", previous));
   }
   return uniqueBy(rows, row => row.event_uid);
+}
+
+function buildHistoricalWarehouseRows(records = [], runId, now) {
+  const snapshotDate = kstSnapshotDate(now);
+  const usefulRecords = records.filter(record => record.vessel_name || record.hybrid_entity_key || record.port_call_identity || record.port_call_key);
+  const vesselRows = uniqueBy(usefulRecords.map(record => {
+    const portCallId = buildPortCallId(record);
+    return {
+      snapshot_date: snapshotDate,
+      run_id: runId,
+      master_vessel_id: fallbackMasterId(record),
+      port_call_id: portCallId,
+      vessel_name: record.vessel_name || null,
+      imo: record.imo || null,
+      mmsi: record.mmsi || null,
+      call_sign: record.call_sign || null,
+      gt: record.gt || record.grtg || record.intrlGrtg || null,
+      vessel_type_group: record.vessel_type_group || null,
+      operator_name: record.operator_name || record.operator || null,
+      agent_name: record.agent_name || record.agent || record.satmntEntrpsNm || record.entrpsCdNm || null,
+      port_code: record.port_code || null,
+      port_name: record.port_name || record.port || null,
+      sub_port: record.sub_port || "",
+      berth_name: record.berth_name || record.berth || null,
+      terminal_name: record.terminal_name || record.terminal || null,
+      status_bucket: record.status_bucket || record.status || null,
+      stay_hours: scoreNumber(record.stay_hours),
+      anchorage_hours: scoreNumber(record.anchorage_hours),
+      congestion_score: scoreNumber(record.congestion_score || record.port_congestion_score),
+      work_feasibility_score: scoreNumber(record.work_feasibility_score),
+      biofouling_exposure_score: scoreNumber(record.biofouling_exposure_score || record.biofouling_risk_score),
+      commercial_value_score: commercialScore(record),
+      candidate_band: historicalBand(record),
+      data_confidence_score: scoreNumber(record.data_confidence_score),
+      source_quality_score: scoreNumber(record.source_confidence_score || record.data_quality_score || record.data_confidence_score),
+      created_at: now,
+      payload: storagePayload({
+        hybrid_entity_key: record.hybrid_entity_key || record.vessel_id || null,
+        port_call_identity: record.port_call_identity || record.port_call_key || null,
+        why_now: record.why_now || null,
+        recommended_action: record.recommended_action || record.recommended_next_action || null,
+        raw_archive_url: record.raw_archive_url || null,
+        raw_archive_filename: record.raw_archive_filename || null
+      })
+    };
+  }), row => `${row.snapshot_date}|${row.port_call_id}`);
+
+  const portRows = [...groupBy(usefulRecords, record => `${record.port_code || record.port || "unknown"}|${record.sub_port || ""}`).entries()].map(([key, rows]) => {
+    const [portCode, subPort] = key.split("|");
+    const scores = rows.map(commercialScore);
+    const congestionScores = rows.map(row => row.congestion_score || row.port_congestion_score);
+    const immediateTargets = rows.filter(row => commercialScore(row) >= 75).length;
+    const salesTargets = rows.filter(row => commercialScore(row) >= 65 && commercialScore(row) < 75).length;
+    return {
+      snapshot_date: snapshotDate,
+      run_id: runId,
+      port_code: portCode,
+      port_name: rows.find(row => row.port_name || row.port)?.port_name || rows.find(row => row.port)?.port || null,
+      sub_port: subPort || "",
+      total_vessels: rows.length,
+      target_vessels: rows.filter(row => commercialScore(row) >= 65).length,
+      immediate_targets: immediateTargets,
+      sales_targets: salesTargets,
+      watchlist_count: rows.filter(row => commercialScore(row) >= 50 && commercialScore(row) < 65).length,
+      anchorage_vessels: rows.filter(row => row.is_anchorage_waiting || scoreNumber(row.anchorage_hours) > 0).length,
+      long_stay_vessels: rows.filter(row => scoreNumber(row.stay_hours) >= 72 || scoreNumber(row.anchorage_hours) >= 72).length,
+      avg_stay_hours: average(rows.map(row => row.stay_hours)),
+      avg_anchorage_hours: average(rows.map(row => row.anchorage_hours)),
+      avg_congestion_score: average(congestionScores),
+      avg_commercial_value_score: average(scores),
+      port_opportunity_score: Math.min(100, Math.round(average(scores) * 0.6 + immediateTargets * 8 + salesTargets * 4)),
+      port_congestion_score: Math.round(average(congestionScores)),
+      created_at: now,
+      payload: { high_value_vessel_count: rows.filter(row => commercialScore(row) >= 75).length }
+    };
+  });
+
+  const operatorRows = [...groupBy(usefulRecords.filter(record => normalizeCompanyName(record.operator_name || record.operator)), record => normalizeCompanyName(record.operator_name || record.operator)).entries()].map(([operatorNormalized, rows]) => ({
+    snapshot_date: snapshotDate,
+    run_id: runId,
+    operator_name: rows.find(row => row.operator_name || row.operator)?.operator_name || rows.find(row => row.operator)?.operator || operatorNormalized,
+    operator_normalized: operatorNormalized,
+    active_vessels: new Set(rows.map(row => row.master_vessel_id || row.hybrid_entity_key || row.imo || row.mmsi || row.call_sign || row.vessel_name).filter(Boolean)).size,
+    target_vessels: rows.filter(row => commercialScore(row) >= 65).length,
+    immediate_targets: rows.filter(row => commercialScore(row) >= 75).length,
+    avg_commercial_value_score: average(rows.map(commercialScore)),
+    avg_biofouling_exposure_score: average(rows.map(row => row.biofouling_exposure_score || row.biofouling_risk_score)),
+    avg_congestion_score: average(rows.map(row => row.congestion_score || row.port_congestion_score)),
+    repeat_caller_count: rows.filter(row => scoreNumber(row.repeat_caller_score) > 0 || scoreNumber(row.repeat_call_count) > 1).length,
+    fleet_opportunity_score: Math.round(average(rows.map(row => row.fleet_opportunity_score || row.commercial_value_score))),
+    contact_readiness_score: Math.round(average(rows.map(row => row.contact_readiness_score))),
+    created_at: now,
+    payload: { ports: [...new Set(rows.map(row => row.port_code || row.port_name || row.port).filter(Boolean))] }
+  }));
+
+  const routeRows = [...groupBy(usefulRecords.filter(record => record.previous_port || record.destination_port || record.next_port || record.route_region), record => [
+    normalizeCompanyName(record.previous_port || ""),
+    normalizeCompanyName(record.destination_port || record.destination || ""),
+    normalizeCompanyName(record.next_port || ""),
+    normalizeCompanyName(record.route_region || ""),
+    record.vessel_type_group || ""
+  ].join("|")).entries()].map(([key, rows]) => {
+    const [previousPort, destinationPort, nextPort, routeRegion, vesselTypeGroup] = key.split("|");
+    return {
+      snapshot_date: snapshotDate,
+      run_id: runId,
+      previous_port: previousPort,
+      destination_port: destinationPort,
+      next_port: nextPort,
+      route_region: routeRegion,
+      vessel_type_group: vesselTypeGroup,
+      vessel_count: rows.length,
+      avg_stay_hours: average(rows.map(row => row.stay_hours)),
+      avg_waiting_hours: average(rows.map(row => row.anchorage_hours)),
+      avg_commercial_value_score: average(rows.map(commercialScore)),
+      avg_biofouling_exposure_score: average(rows.map(row => row.biofouling_exposure_score || row.biofouling_risk_score)),
+      congestion_probability: Math.min(100, Math.round(average(rows.map(row => row.congestion_score || row.port_congestion_score || row.predicted_congestion_score)))),
+      created_at: now,
+      payload: {}
+    };
+  });
+
+  const opportunityRows = uniqueBy(usefulRecords.filter(record => commercialScore(record) >= 50 || scoreNumber(record.predicted_cleaning_opportunity_score) >= 60).map(record => {
+    const portCallId = buildPortCallId(record);
+    return {
+      snapshot_date: snapshotDate,
+      run_id: runId,
+      opportunity_id: stableEntityId("OPPTY", `${portCallId}-${record.hybrid_entity_key || record.vessel_id || record.vessel_name || ""}`),
+      master_vessel_id: fallbackMasterId(record),
+      port_call_id: portCallId,
+      vessel_name: record.vessel_name || null,
+      operator_name: record.operator_name || record.operator || null,
+      agent_name: record.agent_name || record.agent || record.satmntEntrpsNm || record.entrpsCdNm || null,
+      port_code: record.port_code || null,
+      commercial_value_score: commercialScore(record),
+      predicted_cleaning_opportunity_score: scoreNumber(record.predicted_cleaning_opportunity_score),
+      work_feasibility_score: scoreNumber(record.work_feasibility_score),
+      biofouling_exposure_score: scoreNumber(record.biofouling_exposure_score || record.biofouling_risk_score),
+      candidate_band: historicalBand(record),
+      why_now: record.why_now || record.candidate_summary_ko || null,
+      recommended_action: record.recommended_action || record.recommended_next_action || null,
+      lead_status: record.lead_status || "new_lead",
+      created_at: now,
+      payload: {
+        hybrid_entity_key: record.hybrid_entity_key || record.vessel_id || null,
+        port_call_identity: record.port_call_identity || record.port_call_key || null,
+        score_reasons: buildScoreReasons(record),
+        raw_archive_url: record.raw_archive_url || null,
+        raw_archive_filename: record.raw_archive_filename || null
+      }
+    };
+  }), row => `${row.snapshot_date}|${row.opportunity_id}`);
+
+  return { vesselRows, portRows, operatorRows, routeRows, opportunityRows };
+}
+
+export async function recordRawArchiveIndex({ runId, archive = {}, counts = {}, generatedAt } = {}) {
+  if (!runId || archive.status !== "uploaded") return { status: "skipped", reason: archive.status || "not_uploaded" };
+  let supabase;
+  try {
+    supabase = getSupabase();
+  } catch (error) {
+    return { status: "skipped", reason: "supabase_not_configured" };
+  }
+  const row = {
+    run_id: runId,
+    source_name: "google_drive",
+    source_key: `hwk-port-raw:${runId}`,
+    collected_at: generatedAt || new Date().toISOString(),
+    archive_filename: archive.name || null,
+    archive_url: archive.webViewLink || null,
+    archive_file_id: archive.file_id || null,
+    record_count: Number(counts.raw_records || counts.records || 0),
+    payload_role: "external_raw_archive",
+    payload: {
+      normalized_records: Number(counts.normalized_records || 0),
+      target_records: Number(counts.target_records || 0)
+    }
+  };
+  const { error } = await supabase.from("raw_archive_index").upsert(row, { onConflict: "source_name,source_key" });
+  if (error) return { status: "failed", error: error.message };
+  return { status: "indexed", source_key: row.source_key };
 }
 
 export async function saveToSupabase(records, options = {}) {
@@ -1726,24 +1952,26 @@ export async function saveToSupabase(records, options = {}) {
     if (error) throw error;
   }
 
-  const events = buildLifecycleEvents(records, previousSnapshotMap, runId, now)
+  const rawEvents = buildLifecycleEvents(records, previousSnapshotMap, runId, now)
     .concat(records
       .filter(r => r.is_cleaning_candidate || r.is_immediate_candidate || (r.total_sales_priority_score || 0) >= 60)
       .map(r => eventRow(
         r,
         runId,
         now,
-        r.is_immediate_candidate ? "SCORE_INCREASED" : "LONG_STAY_DETECTED",
+        r.is_immediate_candidate ? "SCORE_BAND_CHANGED" : "LONG_STAY_DETECTED",
         now,
         r.candidate_confidence || 50,
         r.is_immediate_candidate ? "Immediate candidate score signal" : "Commercial score or long-stay signal",
         previousSnapshotMap.get(lifecycleKey(r)) || null
       )))
     .filter(r => r.hybrid_entity_key);
+  const events = uniqueBy(rawEvents, row => row.event_uid);
+  const eventDuplicatesSkipped = Math.max(0, rawEvents.length - events.length);
 
   for (let index = 0; index < events.length; index += batchSize) {
     const batch = events.slice(index, index + batchSize);
-    const { error } = await supabase.from("vessel_events").insert(batch);
+    const { error } = await supabase.from("vessel_events").upsert(batch, { onConflict: "event_uid" });
     if (error) throw error;
   }
 
@@ -2165,6 +2393,71 @@ export async function saveToSupabase(records, options = {}) {
     if (error) throw error;
   }
 
+  const historicalWarehouse = promotion.promotable
+    ? buildHistoricalWarehouseRows(records, runId, now)
+    : { vesselRows: [], portRows: [], operatorRows: [], routeRows: [], opportunityRows: [] };
+  const historicalSnapshotResult = {
+    historical_snapshot_generation_status: promotion.promotable ? "generated" : "skipped_not_promoted",
+    vessel_snapshot_daily_rows_written: 0,
+    port_snapshot_daily_rows_written: 0,
+    operator_snapshot_daily_rows_written: 0,
+    route_snapshot_daily_rows_written: 0,
+    commercial_opportunity_daily_rows_written: 0,
+    daily_snapshot_rows_written: 0,
+    duplicate_snapshot_rows_skipped: 0,
+    raw_payloads_archived_to_gdrive: String(process.env.ARCHIVE_TO_DRIVE || "true").toLowerCase() !== "false" ? records.length : 0,
+    raw_payloads_db_insert_blocked: records.length,
+    ais_raw_rows_skipped: records.filter(record => /ais|vts/i.test(String(record.source || record.source_name || record.source_profile || ""))).length,
+    event_rows_written: events.length,
+    event_duplicates_skipped: eventDuplicatesSkipped,
+    estimated_db_growth_per_day: historicalWarehouse.vesselRows.length + historicalWarehouse.portRows.length + historicalWarehouse.operatorRows.length + historicalWarehouse.routeRows.length + historicalWarehouse.opportunityRows.length,
+    estimated_db_growth_per_year: (historicalWarehouse.vesselRows.length + historicalWarehouse.portRows.length + historicalWarehouse.operatorRows.length + historicalWarehouse.routeRows.length + historicalWarehouse.opportunityRows.length) * 365,
+    historical_snapshot_error_summary: {}
+  };
+
+  try {
+    for (let index = 0; index < historicalWarehouse.vesselRows.length; index += batchSize) {
+      const batch = historicalWarehouse.vesselRows.slice(index, index + batchSize);
+      const { error } = await supabase.from("vessel_snapshot_daily").upsert(batch, { onConflict: "snapshot_date,port_call_id" });
+      if (error) throw error;
+      historicalSnapshotResult.vessel_snapshot_daily_rows_written += batch.length;
+    }
+    for (let index = 0; index < historicalWarehouse.portRows.length; index += batchSize) {
+      const batch = historicalWarehouse.portRows.slice(index, index + batchSize);
+      const { error } = await supabase.from("port_snapshot_daily").upsert(batch, { onConflict: "snapshot_date,port_code,sub_port" });
+      if (error) throw error;
+      historicalSnapshotResult.port_snapshot_daily_rows_written += batch.length;
+    }
+    for (let index = 0; index < historicalWarehouse.operatorRows.length; index += batchSize) {
+      const batch = historicalWarehouse.operatorRows.slice(index, index + batchSize);
+      const { error } = await supabase.from("operator_snapshot_daily").upsert(batch, { onConflict: "snapshot_date,operator_normalized" });
+      if (error) throw error;
+      historicalSnapshotResult.operator_snapshot_daily_rows_written += batch.length;
+    }
+    for (let index = 0; index < historicalWarehouse.routeRows.length; index += batchSize) {
+      const batch = historicalWarehouse.routeRows.slice(index, index + batchSize);
+      const { error } = await supabase.from("route_snapshot_daily").upsert(batch, { onConflict: "snapshot_date,previous_port,destination_port,vessel_type_group" });
+      if (error) throw error;
+      historicalSnapshotResult.route_snapshot_daily_rows_written += batch.length;
+    }
+    for (let index = 0; index < historicalWarehouse.opportunityRows.length; index += batchSize) {
+      const batch = historicalWarehouse.opportunityRows.slice(index, index + batchSize);
+      const { error } = await supabase.from("commercial_opportunity_daily").upsert(batch, { onConflict: "snapshot_date,opportunity_id" });
+      if (error) throw error;
+      historicalSnapshotResult.commercial_opportunity_daily_rows_written += batch.length;
+    }
+  } catch (error) {
+    historicalSnapshotResult.historical_snapshot_generation_status = "failed";
+    historicalSnapshotResult.historical_snapshot_error_summary = { error: error.message };
+    console.warn(`[HWK] Historical warehouse snapshot skipped: ${error.message}`);
+  }
+  historicalSnapshotResult.daily_snapshot_rows_written =
+    historicalSnapshotResult.vessel_snapshot_daily_rows_written +
+    historicalSnapshotResult.port_snapshot_daily_rows_written +
+    historicalSnapshotResult.operator_snapshot_daily_rows_written +
+    historicalSnapshotResult.route_snapshot_daily_rows_written +
+    historicalSnapshotResult.commercial_opportunity_daily_rows_written;
+
   let promoted = false;
   if (promotion.promotable) {
     const { error } = await supabase.from("active_dataset_pointer").upsert({
@@ -2205,6 +2498,7 @@ export async function saveToSupabase(records, options = {}) {
     routeGraphRowsSaved: routeGraphRows.length,
     operatorGraphRowsSaved: operatorGraphRows.length,
     modelTrainingRowsSaved: trainingRows.length,
+    ...historicalSnapshotResult,
     retentionCleanup,
     routePatternRowsSaved: routePatternRows.length,
     vesselRouteHistoryRowsSaved: vesselRouteHistoryRows.length,

@@ -3184,9 +3184,70 @@ function buildStatus(records, source) {
   };
 }
 
+function historyLimit(searchParams) {
+  return Math.min(1000, Math.max(1, Number(searchParams.get("limit") || 180)));
+}
+
+function appendHistoryFilters(path, searchParams, fieldMap = {}) {
+  const params = [];
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
+  if (from) params.push(`snapshot_date=gte.${encodeURIComponent(from)}`);
+  if (to) params.push(`snapshot_date=lte.${encodeURIComponent(to)}`);
+  for (const [queryKey, column] of Object.entries(fieldMap)) {
+    const value = searchParams.get(queryKey);
+    if (value) params.push(`${column}=eq.${encodeURIComponent(value)}`);
+  }
+  params.push("order=snapshot_date.desc");
+  params.push(`limit=${historyLimit(searchParams)}`);
+  return `${path}${path.includes("?") ? "&" : "?"}${params.join("&")}`;
+}
+
+async function historyTable(env, table, searchParams, fieldMap = {}) {
+  const response = await supabaseGet(env, appendHistoryFilters(`/rest/v1/${table}?select=*`, searchParams, fieldMap));
+  return {
+    table,
+    rows: response.rows,
+    ok: response.ok,
+    status: response.status,
+    error: response.error,
+    filters: {
+      from: searchParams.get("from") || null,
+      to: searchParams.get("to") || null,
+      port: searchParams.get("port") || null,
+      operator: searchParams.get("operator") || null,
+      vessel_type_group: searchParams.get("vessel_type_group") || null
+    }
+  };
+}
+
+async function historyApiResponse(pathname, searchParams, env) {
+  if (pathname === "/api/history/ports.json") return json(await historyTable(env, "port_snapshot_daily", searchParams, { port: "port_code" }), { headers: corsHeaders() });
+  const portMatch = pathname.match(new RegExp("^/api/history/ports/([^/]+)\\.json$"));
+  if (portMatch) {
+    const localParams = new URLSearchParams(searchParams);
+    localParams.set("port", decodeURIComponent(portMatch[1]));
+    return json(await historyTable(env, "port_snapshot_daily", localParams, { port: "port_code" }), { headers: corsHeaders() });
+  }
+  if (pathname === "/api/history/operators.json") return json(await historyTable(env, "operator_snapshot_daily", searchParams, { operator: "operator_normalized" }), { headers: corsHeaders() });
+  const operatorMatch = pathname.match(new RegExp("^/api/history/operators/([^/]+)\\.json$"));
+  if (operatorMatch) {
+    const localParams = new URLSearchParams(searchParams);
+    localParams.set("operator", normalizeCompanyName(decodeURIComponent(operatorMatch[1])));
+    return json(await historyTable(env, "operator_snapshot_daily", localParams, { operator: "operator_normalized" }), { headers: corsHeaders() });
+  }
+  if (pathname === "/api/history/routes.json") return json(await historyTable(env, "route_snapshot_daily", searchParams, { vessel_type_group: "vessel_type_group" }), { headers: corsHeaders() });
+  if (pathname === "/api/history/opportunities.json") return json(await historyTable(env, "commercial_opportunity_daily", searchParams, { port: "port_code" }), { headers: corsHeaders() });
+  return null;
+}
+
 async function apiResponse(url, env) {
   const pathname = typeof url === "string" ? url : url.pathname;
   const searchParams = typeof url === "string" ? new URLSearchParams() : url.searchParams;
+  if (pathname.startsWith("/api/history/")) {
+    const historical = await historyApiResponse(pathname, searchParams, env);
+    if (historical) return historical;
+  }
   const source = await fetchSupabaseRows(env);
   const allRecords = activeRecordsOnly(latestPerVesselPort(source.rows));
   const buckets = buildVisibilityBuckets(allRecords);

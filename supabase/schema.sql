@@ -759,6 +759,166 @@ create index if not exists idx_opportunity_master_operator on opportunity_master
 alter table opportunity_master drop constraint if exists opportunity_master_state_check;
 alter table opportunity_master add constraint opportunity_master_state_check check (opportunity_state in ('identified', 'qualified', 'contact_ready', 'contacted', 'quoted', 'scheduled', 'won', 'lost'));
 
+create table if not exists vessel_snapshot_daily (
+  snapshot_date date not null,
+  run_id text not null,
+  master_vessel_id text,
+  port_call_id text not null,
+  vessel_name text,
+  imo text,
+  mmsi text,
+  call_sign text,
+  gt numeric,
+  vessel_type_group text,
+  operator_name text,
+  agent_name text,
+  port_code text,
+  port_name text,
+  sub_port text,
+  berth_name text,
+  terminal_name text,
+  status_bucket text,
+  stay_hours numeric default 0,
+  anchorage_hours numeric default 0,
+  congestion_score int default 0,
+  work_feasibility_score int default 0,
+  biofouling_exposure_score int default 0,
+  commercial_value_score int default 0,
+  candidate_band text,
+  data_confidence_score int default 0,
+  source_quality_score int default 0,
+  created_at timestamptz default now(),
+  payload jsonb default '{}'::jsonb,
+  unique(snapshot_date, port_call_id)
+);
+
+create table if not exists port_snapshot_daily (
+  snapshot_date date not null,
+  run_id text not null,
+  port_code text not null,
+  port_name text,
+  sub_port text default '',
+  total_vessels int default 0,
+  target_vessels int default 0,
+  immediate_targets int default 0,
+  sales_targets int default 0,
+  watchlist_count int default 0,
+  anchorage_vessels int default 0,
+  long_stay_vessels int default 0,
+  avg_stay_hours numeric default 0,
+  avg_anchorage_hours numeric default 0,
+  avg_congestion_score numeric default 0,
+  avg_commercial_value_score numeric default 0,
+  port_opportunity_score int default 0,
+  port_congestion_score int default 0,
+  created_at timestamptz default now(),
+  payload jsonb default '{}'::jsonb,
+  unique(snapshot_date, port_code, sub_port)
+);
+
+create table if not exists operator_snapshot_daily (
+  snapshot_date date not null,
+  run_id text not null,
+  operator_name text,
+  operator_normalized text not null,
+  active_vessels int default 0,
+  target_vessels int default 0,
+  immediate_targets int default 0,
+  avg_commercial_value_score numeric default 0,
+  avg_biofouling_exposure_score numeric default 0,
+  avg_congestion_score numeric default 0,
+  repeat_caller_count int default 0,
+  fleet_opportunity_score int default 0,
+  contact_readiness_score int default 0,
+  created_at timestamptz default now(),
+  payload jsonb default '{}'::jsonb,
+  unique(snapshot_date, operator_normalized)
+);
+
+create table if not exists route_snapshot_daily (
+  snapshot_date date not null,
+  run_id text not null,
+  previous_port text default '',
+  destination_port text default '',
+  next_port text default '',
+  route_region text default '',
+  vessel_type_group text default '',
+  vessel_count int default 0,
+  avg_stay_hours numeric default 0,
+  avg_waiting_hours numeric default 0,
+  avg_commercial_value_score numeric default 0,
+  avg_biofouling_exposure_score numeric default 0,
+  congestion_probability int default 0,
+  created_at timestamptz default now(),
+  payload jsonb default '{}'::jsonb,
+  unique(snapshot_date, previous_port, destination_port, vessel_type_group)
+);
+
+create table if not exists commercial_opportunity_daily (
+  snapshot_date date not null,
+  run_id text not null,
+  opportunity_id text not null,
+  master_vessel_id text,
+  port_call_id text,
+  vessel_name text,
+  operator_name text,
+  agent_name text,
+  port_code text,
+  commercial_value_score int default 0,
+  predicted_cleaning_opportunity_score int default 0,
+  work_feasibility_score int default 0,
+  biofouling_exposure_score int default 0,
+  candidate_band text,
+  why_now text,
+  recommended_action text,
+  lead_status text,
+  created_at timestamptz default now(),
+  payload jsonb default '{}'::jsonb,
+  unique(snapshot_date, opportunity_id)
+);
+
+create index if not exists idx_vessel_snapshot_daily_date on vessel_snapshot_daily(snapshot_date desc);
+create index if not exists idx_vessel_snapshot_daily_master on vessel_snapshot_daily(master_vessel_id);
+create index if not exists idx_vessel_snapshot_daily_port on vessel_snapshot_daily(port_code, snapshot_date desc);
+create index if not exists idx_vessel_snapshot_daily_candidate on vessel_snapshot_daily(candidate_band);
+create index if not exists idx_vessel_snapshot_daily_score on vessel_snapshot_daily(commercial_value_score desc);
+create index if not exists idx_port_snapshot_daily_port on port_snapshot_daily(port_code, snapshot_date desc);
+create index if not exists idx_port_snapshot_daily_date on port_snapshot_daily(snapshot_date desc);
+create index if not exists idx_operator_snapshot_daily_operator on operator_snapshot_daily(operator_normalized, snapshot_date desc);
+create index if not exists idx_operator_snapshot_daily_date on operator_snapshot_daily(snapshot_date desc);
+create index if not exists idx_route_snapshot_daily_route on route_snapshot_daily(previous_port, destination_port, snapshot_date desc);
+create index if not exists idx_route_snapshot_daily_date on route_snapshot_daily(snapshot_date desc);
+create index if not exists idx_commercial_opportunity_daily_score on commercial_opportunity_daily(commercial_value_score desc);
+create index if not exists idx_commercial_opportunity_daily_date on commercial_opportunity_daily(snapshot_date desc);
+create index if not exists idx_commercial_opportunity_daily_id on commercial_opportunity_daily(opportunity_id);
+create index if not exists idx_commercial_opportunity_daily_band on commercial_opportunity_daily(candidate_band);
+create unique index if not exists ux_vessel_snapshot_daily_date_port_call on vessel_snapshot_daily(snapshot_date, port_call_id);
+create unique index if not exists ux_port_snapshot_daily_date_port on port_snapshot_daily(snapshot_date, port_code, sub_port);
+create unique index if not exists ux_operator_snapshot_daily_date_operator on operator_snapshot_daily(snapshot_date, operator_normalized);
+create unique index if not exists ux_route_snapshot_daily_date_route on route_snapshot_daily(snapshot_date, previous_port, destination_port, vessel_type_group);
+create unique index if not exists ux_commercial_opportunity_daily_date_opportunity on commercial_opportunity_daily(snapshot_date, opportunity_id);
+comment on table commercial_opportunity_daily is 'Historical warehouse diagnostics: historical_snapshot_generation_status, daily_snapshot_rows_written, vessel_snapshot_daily_rows_written, port_snapshot_daily_rows_written, operator_snapshot_daily_rows_written, route_snapshot_daily_rows_written, commercial_opportunity_daily_rows_written, duplicate_snapshot_rows_skipped, raw_payloads_archived_to_gdrive, raw_payloads_db_insert_blocked, ais_raw_rows_skipped, event_rows_written, event_duplicates_skipped, estimated_db_growth_per_day, estimated_db_growth_per_year.';
+
+create table if not exists raw_archive_index (
+  archive_id bigserial primary key,
+  run_id text,
+  source_name text not null,
+  source_key text not null,
+  collected_at timestamptz,
+  archive_filename text,
+  archive_url text,
+  archive_file_id text,
+  record_count int default 0,
+  payload_role text default 'external_raw_archive',
+  payload jsonb default '{}'::jsonb,
+  created_at timestamptz default now(),
+  unique(source_name, source_key)
+);
+
+create index if not exists idx_raw_archive_index_run on raw_archive_index(run_id);
+create index if not exists idx_raw_archive_index_source_time on raw_archive_index(source_name, collected_at desc);
+comment on table raw_archive_index is 'Pointer-only index for raw API payloads archived outside Supabase, usually Google Drive. Do not store large raw payloads in this table.';
+
 create table if not exists berth_aliases (
   alias_id bigserial primary key,
   port_code text,
