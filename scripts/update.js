@@ -31,6 +31,27 @@ const MAX_CANDIDATES = Number(process.env.MAX_CANDIDATES || 1000);
 const VALIDATION_MODE = String(process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
 const DEBUG_API_DIR = "dashboard/api/debug";
 
+function envPresent(name) {
+  return Boolean(process.env[name] && String(process.env[name]).trim());
+}
+
+function missingPortOperationRequiredConfig() {
+  const missing = [];
+  if (!envPresent("PORT_OPERATION_SERVICE_KEY")) missing.push("PORT_OPERATION_SERVICE_KEY");
+  if (!envPresent("PORT_OPERATION_API_URL")) missing.push("PORT_OPERATION_API_URL");
+  return missing;
+}
+
+function portOperationCollectorNotAttemptedReason(diagnostics = {}) {
+  const preflight = diagnostics.preflight || {};
+  const plan = diagnostics.port_operation_collection_plan || {};
+  const missing = missingPortOperationRequiredConfig();
+  if (missing.includes("PORT_OPERATION_SERVICE_KEY") && missing.includes("PORT_OPERATION_API_URL")) return "missing_service_key_and_api_url";
+  if (missing.includes("PORT_OPERATION_SERVICE_KEY")) return "missing_service_key";
+  if (missing.includes("PORT_OPERATION_API_URL")) return "missing_api_url";
+  return diagnostics.preflight_failure_reason || preflight.preflight_failure_reason || plan.ports_skipped_reason || diagnostics.skip_reason || "unknown_error";
+}
+
 // Canonical output fields for new pipeline logic:
 // score -> commercial_value_score
 // location -> port_code, port_name, berth_name, terminal_name, source_name
@@ -3498,6 +3519,13 @@ function buildDatasetGenerationAudit({
   );
   const portOperationRowsCollected = portOperationAttempted.reduce((sum, source) => sum + Number(source.rows_collected || source.row_count || 0), 0);
   const preflight = collectorDiagnostics.preflight || {};
+  const missingConfig = missingPortOperationRequiredConfig();
+  const collectorNotAttempted = portsAttemptedCount === 0;
+  const collectorNotAttemptedReason = collectorNotAttempted
+    ? missingConfig.includes("PORT_OPERATION_SERVICE_KEY") && missingConfig.includes("PORT_OPERATION_API_URL")
+      ? "missing_service_key_and_api_url"
+      : collectorDiagnostics.preflight_failure_reason || preflight.preflight_failure_reason || portOperationPlan.ports_skipped_reason || collectorDiagnostics.skip_reason || "unknown_error"
+    : null;
   const watchlistGenerated = allCollectedVessels.filter(v => !isSalesCandidate(v) && isWatchlistVessel(v)).length;
   const salesTargetsGenerated = Number(salesCandidates.length || 0);
   const immediateTargetsGenerated = Number(immediateTargets.length || 0);
@@ -3532,7 +3560,7 @@ function buildDatasetGenerationAudit({
   if (sourceRowsCollected === 0) {
     failedStage = preflight.ok === false ? "collector_preflight" : portsAttemptedCount === 0 ? "source_collection_not_attempted" : "source_collection";
     rootCause = portsAttemptedCount === 0
-      ? (collectorDiagnostics.preflight_failure_reason || preflight.preflight_failure_reason || portOperationPlan.ports_skipped_reason || (!portOperationPlan.port_operation_secret_present ? "missing_PORT_OPERATION_SERVICE_KEY" : !portOperationPlan.port_operation_api_url_present ? "missing_PORT_OPERATION_API_URL" : "port_operation_collector_not_attempted"))
+      ? (collectorNotAttemptedReason || collectorDiagnostics.preflight_failure_reason || preflight.preflight_failure_reason || portOperationPlan.ports_skipped_reason || (!portOperationPlan.port_operation_secret_present ? "missing_PORT_OPERATION_SERVICE_KEY" : !portOperationPlan.port_operation_api_url_present ? "missing_PORT_OPERATION_API_URL" : "port_operation_collector_not_attempted"))
       : report?.data_mode === "no_live_data"
         ? "local_static_no_live_data_export_without_required_secrets"
         : "source_collection_returned_zero_rows";
@@ -3586,6 +3614,8 @@ function buildDatasetGenerationAudit({
     enabled_ports_loaded_count: Number(portOperationPlan.enabled_ports_loaded_count || enabledPortsCount),
     enabled_ports_passed_to_collector_count: Number(portOperationPlan.enabled_ports_passed_to_collector_count || 0),
     ports_attempted_count: portsAttemptedCount,
+    collector_not_attempted: collectorNotAttempted,
+    collector_not_attempted_reason: collectorNotAttemptedReason,
     port_operation_collector_enabled: Boolean(portOperationPlan.port_operation_collector_enabled || enabledPortsCount > 0),
     port_operation_secret_present: Boolean(portOperationPlan.port_operation_secret_present),
     port_operation_api_url_present: Boolean(portOperationPlan.port_operation_api_url_present),
@@ -4390,6 +4420,20 @@ try {
   const dataModeDetail = buildDataMode(vessels, detectSecrets(), supabaseStatus);
   const dataMode = dataModeDetail.mode;
   const isFallbackDataset = dataMode === "no_live_data" || dataMode === "degraded_sample_only" || vessels.length === 0;
+  const portOperationMissingConfig = missingPortOperationRequiredConfig();
+  const portsAttemptedCount = Number(collectorDiagnostics.coverage?.ports_attempted_count || collectorDiagnostics.ports_attempted_count || 0);
+  const collectorNotAttempted = portsAttemptedCount === 0;
+  const collectorNotAttemptedReason = collectorNotAttempted ? portOperationCollectorNotAttemptedReason(collectorDiagnostics) : null;
+  const runtimeModeDiagnostics = {
+    process_env_CI: process.env.CI || null,
+    VALIDATION_MODE: process.env.VALIDATION_MODE || null,
+    resolved_validation_mode: VALIDATION_MODE,
+    UPDATE_MODE: process.env.UPDATE_MODE || null,
+    serving_mode: process.env.SERVING_MODE || "static_json",
+    is_github_actions: process.env.GITHUB_ACTIONS === "true",
+    is_local_build: process.env.GITHUB_ACTIONS !== "true",
+    collection_mode: collectorNotAttempted ? "collector_not_attempted" : isFallbackDataset ? "no_live_data" : "source_collection"
+  };
   const baseReport = {
     version: VERSION,
     build_name: BUILD_NAME,
@@ -4402,6 +4446,15 @@ try {
     data_source_used: isFallbackDataset ? "diagnostics_only_no_live_data" : "static_json_snapshot",
     fallback_used: isFallbackDataset,
     fallback_reason: isFallbackDataset ? "local_or_failed_run_without_live_source_rows" : null,
+    validation_mode: VALIDATION_MODE,
+    runtime_mode_diagnostics: runtimeModeDiagnostics,
+    missing_required_config: portOperationMissingConfig,
+    collector_not_attempted: collectorNotAttempted,
+    collector_not_attempted_reason: collectorNotAttemptedReason,
+    data_status: isFallbackDataset ? "diagnostics_only" : "ready",
+    user_message: isFallbackDataset
+      ? "운영 데이터가 수집되지 않았습니다. Port Operation API 설정 또는 GitHub Secrets를 확인하세요."
+      : "운영 데이터가 정상 수집되었습니다.",
     data_freshness: {
       active_collected_at: completedAt,
       data_age_minutes: 0,
@@ -4454,7 +4507,14 @@ try {
       }
     },
     data_strategy: buildDataStrategy(detectSecrets()),
-    collector_diagnostics: { ...collectorDiagnostics, actionable_row_count: collectorDiagnostics.actionable_row_count ?? actionableRows },
+    collector_diagnostics: {
+      ...collectorDiagnostics,
+      actionable_row_count: collectorDiagnostics.actionable_row_count ?? actionableRows,
+      collector_not_attempted: collectorNotAttempted,
+      collector_not_attempted_reason: collectorNotAttemptedReason,
+      missing_required_config: portOperationMissingConfig,
+      runtime_mode_diagnostics: runtimeModeDiagnostics
+    },
     vessel_master_cache: vesselMasterCacheDiagnostics,
     data_quality: buildDataQuality(vessels, detectSecrets()),
     collector_readiness: buildCollectorReadiness(detectSecrets()),
@@ -4669,6 +4729,19 @@ try {
     data_source_used: report?.data_mode === "no_live_data" ? "diagnostics_only_no_live_data" : "static_json_snapshot",
     fallback_used: report?.data_mode === "no_live_data",
     fallback_reason: report?.data_mode === "no_live_data" ? "local_or_failed_run_without_live_source_rows" : null,
+    data_status: report?.data_mode === "no_live_data" ? "diagnostics_only" : "ready",
+    user_message: report?.data_mode === "no_live_data"
+      ? "운영 데이터가 수집되지 않았습니다. Port Operation API 설정 또는 GitHub Secrets를 확인하세요."
+      : "운영 데이터가 정상 수집되었습니다.",
+    missing_required_config: portOperationMissingConfig,
+    latest_successful_snapshot_available: [
+      "dashboard/api/dashboard-summary.json",
+      "dashboard/api/all-collected-vessels.json",
+      "dashboard/api/vessels.json"
+    ].some(path => countJsonRows(readJsonFile(path, [])) > 0),
+    collector_not_attempted: collectorNotAttempted,
+    collector_not_attempted_reason: collectorNotAttemptedReason,
+    runtime_mode_diagnostics: runtimeModeDiagnostics,
     production_ready: report?.data_mode !== "no_live_data" && Number(report?.record_count || 0) > 0,
     record_count: report?.record_count || 0,
     all_vessels_count: report?.all_collected_vessel_count || allCollectedVessels.length,
@@ -4683,6 +4756,13 @@ try {
       generated_at: completedAt,
       data_mode: report?.data_mode,
       record_count: report?.record_count || 0,
+      data_status: report?.data_mode === "no_live_data" ? "diagnostics_only" : "ready",
+      user_message: report?.data_mode === "no_live_data"
+        ? "운영 데이터가 수집되지 않았습니다. Port Operation API 설정 또는 GitHub Secrets를 확인하세요."
+        : "운영 데이터가 정상 수집되었습니다.",
+      missing_required_config: portOperationMissingConfig,
+      collector_not_attempted: collectorNotAttempted,
+      collector_not_attempted_reason: collectorNotAttemptedReason,
       all_collected_vessel_count: report?.all_collected_vessel_count || allCollectedVessels.length,
       target_vessel_count: report?.target_vessel_count || targetVessels.length,
       sales_candidate_count: report?.sales_candidate_count || salesCandidates.length,

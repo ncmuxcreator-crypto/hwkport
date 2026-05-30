@@ -318,6 +318,7 @@ if (!status.collector_diagnostics.preflight || !("preflight_failure_reason" in s
   throw new Error("Collector diagnostics must include preflight check results");
 }
 const allowedSkipReasons = new Set([
+  "missing_service_key_and_api_url",
   "missing_service_key",
   "missing_api_url",
   "collector_disabled",

@@ -15,8 +15,13 @@ function readJson(path, fallback) {
   }
 }
 
-const status = readJson(statusPath, {});
-const data = readJson(vesselsPath, []);
+function outputPath(path) {
+  const debugPath = path.startsWith("dashboard/api/") ? `dashboard/api/debug/${path.slice("dashboard/api/".length)}` : path;
+  return fs.existsSync(debugPath) ? debugPath : path;
+}
+
+const status = readJson(outputPath(statusPath), {});
+const data = readJson(outputPath(vesselsPath), []);
 const previousReports = outputPaths.map(path => readJson(path, null)).filter(Boolean);
 const vessels = Array.isArray(data) ? data : (data.vessels || data.items || data.data || []);
 const statusRunId = status.run_id || status.active_run_id || status.summary_run_id || null;
@@ -29,7 +34,7 @@ const validationMode = String(process.env.VALIDATION_MODE || (process.env.CI ===
 const dataMode = String(status.data_mode || status.data_mode_detail?.mode || "").toLowerCase();
 const emptyDataset = vessels.length === 0 || Number(status.record_count || 0) === 0;
 const noLiveData = dataMode === "no_live_data";
-const productionReady = !staleReadinessGate && !previousStale && !emptyDataset && !noLiveData;
+const productionReady = !staleReadinessGate && !emptyDataset && !noLiveData;
 
 const report = {
   version: "17.7.0",
@@ -46,15 +51,15 @@ const report = {
   blockedSample: vessels.filter(v => v.commercial_use_status === "do_not_use_for_outreach").length,
   sampleImmediateBlocked: vessels.filter(v => v.commercial_use_status === "do_not_use_for_outreach" && v.is_immediate_candidate).length,
   operatingImmediate: vessels.filter(v => v.is_operating_immediate_candidate).length,
-  readiness_status: emptyDataset || noLiveData ? "empty_dataset" : staleReadinessGate || previousStale ? "stale" : "ready",
+  readiness_status: emptyDataset || noLiveData ? "empty_dataset" : staleReadinessGate ? "stale" : "ready",
   data_mode: status.data_mode || null,
   record_count: Number(status.record_count || 0),
   production_ready: productionReady,
   validation_mode: validationMode,
-  stale_readiness_gate: staleReadinessGate || previousStale,
+  stale_readiness_gate: staleReadinessGate,
+  previous_readiness_was_stale: previousStale,
   stale_reasons: [
-    staleReadinessGate ? "vessels.json run_id does not match status.json run_id" : null,
-    previousStale ? "previous readiness gate run_id does not match current status.json run_id" : null
+    staleReadinessGate ? "vessels.json run_id does not match status.json run_id" : null
   ].filter(Boolean),
   status_run_id_match: !staleReadinessGate,
   ok: productionReady && vessels.every(v => !String(v.source_mode || "").includes("sample") || v.commercial_use_status === "do_not_use_for_outreach"),

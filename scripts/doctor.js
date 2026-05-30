@@ -41,6 +41,13 @@ function readJson(path, fallback) {
   }
 }
 
+function pickCurrentStatus() {
+  const debug = readJson("dashboard/api/debug/status.json", null);
+  const main = readJson("dashboard/api/status.json", {});
+  if (debug?.run_id && (!main?.run_id || String(debug.run_id) !== String(main.run_id))) return debug;
+  return main;
+}
+
 function isTrackedFile(path) {
   try {
     execFileSync("git", ["ls-files", "--error-unmatch", path], { stdio: "ignore" });
@@ -59,7 +66,7 @@ function rowsFromJson(value) {
   return [];
 }
 
-const status = readJson("dashboard/api/status.json", {});
+const status = pickCurrentStatus();
 const vesselsPayload = readJson("dashboard/api/vessels.json", []);
 const allCollectedPayload = readJson("dashboard/api/all-collected-vessels.json", []);
 const targetVesselsPayload = readJson("dashboard/api/target-vessels.json", []);
@@ -89,6 +96,18 @@ const staticFilesMissingActual = staticDatasetFiles.filter(file => !fs.existsSyn
 const staticFilesMissingFromPackage = staticDatasetFiles.filter(file => !isTrackedFile(file));
 const dataMode = status.data_mode || "unknown";
 const dataStatus = filesHaveRows ? "ready" : "empty_dataset";
+const missingRequiredConfig = Array.isArray(status.missing_required_config)
+  ? status.missing_required_config
+  : [
+      process.env.PORT_OPERATION_SERVICE_KEY ? null : "PORT_OPERATION_SERVICE_KEY",
+      process.env.PORT_OPERATION_API_URL ? null : "PORT_OPERATION_API_URL"
+    ].filter(Boolean);
+const collectorNotAttempted = Boolean(status.collector_not_attempted || status.collector_diagnostics?.collector_not_attempted);
+const collectorNotAttemptedReason = status.collector_not_attempted_reason ||
+  status.collector_diagnostics?.collector_not_attempted_reason ||
+  (missingRequiredConfig.includes("PORT_OPERATION_SERVICE_KEY") && missingRequiredConfig.includes("PORT_OPERATION_API_URL")
+    ? "missing_service_key_and_api_url"
+    : null);
 const requestedServingMode = String(process.env.SERVING_MODE || "").trim().toLowerCase();
 const hasWorker = fs.existsSync("src/worker.js") && fs.existsSync("wrangler.jsonc");
 const hasStaticJson = fs.existsSync("dashboard/api/status.json") || fs.existsSync("dashboard/api/vessels.json");
@@ -141,6 +160,14 @@ const report = {
   candidate_rows: candidates.length,
   data_mode: dataMode,
   data_status: dataStatus,
+  validation_mode: status.validation_mode || process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local"),
+  runtime_mode_diagnostics: status.runtime_mode_diagnostics || null,
+  missing_required_config: missingRequiredConfig,
+  collector_not_attempted: collectorNotAttempted,
+  collector_not_attempted_reason: collectorNotAttemptedReason,
+  user_message: !filesHaveRows
+    ? "운영 데이터가 수집되지 않았습니다. Port Operation API 설정 또는 GitHub Secrets를 확인하세요."
+    : "운영 데이터가 확인되었습니다.",
   production_ready: productionReady,
   files,
   secrets: Object.fromEntries(requiredSecrets.map(secret => [secret, process.env[secret] ? "configured" : "missing_or_not_in_ci"])),

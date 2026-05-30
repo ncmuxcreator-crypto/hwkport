@@ -229,6 +229,7 @@ function canAttempt(source) {
 function collectorSkipReason(reason = "", { validationMode = "" } = {}) {
   const text = String(reason || "").toLowerCase();
   const mode = String(validationMode || process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
+  if (text.includes("missing_port_operation_service_key_and_api_url") || text.includes("missing_service_key_and_api_url")) return "missing_service_key_and_api_url";
   if (text.includes("no_enabled") || text.includes("enabled_ports_count_zero")) return "no_enabled_ports";
   if (text.includes("collector_disabled") || text.includes("source_disabled")) return "collector_disabled";
   if (text.includes("validation_mode_blocks")) return "validation_mode_blocks_collection";
@@ -237,6 +238,14 @@ function collectorSkipReason(reason = "", { validationMode = "" } = {}) {
   if (text.includes("missing_port_operation_api_url") || text.includes("missing_api_url") || text.includes("missing_url")) return "missing_api_url";
   if (mode === "local" && !envAny("PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY", "SERVICEKEY")) return "local_no_secret_mode";
   return "unknown_error";
+}
+
+function portOperationPreflightFailureReason(failures = [], { validationMode = "" } = {}) {
+  const normalized = failures.map(value => String(value || "").toLowerCase());
+  const missingServiceKey = normalized.some(value => value.includes("missing_port_operation_service_key"));
+  const missingApiUrl = normalized.some(value => value.includes("missing_port_operation_api_url"));
+  if (missingServiceKey && missingApiUrl) return "missing_service_key_and_api_url";
+  return collectorSkipReason(failures[0], { validationMode });
 }
 
 function sourceCsvEnabled() {
@@ -366,7 +375,7 @@ function buildCollectorPreflight() {
   if (!Number.isFinite(sdeMs) || !Number.isFinite(edeMs) || sdeMs > edeMs) failures.push("invalid_PORT_OPERATION_date_window");
   if (!Number.isFinite(numOfRows) || numOfRows <= 0) failures.push("invalid_PORT_OPERATION_NUM_OF_ROWS");
   if (!Number.isFinite(maxPages) || maxPages <= 0) failures.push("invalid_PORT_OPERATION_MAX_PAGES");
-  const preflightFailureReason = collectorSkipReason(failures[0], { validationMode });
+  const preflightFailureReason = portOperationPreflightFailureReason(failures, { validationMode });
   return {
     ok: failures.length === 0,
     failures,

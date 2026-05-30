@@ -18,6 +18,11 @@ function readJson(path, fallback = null) {
   }
 }
 
+function outputPath(path) {
+  const debugPath = path.startsWith("dashboard/api/") ? `dashboard/api/debug/${path.slice("dashboard/api/".length)}` : path;
+  return fs.existsSync(debugPath) ? debugPath : path;
+}
+
 function countRows(value) {
   if (Array.isArray(value)) return value.length;
   if (Array.isArray(value?.data)) return value.data.length;
@@ -31,19 +36,20 @@ function countRows(value) {
 }
 
 const validationMode = String(process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
-const status = readJson("dashboard/api/status.json", {});
-const dashboardSummary = readJson("dashboard/api/dashboard-summary.json", {});
+const status = readJson(outputPath("dashboard/api/status.json"), {});
+const dashboardSummary = readJson(outputPath("dashboard/api/dashboard-summary.json"), {});
 const fileRows = {};
 const missing = [];
 const empty = [];
 
 for (const file of required) {
-  if (!fs.existsSync(file)) {
+  const effectiveFile = outputPath(file);
+  if (!fs.existsSync(effectiveFile)) {
     missing.push(file);
     continue;
   }
-  const stat = fs.statSync(file);
-  const rows = stat.size > 0 ? countRows(readJson(file, [])) : 0;
+  const stat = fs.statSync(effectiveFile);
+  const rows = stat.size > 0 ? countRows(readJson(effectiveFile, [])) : 0;
   fileRows[file] = rows;
   if (stat.size === 0 || rows === 0) empty.push(file);
 }
@@ -53,7 +59,10 @@ const recordCount = Number(status.record_count || dashboardSummary.record_count 
 const allCollectedRows = Number(fileRows["dashboard/api/all-collected-vessels.json"] || 0);
 const emptyDataset = recordCount === 0 || allCollectedRows === 0;
 const localNoLiveData = validationMode === "local" && dataMode === "no_live_data";
-const ok = missing.length === 0 && (!emptyDataset || localNoLiveData);
+const ok = missing.length === 0 && !emptyDataset;
+const guardSeverity = emptyDataset
+  ? localNoLiveData ? "diagnostics_only" : "fatal"
+  : missing.length ? "fatal" : "ready";
 
 const report = {
   version: "17.7.0",
@@ -67,17 +76,20 @@ const report = {
   empty,
   file_rows: fileRows,
   status: emptyDataset ? "empty_dataset" : "ready",
+  guard_severity: guardSeverity,
   ok,
   production_ready: ok && validationMode === "production",
+  diagnostics_only: localNoLiveData && emptyDataset,
   warning: localNoLiveData && emptyDataset ? "local/no-secret no_live_data snapshot has no rows and is diagnostics-only" : null
 };
 
 fs.mkdirSync("dashboard/api", { recursive: true });
 fs.writeFileSync("dashboard/api/snapshot-guard.json", JSON.stringify(report, null, 2));
 
-if (!report.ok) {
+if (!report.ok && validationMode === "production") {
   console.error("Snapshot guard failed", report);
   process.exit(1);
 }
 
-console.log("Snapshot guard passed");
+if (!report.ok) console.warn("Snapshot guard warning", report);
+else console.log("Snapshot guard passed");

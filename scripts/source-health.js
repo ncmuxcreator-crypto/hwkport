@@ -38,8 +38,10 @@ function pickCurrentStatus() {
 }
 
 const { status, status_path: statusPath, diagnostics_only: diagnosticsOnly } = pickCurrentStatus();
-const runtimePath = diagnosticsOnly ? "dashboard/api/debug/source-health-runtime.json" : "dashboard/api/source-health-runtime.json";
-const registryPath = diagnosticsOnly ? "dashboard/api/debug/source-health.json" : "dashboard/api/source-health.json";
+const runtimePath = "dashboard/api/source-health-runtime.json";
+const registryPath = "dashboard/api/source-health.json";
+const debugRuntimePath = "dashboard/api/debug/source-health-runtime.json";
+const debugRegistryPath = "dashboard/api/debug/source-health.json";
 const previousRuntime = readJson(runtimePath, null);
 const diagnostics = status.collector_diagnostics || {};
 const sources = Array.isArray(diagnostics.sources) ? diagnostics.sources : [];
@@ -53,6 +55,16 @@ const skippedCollectors = sources.filter(source => source.skipped).map(source =>
 }));
 const statusRunId = status.run_id || status.active_run_id || status.summary_run_id || "unknown_current_run";
 const previousSourceHealthWasStale = Boolean(previousRuntime?.run_id && statusRunId && String(previousRuntime.run_id) !== String(statusRunId));
+const validationMode = String(process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
+const servingMode = String(process.env.SERVING_MODE || status.serving_mode || status.output_mode || (diagnosticsOnly ? "local_diagnostics" : "static_json")).toLowerCase();
+const missingPortOperationSecret = !process.env.PORT_OPERATION_SERVICE_KEY && !process.env.PORT_OPERATION_API_KEY && !process.env.DATA_GO_KR_API_KEY && !process.env.SERVICE_KEY && !process.env.SERVICEKEY;
+const missingPortOperationUrl = !process.env.PORT_OPERATION_API_URL;
+const portOperationAttemptedCount = Number(diagnostics.coverage?.ports_attempted_count || diagnostics.ports_attempted_count || 0);
+const collectorNotAttemptedReason = portOperationAttemptedCount === 0
+  ? missingPortOperationSecret && missingPortOperationUrl
+    ? "missing_service_key_and_api_url"
+    : diagnostics.preflight_failure_reason || diagnostics.preflight?.preflight_failure_reason || diagnostics.skip_reason || "unknown_error"
+  : null;
 
 const report = {
   version: "17.7.0",
@@ -60,6 +72,13 @@ const report = {
   status_run_id: statusRunId,
   status_source_path: statusPath,
   diagnostics_only: diagnosticsOnly,
+  validation_mode: validationMode,
+  serving_mode: servingMode,
+  update_mode: process.env.UPDATE_MODE || status.update_mode || null,
+  process_env_CI: process.env.CI || null,
+  is_github_actions: process.env.GITHUB_ACTIONS === "true",
+  is_local_build: process.env.GITHUB_ACTIONS !== "true",
+  collection_mode: diagnosticsOnly ? "diagnostics_only" : status.data_mode === "no_live_data" ? "no_live_data" : "collection_result",
   generated_at: new Date().toISOString(),
   status_generated_at: status.completed_at || status.generated_at || null,
   stale_source_health: false,
@@ -84,6 +103,8 @@ const report = {
     enabled_ports_loaded_count: Number(diagnostics.port_operation_collection_plan?.enabled_ports_loaded_count || 0),
     enabled_ports_passed_to_collector_count: Number(diagnostics.port_operation_collection_plan?.enabled_ports_passed_to_collector_count || 0),
     ports_attempted_count: Number(diagnostics.coverage?.ports_attempted_count || diagnostics.ports_attempted_count || 0),
+    collector_not_attempted: portOperationAttemptedCount === 0,
+    collector_not_attempted_reason: collectorNotAttemptedReason,
     ports_skipped_reason: diagnostics.port_operation_collection_plan?.ports_skipped_reason || diagnostics.skip_reason || null,
     first_5_ports_to_attempt: diagnostics.port_operation_collection_plan?.first_5_ports_to_attempt || [],
     smoke_test_status: diagnostics.smoke_test_status || diagnostics.port_operation_smoke_test?.smoke_test_status || null,
@@ -93,6 +114,8 @@ const report = {
   preflight: diagnostics.preflight || null,
   preflight_status: diagnostics.preflight_status || null,
   preflight_failure_reason: diagnostics.preflight_failure_reason || diagnostics.preflight?.preflight_failure_reason || null,
+  collector_not_attempted: portOperationAttemptedCount === 0,
+  collector_not_attempted_reason: collectorNotAttemptedReason,
   realDataReady: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && Number(status.record_count || 0) > 0),
   note: "Current-run source health. If run_id differs from status.json, treat this file as stale."
 };
@@ -113,5 +136,10 @@ const registryReport = {
 };
 fs.writeFileSync(runtimePath, JSON.stringify(report, null, 2));
 fs.writeFileSync(registryPath, JSON.stringify(registryReport, null, 2));
+if (diagnosticsOnly) {
+  fs.mkdirSync("dashboard/api/debug", { recursive: true });
+  fs.writeFileSync(debugRuntimePath, JSON.stringify(report, null, 2));
+  fs.writeFileSync(debugRegistryPath, JSON.stringify(registryReport, null, 2));
+}
 fs.writeFileSync("data/source-health.json", JSON.stringify(registryReport, null, 2));
 console.log("Source health generated");

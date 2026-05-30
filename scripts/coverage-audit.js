@@ -58,6 +58,13 @@ function readJson(path, fallback) {
   }
 }
 
+function pickCurrentStatus() {
+  const debug = readJson("dashboard/api/debug/status.json", null);
+  const main = readJson(statusPath, {});
+  if (debug?.run_id && (!main?.run_id || String(debug.run_id) !== String(main.run_id))) return debug;
+  return main;
+}
+
 function emptyTierStats(tier) {
   return {
     tier,
@@ -71,7 +78,7 @@ function emptyTierStats(tier) {
 
 const registry = fs.existsSync(registryPath) ? parseCsv(fs.readFileSync(registryPath, "utf8")) : [];
 const enabledPorts = registry.filter(row => truthy(row.enabled) && truthy(row.has_port_operation));
-const status = readJson(statusPath, {});
+const status = pickCurrentStatus();
 const coverage = readJson(coveragePath, {});
 const sources = Array.isArray(status?.collector_diagnostics?.sources) ? status.collector_diagnostics.sources : [];
 const collectionPlan = status?.collector_diagnostics?.port_operation_collection_plan || status?.collector_diagnostics?.coverage || {};
@@ -118,6 +125,7 @@ const portsAttemptedCount = Object.values(byTier).reduce((sum, stats) => sum + s
 const portsSkippedReason = (() => {
   if (!enabledPorts.length) return "no_enabled_port_operation_ports_in_registry";
   if (!portOperationCollectorEnabled) return "port_operation_collector_disabled";
+  if (!portOperationSecretPresent && !portOperationApiUrlPresent) return "missing_PORT_OPERATION_SERVICE_KEY_and_API_URL";
   if (!portOperationSecretPresent) return validationMode === "local"
     ? "validation_mode_local_missing_PORT_OPERATION_SERVICE_KEY"
     : "missing_PORT_OPERATION_SERVICE_KEY";
@@ -129,6 +137,7 @@ const portsSkippedReason = (() => {
 })();
 const normalizeSkipReason = reason => {
   const text = String(reason || "").toLowerCase();
+  if (text.includes("missing_port_operation_service_key_and_api_url") || text.includes("missing_service_key_and_api_url")) return "missing_service_key_and_api_url";
   if (text.includes("no_enabled")) return "no_enabled_ports";
   if (text.includes("collector_disabled") || text.includes("source_disabled")) return "collector_disabled";
   if (text.includes("validation_mode_blocks")) return "validation_mode_blocks_collection";
@@ -164,6 +173,8 @@ const report = {
   port_operation_secret_present: portOperationSecretPresent,
   port_operation_api_url_present: portOperationApiUrlPresent,
   ports_attempted_count: portsAttemptedCount,
+  collector_not_attempted: portsAttemptedCount === 0,
+  collector_not_attempted_reason: portsAttemptedCount === 0 ? normalizeSkipReason(portsSkippedReason) : null,
   ports_skipped_reason: portsSkippedReason ? normalizeSkipReason(portsSkippedReason) : null,
   raw_ports_skipped_reason: portsSkippedReason,
   first_5_ports_to_attempt: Array.isArray(collectionPlan.first_5_ports_to_attempt)
@@ -176,12 +187,14 @@ const report = {
         tier: row.tier || "",
         sub_port: row.sub_port || ""
       })),
-  port_operation_skip_reason_breakdown: collectionPlan.port_operation_skip_reason_breakdown || portOperationSources.reduce((acc, source) => {
-    if (!source.skipped) return acc;
-    const reason = normalizeSkipReason(source.skip_reason || source.reason || source.error_message || source.status || "unknown_error");
-    acc[reason] = (acc[reason] || 0) + 1;
-    return acc;
-  }, {}),
+  port_operation_skip_reason_breakdown: portsAttemptedCount === 0 && portsSkippedReason
+    ? { [normalizeSkipReason(portsSkippedReason)]: Math.max(1, portOperationSources.length || enabledPorts.length) }
+    : collectionPlan.port_operation_skip_reason_breakdown || portOperationSources.reduce((acc, source) => {
+      if (!source.skipped) return acc;
+      const reason = normalizeSkipReason(source.skip_reason || source.reason || source.error_message || source.status || "unknown_error");
+      acc[reason] = (acc[reason] || 0) + 1;
+      return acc;
+    }, {}),
   validation_mode: validationMode,
   no_data_ports_by_tier: Object.fromEntries(Object.entries(byTier).map(([tier, stats]) => [tier, stats.no_data_ports])),
   not_attempted_ports_by_tier: Object.fromEntries(Object.entries(byTier).map(([tier, stats]) => [tier, stats.not_attempted_ports])),
