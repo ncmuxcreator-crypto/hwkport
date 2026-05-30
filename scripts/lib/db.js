@@ -1336,7 +1336,7 @@ export async function saveToSupabase(records, options = {}) {
     work_feasibility_score: Number(r.work_feasibility_score || 0),
     lead_status: r.lead_status || "monitor",
     lead_priority_score: Number(r.lead_priority_score || 0),
-    why_now: r.why_now || null,
+    why_now: buildWhyNowKo(r),
     candidate_summary_ko: buildCandidateSummaryKo(r),
     sales_angle: r.sales_angle || null,
     recommended_next_action: r.recommended_next_action || null,
