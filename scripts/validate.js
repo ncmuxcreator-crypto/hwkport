@@ -276,7 +276,7 @@ for (const marker of ["classifyAnchorage", "classifyBerth", "normalizeVesselType
   if (!referenceDictionaries.includes(marker)) throw new Error(`Reference dictionary enrichment missing marker: ${marker}`);
 }
 const gdriveLib = fs.readFileSync("scripts/lib/gdrive.js", "utf8");
-if (!gdriveLib.includes("supportsAllDrives=true") || !gdriveLib.includes("normalizeFolderId") || !gdriveLib.includes("Buffer.from(value, \"base64\")")) {
+if (!gdriveLib.includes("supportsAllDrives=true") || !gdriveLib.includes("normalizeFolderId") || !gdriveLib.includes("Buffer.from(value, \"base64\")") || !gdriveLib.includes("buildRawArchivePayload") || !gdriveLib.includes("external_raw_archive")) {
   throw new Error("Google Drive archive helper must support shared drives, folder URLs, and base64 service account secrets");
 }
 const dbLib = fs.readFileSync("scripts/lib/db.js", "utf8");

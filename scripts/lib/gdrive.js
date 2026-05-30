@@ -133,3 +133,49 @@ export async function archiveRawToGDrive(payload, { namePrefix = "hwk-raw" } = {
   }
   return { status: "uploaded", file_id: json.id, name: json.name, webViewLink: json.webViewLink };
 }
+
+export function buildRawArchivePayload({
+  runId,
+  generatedAt,
+  rawRecords = [],
+  normalizedRecords = [],
+  targetRecords = [],
+  report = {},
+  collectorDiagnostics = {},
+  supabaseWrite = {}
+} = {}) {
+  return {
+    archive_version: "raw-archive-v1",
+    run_id: runId || report.run_id || null,
+    generated_at: generatedAt || new Date().toISOString(),
+    storage_role: "external_raw_archive",
+    retention_note: "Supabase stores compact operational rows; this archive keeps heavier collector and normalized payloads outside the database.",
+    counts: {
+      raw_records: rawRecords.length,
+      normalized_records: normalizedRecords.length,
+      target_records: targetRecords.length
+    },
+    collector_diagnostics: collectorDiagnostics,
+    supabase_write: {
+      status: supabaseWrite.status || null,
+      runId: supabaseWrite.runId || null,
+      promoted: supabaseWrite.promoted ?? null,
+      recordsSaved: supabaseWrite.recordsSaved ?? null,
+      mode: supabaseWrite.mode || null,
+      retentionCleanup: supabaseWrite.retentionCleanup || null
+    },
+    report_summary: {
+      status: report.status || null,
+      data_mode: report.data_mode || null,
+      all_collected_vessel_count: report.all_collected_vessel_count || 0,
+      raw_collected_vessel_count: report.raw_collected_vessel_count || 0,
+      target_vessel_count: report.target_vessel_count || 0,
+      sales_candidate_count: report.sales_candidate_count || 0,
+      immediate_target_count: report.immediate_target_count || 0,
+      completed_at: report.completed_at || null
+    },
+    raw_records: rawRecords,
+    normalized_records: normalizedRecords,
+    target_records: targetRecords
+  };
+}

@@ -1,7 +1,7 @@
 ﻿import fs from "fs";
 import { collectKoreaData, getCollectorDiagnostics } from "./collectors/korea.js";
 import { createRunId, enrichWithVesselMasterCache, saveToSupabase } from "./lib/db.js";
-import { archiveRawToGDrive } from "./lib/gdrive.js";
+import { archiveRawToGDrive, buildRawArchivePayload } from "./lib/gdrive.js";
 import { detectSecrets } from "./lib/secrets.js";
 import { writeSnapshotOutputs, buildBackendOpsReport } from "./lib/snapshot-store.js";
 import { enrichWithReferenceDictionaries, loadReferenceDictionaries } from "./lib/reference-dictionaries.js";
@@ -4163,12 +4163,17 @@ try {
   };
 
   try {
-    gdriveArchive = await archiveRawToGDrive({
-      generated_at: completedAt,
-      records: vessels,
+    const rawArchivePayload = buildRawArchivePayload({
+      runId,
+      generatedAt: completedAt,
+      rawRecords: collectedRows,
+      normalizedRecords: allCollectedVessels,
+      targetRecords: targetVessels,
       report,
-      collector_diagnostics: getCollectorDiagnostics()
-    }, { namePrefix: "hwk-port-raw" });
+      collectorDiagnostics: getCollectorDiagnostics(),
+      supabaseWrite
+    });
+    gdriveArchive = await archiveRawToGDrive(rawArchivePayload, { namePrefix: "hwk-port-raw" });
   } catch (archiveError) {
     gdriveArchive = { status: "failed", error: archiveError?.message || String(archiveError) };
   }
