@@ -2912,6 +2912,48 @@ function recordPortKey(record = {}) {
   return `${portCode}|`;
 }
 
+function inferSubPortName(record = {}) {
+  const text = [record.sub_port, record.sub_port_name, record.terminal_name, record.berth_name, record.anchorage_name, record.laidupFcltyNm, record.facility_name_raw, record.port_name, record.port]
+    .filter(Boolean)
+    .join(" ")
+    .normalize("NFKC")
+    .toLowerCase();
+  if (/hadong|하동/.test(text)) return "하동항";
+  if (/samcheonpo|삼천포/.test(text)) return "삼천포항";
+  if (/masan|jinhae|마산|진해/.test(text)) return "마산·진해항";
+  if (/tongyeong|통영/.test(text)) return "통영항";
+  if (/geoje|okpo|고현|옥포|거제/.test(text)) return "거제·옥포항";
+  if (/sokcho|속초/.test(text)) return "속초항";
+  if (/boryeong|보령/.test(text)) return "보령항";
+  if (/yeongheung|영흥/.test(text)) return "영흥 터미널";
+  if (/taean|태안/.test(text)) return "태안 터미널";
+  if (/dangjin industrial|당진 산업|당진화력|현대제철|당진항/.test(text)) return "당진 산업터미널";
+  if (/lng|lpg|gas|가스|산업|terminal|터미널/.test(text) && normalizePortCode(record.port_code) === "820") return "LNG·산업 터미널";
+  if (/pnit|pnc|hpnt|부산신항|신항|newport|pusan newport/.test(text)) return "부산신항";
+  if (/감천|gamcheon/.test(text)) return "감천항";
+  if (/신감만|감만|gamman/.test(text)) return "감만·신감만";
+  return String(record.sub_port || "").trim();
+}
+
+function registryForRecord(record = {}) {
+  const portCode = normalizePortCode(record.port_code || portCodeFromName(record.port_name || record.port));
+  const inferredSubPort = inferSubPortName(record);
+  const candidates = PORT_REGISTRY
+    .filter(port => normalizePortCode(port.port_code) === portCode)
+    .sort((a, b) => Number(a.tier || 99) - Number(b.tier || 99) || Number(a.sort || 999) - Number(b.sort || 999));
+  if (inferredSubPort) {
+    const exact = candidates.find(port => String(port.sub_port || port.port_name_ko || "").toLowerCase() === inferredSubPort.toLowerCase());
+    if (exact) return exact;
+    const fuzzy = candidates.find(port => {
+      const label = String([port.sub_port, port.port_name_ko].filter(Boolean).join(" ")).toLowerCase();
+      return label && (label.includes(inferredSubPort.toLowerCase()) || inferredSubPort.toLowerCase().includes(label));
+    });
+    if (fuzzy) return fuzzy;
+    return { port_code: portCode, port_name_ko: inferredSubPort, sub_port: inferredSubPort, tier: 3, sort: 900 };
+  }
+  return candidates.find(port => Number(port.tier || 99) === 1) || candidates[0] || { port_code: portCode, port_name_ko: representativePortName(portCode, record.port_name || record.port), tier: record.port_tier || 99, sort: 999 };
+}
+
 function registryKeyForRecord(record = {}, map = new Map()) {
   const portCode = normalizePortCode(record.port_code || portCodeFromName(record.port_name || record.port) || "unknown");
   const exactKey = recordPortKey(record);
@@ -2937,24 +2979,18 @@ function isDisplayablePortName(value = "") {
 
 function buildPorts(records) {
   const map = new Map();
-  const representativeRegistries = new Map();
   for (const registry of PORT_REGISTRY) {
     const code = normalizePortCode(registry.port_code);
-    const current = representativeRegistries.get(code);
-    if (!current || Number(registry.tier || 99) < Number(current.tier || 99) || Number(registry.sort || 999) < Number(current.sort || 999)) {
-      representativeRegistries.set(code, registry);
-    }
-  }
-  for (const registry of representativeRegistries.values()) {
-    const code = normalizePortCode(registry.port_code);
-    const key = code;
-    const name = representativePortName(code, registry.port_name_ko);
+    const key = portRegistryKey(registry);
+    const name = registry.sub_port || registry.port_name_ko || representativePortName(code, registry.port_name_ko);
     map.set(key, {
       port_code: code,
+      port_unit_key: key,
       port_name: name,
       port_name_ko: name,
-      port_group: name,
-      sub_port: "",
+      port_group: representativePortName(code, registry.port_name_ko),
+      sub_port: registry.sub_port || "",
+      display_scope: registry.sub_port ? "sub_port" : "representative_port",
       tier: registry.tier,
       commercial_priority: registry.tier === 1 ? "high" : registry.tier === 2 ? "medium_high" : "medium",
       registry_sort: registry.sort,
@@ -2985,15 +3021,17 @@ function buildPorts(records) {
     const portName = v.port_name || v.port || "Unknown";
     const portCode = normalizePortCode(v.port_code || portCodeFromName(portName));
     if (portCode === "unknown") continue;
-    const key = portCode;
-    const registry = representativeRegistryForCode(portCode);
-    const representativeName = representativePortName(portCode, registry?.port_name_ko || portName);
+    const registry = registryForRecord(v);
+    const key = portRegistryKey(registry);
+    const representativeName = registry.sub_port || registry.port_name_ko || representativePortName(portCode, portName);
     const p = map.get(key) || {
       port_code: portCode,
+      port_unit_key: key,
       port_name: representativeName,
       port_name_ko: representativeName,
-      port_group: representativeName,
-      sub_port: "",
+      port_group: representativePortName(portCode, portName),
+      sub_port: registry.sub_port || "",
+      display_scope: registry.sub_port ? "sub_port" : "representative_port",
       tier: v.port_tier || "",
       commercial_priority: v.commercial_priority || "",
       vessel_count: 0,
@@ -3068,6 +3106,7 @@ function buildPorts(records) {
   }).sort((a, b) =>
     Number(a.tier || 99) - Number(b.tier || 99) ||
     Number(a.registry_sort || 999) - Number(b.registry_sort || 999) ||
+    Number(b.total_vessels || 0) - Number(a.total_vessels || 0) ||
     b.port_opportunity_score - a.port_opportunity_score ||
     b.immediate_target_count - a.immediate_target_count ||
     b.candidate_count - a.candidate_count ||
@@ -3687,6 +3726,74 @@ async function apiResponse(url, env) {
     const historical = await historyApiResponse(pathname, searchParams, env);
     if (historical) return historical;
   }
+  const lightweightSummaryRoute = pathname.endsWith("/dashboard-summary.json") ||
+    pathname.endsWith("/status.json") ||
+    pathname.endsWith("/changes.json") ||
+    pathname.endsWith("/candidates/top.json") ||
+    pathname.endsWith("/ports.json");
+  if (lightweightSummaryRoute) {
+    const pointer = await fetchActivePointer(env);
+    const latestSummarySnapshot = await fetchLatestSummarySnapshot(env);
+    if (latestSummarySnapshot) {
+      const summarySource = { configured: pointer.configured, error: pointer.error, pointer };
+      const summary = buildDashboardSummaryFromSnapshot(latestSummarySnapshot, summarySource, pointer.error || (pointer.active_run_id && pointer.active_run_id !== latestSummarySnapshot.run_id ? "latest_successful_summary_snapshot" : "active_summary_snapshot"));
+      if (pathname.endsWith("/dashboard-summary.json")) return json(summary, { headers: corsHeaders() });
+      if (pathname.endsWith("/status.json")) return json(summary.status, { headers: corsHeaders() });
+      if (pathname.endsWith("/candidates/top.json")) return json({
+        active_run_id: summary.active_run_id,
+        summary_run_id: summary.summary_run_id,
+        is_fallback: summary.is_fallback,
+        fallback_reason: summary.fallback_reason,
+        generated_at: summary.generated_at,
+        data_freshness: summary.data_freshness,
+        record_count: summary.record_count,
+        target_count: summary.target_count,
+        immediate_target_count: summary.immediate_target_count,
+        opportunity_count: summary.opportunity_count,
+        immediate_targets: summary.immediate_targets,
+        opportunities: summary.opportunities
+      }, { headers: corsHeaders() });
+      if (pathname.endsWith("/ports.json")) return json({
+        active_run_id: summary.active_run_id,
+        summary_run_id: summary.summary_run_id,
+        is_fallback: summary.is_fallback,
+        fallback_reason: summary.fallback_reason,
+        generated_at: summary.generated_at,
+        data_freshness: summary.data_freshness,
+        record_count: summary.record_count,
+        target_count: summary.target_count,
+        immediate_target_count: summary.immediate_target_count,
+        opportunity_count: summary.opportunity_count,
+        data: summary.ports
+      }, { headers: corsHeaders() });
+      if (pathname.endsWith("/changes.json")) {
+        const previousVersion = searchParams.get("since") || null;
+        const previousSnapshot = previousVersion ? await fetchSummarySnapshotByRun(env, previousVersion) : null;
+        const previousPorts = new Set((previousSnapshot?.port_summary || []).map(port => port.port_unit_key || port.port_code || port.port_name).filter(Boolean));
+        const currentPorts = new Set((latestSummarySnapshot?.port_summary || []).map(port => port.port_unit_key || port.port_code || port.port_name).filter(Boolean));
+        return json({
+          dataset_version: latestSummarySnapshot.run_id,
+          previous_dataset_version: previousVersion,
+          active_run_id: pointer.active_run_id || null,
+          summary_run_id: latestSummarySnapshot.run_id,
+          generated_at: summary.generated_at,
+          data_freshness: summary.data_freshness,
+          record_count: summary.record_count,
+          target_count: summary.target_count,
+          immediate_target_count: summary.immediate_target_count,
+          opportunity_count: summary.opportunity_count,
+          new_immediate_targets: Math.max(0, Number(latestSummarySnapshot.immediate_target_count || 0) - Number(previousSnapshot?.immediate_target_count || 0)),
+          new_sales_candidates: Math.max(0, Number(latestSummarySnapshot.sales_target_count || 0) - Number(previousSnapshot?.sales_target_count || 0)),
+          removed_targets: Math.max(0, Number(previousSnapshot?.sales_target_count || 0) - Number(latestSummarySnapshot.sales_target_count || 0)),
+          changed_ports: [...currentPorts].filter(port => !previousPorts.has(port)),
+          changed_operators: [],
+          is_fallback: summary.is_fallback,
+          fallback_reason: summary.fallback_reason,
+          changed: previousVersion ? String(previousVersion) !== String(latestSummarySnapshot.run_id || "") : false
+        }, { headers: corsHeaders() });
+      }
+    }
+  }
   const source = await fetchSupabaseRows(env);
   const latestSummarySnapshot = await fetchLatestSummarySnapshot(env);
   const allRecords = activeRecordsOnly(latestPerVesselPort(source.rows));
@@ -3907,11 +4014,31 @@ async function apiResponse(url, env) {
   return null;
 }
 
+function isWorkerCacheableApi(pathname = "") {
+  return pathname.endsWith("/dashboard-summary.json") ||
+    pathname.endsWith("/status.json") ||
+    pathname.endsWith("/changes.json") ||
+    pathname.endsWith("/candidates/top.json") ||
+    pathname.endsWith("/ports.json");
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) {
+      if (request.method === "GET" && isWorkerCacheableApi(url.pathname) && typeof caches !== "undefined") {
+        const cache = caches.default;
+        const cacheKey = new Request(url.toString(), request);
+        const cached = await cache.match(cacheKey);
+        if (cached) return cached;
+        const response = await apiResponse(url, env);
+        if (response) {
+          response.headers.set("cache-control", `public, max-age=${API_CACHE_SECONDS}, stale-while-revalidate=900`);
+          await cache.put(cacheKey, response.clone());
+          return response;
+        }
+      }
       const response = await apiResponse(url, env);
       if (response) return response;
     }

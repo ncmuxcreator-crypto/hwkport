@@ -88,6 +88,42 @@ function candidateExclusionReason(record = {}) {
   return "";
 }
 
+function inferSummarySubPort(record = {}) {
+  const text = [record.sub_port, record.sub_port_name, record.terminal_name, record.berth_name, record.anchorage_name, record.laidupFcltyNm, record.facility_name_raw, record.port_name, record.port]
+    .filter(Boolean)
+    .join(" ")
+    .normalize("NFKC")
+    .toLowerCase();
+  if (/hadong|하동/.test(text)) return "하동항";
+  if (/samcheonpo|삼천포/.test(text)) return "삼천포항";
+  if (/masan|jinhae|마산|진해/.test(text)) return "마산·진해항";
+  if (/tongyeong|통영/.test(text)) return "통영항";
+  if (/geoje|okpo|고현|옥포|거제/.test(text)) return "거제·옥포항";
+  if (/sokcho|속초/.test(text)) return "속초항";
+  if (/boryeong|보령/.test(text)) return "보령항";
+  if (/yeongheung|영흥/.test(text)) return "영흥 터미널";
+  if (/taean|태안/.test(text)) return "태안 터미널";
+  if (/dangjin industrial|당진 산업|당진화력|현대제철|당진항/.test(text)) return "당진 산업터미널";
+  if (/pnit|pnc|hpnt|부산신항|신항|newport|pusan newport/.test(text)) return "부산신항";
+  if (/감천|gamcheon/.test(text)) return "감천항";
+  if (/신감만|감만|gamman/.test(text)) return "감만·신감만";
+  return String(record.sub_port || "").trim();
+}
+
+function summaryPortUnit(record = {}) {
+  const portCode = record.port_code || "";
+  const subPort = inferSummarySubPort(record);
+  const portName = subPort || record.port_name || record.port || portCode || "unknown";
+  return {
+    key: `${portCode || portName}|${subPort || ""}`,
+    port_code: portCode || null,
+    port_name: portName,
+    port_group: record.port_name || record.port || portName,
+    sub_port: subPort,
+    display_scope: subPort ? "sub_port" : "representative_port"
+  };
+}
+
 function isImmediateTargetRecord(record = {}) {
   if (isHardCandidateExcluded(record) || isDepartedRecord(record)) return false;
   if (record.is_immediate_candidate === true || ["critical", "immediate_target"].includes(record.candidate_band)) return true;
@@ -475,10 +511,14 @@ function buildDashboardSummarySnapshot(records = [], runId, now, diagnostics = {
   const salesRows = usefulRecords.filter(isSalesTargetRecord);
   const immediateRows = usefulRecords.filter(isImmediateTargetRecord);
   const watchlistRows = usefulRecords.filter(isWatchlistRecord);
-  const portGroups = groupBy(usefulRecords, record => record.port_code || record.port_name || record.port || "unknown");
+  const portGroups = groupBy(usefulRecords, record => summaryPortUnit(record).key);
   const portSummary = [...portGroups.entries()].map(([portKey, rows]) => ({
-    port_code: rows.find(row => row.port_code)?.port_code || portKey,
-    port_name: rows.find(row => row.port_name || row.port)?.port_name || rows.find(row => row.port)?.port || portKey,
+    port_unit_key: portKey,
+    port_code: summaryPortUnit(rows[0]).port_code || portKey,
+    port_name: summaryPortUnit(rows[0]).port_name,
+    port_group: summaryPortUnit(rows[0]).port_group,
+    sub_port: summaryPortUnit(rows[0]).sub_port,
+    display_scope: summaryPortUnit(rows[0]).display_scope,
     total_vessels: rows.length,
     target_vessels: rows.filter(row => targetRows.includes(row)).length,
     sales_targets: rows.filter(isSalesTargetRecord).length,
@@ -532,6 +572,54 @@ function buildDashboardSummarySnapshot(records = [], runId, now, diagnostics = {
       ).length
     },
     created_at: now
+  };
+}
+
+function currentCandidateRow(record = {}, runId, now, prefix) {
+  const portCallId = buildPortCallId(record);
+  return {
+    current_id: stableEntityId(prefix, `${runId}-${portCallId}-${record.hybrid_entity_key || record.vessel_id || record.vessel_name || ""}`),
+    run_id: runId,
+    port_call_id: portCallId,
+    master_vessel_id: fallbackMasterId(record) || null,
+    vessel_name: record.vessel_name || record.name || null,
+    port_code: record.port_code || null,
+    port_name: record.port_name || record.port || null,
+    commercial_value_score: commercialScore(record),
+    candidate_band: candidateLabel(record),
+    payload: summaryVesselRow(record),
+    is_current: true,
+    updated_at: now
+  };
+}
+
+function buildCurrentMaterializedRows(records = [], runId, now, summarySnapshot = null) {
+  const salesRows = records.filter(isSalesTargetRecord);
+  const immediateRows = records.filter(isImmediateTargetRecord);
+  const summary = summarySnapshot || buildDashboardSummarySnapshot(records, runId, now);
+  return {
+    salesCandidates: salesRows.map(record => currentCandidateRow(record, runId, now, "SCUR")),
+    immediateTargets: immediateRows.map(record => currentCandidateRow(record, runId, now, "ICUR")),
+    portSummaries: (summary.port_summary || []).map(port => ({
+      port_unit_key: port.port_unit_key || stableEntityId("PORTCUR", `${port.port_code || ""}-${port.sub_port || port.port_name || ""}`),
+      run_id: runId,
+      port_code: port.port_code || null,
+      port_name: port.port_name || port.port_name_ko || null,
+      port_group: port.port_group || port.port_name || null,
+      sub_port: port.sub_port || null,
+      display_scope: port.display_scope || (port.sub_port ? "sub_port" : "representative_port"),
+      tier: scoreNumber(port.tier || 99),
+      total_vessels: scoreNumber(port.total_vessels || port.vessel_count),
+      target_vessels: scoreNumber(port.target_vessels || port.target_vessel_count),
+      sales_candidates: scoreNumber(port.sales_candidates || port.sales_targets),
+      immediate_targets: scoreNumber(port.immediate_targets || port.immediate_target_count),
+      anchorage_vessels: scoreNumber(port.anchorage_vessels),
+      long_stay_vessels: scoreNumber(port.long_stay_vessels || port.long_idle_vessels),
+      port_opportunity_score: scoreNumber(port.port_opportunity_score),
+      payload: port,
+      is_current: true,
+      updated_at: now
+    }))
   };
 }
 
@@ -2987,6 +3075,13 @@ export async function saveToSupabase(records, options = {}) {
     latest_successful_summary_run_id: null,
     summary_snapshot_error: null
   };
+  const currentMaterializedResult = {
+    materialized_current_write_status: "skipped_not_promoted",
+    sales_candidates_current_rows: 0,
+    immediate_targets_current_rows: 0,
+    port_summary_current_rows: 0,
+    materialized_current_error: null
+  };
 
   if (promotion.promotable) {
     try {
@@ -3002,9 +3097,34 @@ export async function saveToSupabase(records, options = {}) {
       dashboardSummarySnapshotResult.summary_snapshot_write_status = "written";
       dashboardSummarySnapshotResult.summary_snapshot_rows = 1;
       dashboardSummarySnapshotResult.latest_successful_summary_run_id = runId;
+      const currentRows = buildCurrentMaterializedRows(records, runId, now, summarySnapshot);
+      await supabase.from("sales_candidates_current").update({ is_current: false }).eq("is_current", true);
+      await supabase.from("immediate_targets_current").update({ is_current: false }).eq("is_current", true);
+      await supabase.from("port_summary_current").update({ is_current: false }).eq("is_current", true);
+      for (let index = 0; index < currentRows.salesCandidates.length; index += batchSize) {
+        const batch = currentRows.salesCandidates.slice(index, index + batchSize);
+        const { error } = await supabase.from("sales_candidates_current").upsert(batch, { onConflict: "current_id" });
+        if (error) throw error;
+        currentMaterializedResult.sales_candidates_current_rows += batch.length;
+      }
+      for (let index = 0; index < currentRows.immediateTargets.length; index += batchSize) {
+        const batch = currentRows.immediateTargets.slice(index, index + batchSize);
+        const { error } = await supabase.from("immediate_targets_current").upsert(batch, { onConflict: "current_id" });
+        if (error) throw error;
+        currentMaterializedResult.immediate_targets_current_rows += batch.length;
+      }
+      for (let index = 0; index < currentRows.portSummaries.length; index += batchSize) {
+        const batch = currentRows.portSummaries.slice(index, index + batchSize);
+        const { error } = await supabase.from("port_summary_current").upsert(batch, { onConflict: "port_unit_key" });
+        if (error) throw error;
+        currentMaterializedResult.port_summary_current_rows += batch.length;
+      }
+      currentMaterializedResult.materialized_current_write_status = "written";
     } catch (error) {
       dashboardSummarySnapshotResult.summary_snapshot_write_status = "failed";
       dashboardSummarySnapshotResult.summary_snapshot_error = error.message;
+      currentMaterializedResult.materialized_current_write_status = "failed";
+      currentMaterializedResult.materialized_current_error = error.message;
       blockPromotion(promotion, "no_fatal_db_write_error", "Dashboard summary snapshot write failed before promotion.");
     }
   }
@@ -3039,6 +3159,9 @@ export async function saveToSupabase(records, options = {}) {
     enrichment_match_candidates: enrichmentMatchRows.length,
     commercial_leads: commercialLeadRows.length,
     dashboard_summary_snapshots: dashboardSummarySnapshotResult.summary_snapshot_rows,
+    sales_candidates_current: currentMaterializedResult.sales_candidates_current_rows,
+    immediate_targets_current: currentMaterializedResult.immediate_targets_current_rows,
+    port_summary_current: currentMaterializedResult.port_summary_current_rows,
     feature_store: featureStoreRows.length,
     feature_snapshots: featureSnapshotRows.length,
     rule_evaluations: ruleEvaluationRows.length,
@@ -3064,6 +3187,7 @@ export async function saveToSupabase(records, options = {}) {
       db_rows_written_by_table: dbRowsWrittenByTable,
       retention_rows_deleted_by_table: retentionRowsDeletedByTable,
       dashboard_summary_snapshot: dashboardSummarySnapshotResult,
+      materialized_current_tables: currentMaterializedResult,
       port_call_architecture: {
         port_call_id_coverage: promotion.port_call_id_coverage,
         port_call_master_count: intelligencePopulationDiagnostics.port_call_master_count,
@@ -3104,6 +3228,7 @@ export async function saveToSupabase(records, options = {}) {
     ...historicalSnapshotResult,
     ...intelligencePopulationDiagnostics,
     ...dashboardSummarySnapshotResult,
+    ...currentMaterializedResult,
     db_rows_written_by_table: dbRowsWrittenByTable,
     retention_rows_deleted_by_table: retentionRowsDeletedByTable,
     retentionCleanup,

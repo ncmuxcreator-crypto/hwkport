@@ -2294,13 +2294,34 @@ function portCodeFromName(port = "") {
 }
 function buildPortIntelligence(records) {
   const byPort = new Map();
+  const inferSubPort = v => {
+    const text = [v.sub_port, v.terminal_name, v.berth_name, v.anchorage_name, v.laidupFcltyNm, v.facility_name_raw, v.port, v.port_name].filter(Boolean).join(" ").normalize("NFKC").toLowerCase();
+    if (/hadong|하동/.test(text)) return "하동항";
+    if (/samcheonpo|삼천포/.test(text)) return "삼천포항";
+    if (/masan|jinhae|마산|진해/.test(text)) return "마산·진해항";
+    if (/tongyeong|통영/.test(text)) return "통영항";
+    if (/geoje|okpo|고현|옥포|거제/.test(text)) return "거제·옥포항";
+    if (/sokcho|속초/.test(text)) return "속초항";
+    if (/boryeong|보령/.test(text)) return "보령항";
+    if (/yeongheung|영흥/.test(text)) return "영흥 터미널";
+    if (/taean|태안/.test(text)) return "태안 터미널";
+    if (/dangjin industrial|당진 산업|당진화력|현대제철|당진항/.test(text)) return "당진 산업터미널";
+    if (/pnit|pnc|hpnt|부산신항|신항|newport|pusan newport/.test(text)) return "부산신항";
+    if (/감천|gamcheon/.test(text)) return "감천항";
+    if (/신감만|감만|gamman/.test(text)) return "감만·신감만";
+    return String(v.sub_port || "").trim();
+  };
   for (const v of records) {
     const portName = v.port || v.port_name || "Unknown";
     const portCode = v.port_code || portCodeFromName(portName);
-    const key = portCode !== "unknown" ? portCode : portName;
+    const subPort = inferSubPort(v);
+    const key = `${portCode !== "unknown" ? portCode : portName}|${subPort}`;
     const current = byPort.get(key) || {
       port_code: portCode,
-      port_name: portName,
+      port_name: subPort || portName,
+      port_group: portName,
+      sub_port: subPort,
+      display_scope: subPort ? "sub_port" : "representative_port",
       vessel_count: 0,
       scored_count: 0,
       candidate_count: 0,

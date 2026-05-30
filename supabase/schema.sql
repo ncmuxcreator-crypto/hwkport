@@ -147,6 +147,57 @@ create table if not exists dashboard_summary_snapshots (
   created_at timestamptz default now()
 );
 
+create table if not exists sales_candidates_current (
+  current_id text primary key,
+  run_id text not null,
+  port_call_id text,
+  master_vessel_id text,
+  vessel_name text,
+  port_code text,
+  port_name text,
+  commercial_value_score numeric default 0,
+  candidate_band text,
+  payload jsonb default '{}'::jsonb,
+  is_current boolean default true,
+  updated_at timestamptz default now()
+);
+
+create table if not exists immediate_targets_current (
+  current_id text primary key,
+  run_id text not null,
+  port_call_id text,
+  master_vessel_id text,
+  vessel_name text,
+  port_code text,
+  port_name text,
+  commercial_value_score numeric default 0,
+  candidate_band text,
+  payload jsonb default '{}'::jsonb,
+  is_current boolean default true,
+  updated_at timestamptz default now()
+);
+
+create table if not exists port_summary_current (
+  port_unit_key text primary key,
+  run_id text not null,
+  port_code text,
+  port_name text,
+  port_group text,
+  sub_port text,
+  display_scope text,
+  tier int,
+  total_vessels int default 0,
+  target_vessels int default 0,
+  sales_candidates int default 0,
+  immediate_targets int default 0,
+  anchorage_vessels int default 0,
+  long_stay_vessels int default 0,
+  port_opportunity_score numeric default 0,
+  payload jsonb default '{}'::jsonb,
+  is_current boolean default true,
+  updated_at timestamptz default now()
+);
+
 create table if not exists source_collection_logs (
   source_log_id text primary key,
   run_id text,
@@ -1265,6 +1316,12 @@ create index if not exists idx_data_collection_runs_status on data_collection_ru
 create index if not exists idx_active_dataset_pointer_active_run_id on active_dataset_pointer(active_run_id);
 create index if not exists idx_dashboard_summary_snapshots_latest on dashboard_summary_snapshots(is_latest_successful, generated_at desc);
 create index if not exists idx_dashboard_summary_snapshots_run on dashboard_summary_snapshots(run_id);
+create index if not exists idx_sales_candidates_current_run on sales_candidates_current(run_id, is_current);
+create index if not exists idx_sales_candidates_current_score on sales_candidates_current(commercial_value_score desc);
+create index if not exists idx_immediate_targets_current_run on immediate_targets_current(run_id, is_current);
+create index if not exists idx_immediate_targets_current_score on immediate_targets_current(commercial_value_score desc);
+create index if not exists idx_port_summary_current_run on port_summary_current(run_id, is_current);
+create index if not exists idx_port_summary_current_tier on port_summary_current(tier, port_opportunity_score desc);
 create index if not exists idx_pilot_schedule_events_run_id on pilot_schedule_events(run_id);
 create index if not exists idx_pilot_schedule_events_pilot_time on pilot_schedule_events(pilot_time desc);
 alter table vessel_events add column if not exists event_uid text;
@@ -1600,6 +1657,48 @@ alter table dashboard_summary_snapshots add column if not exists congestion_summ
 alter table dashboard_summary_snapshots add column if not exists data_quality_summary jsonb default '{}'::jsonb;
 alter table dashboard_summary_snapshots add column if not exists source_health_summary jsonb default '{}'::jsonb;
 alter table dashboard_summary_snapshots add column if not exists created_at timestamptz default now();
+alter table sales_candidates_current add column if not exists current_id text;
+alter table sales_candidates_current add column if not exists run_id text;
+alter table sales_candidates_current add column if not exists port_call_id text;
+alter table sales_candidates_current add column if not exists master_vessel_id text;
+alter table sales_candidates_current add column if not exists vessel_name text;
+alter table sales_candidates_current add column if not exists port_code text;
+alter table sales_candidates_current add column if not exists port_name text;
+alter table sales_candidates_current add column if not exists commercial_value_score numeric default 0;
+alter table sales_candidates_current add column if not exists candidate_band text;
+alter table sales_candidates_current add column if not exists payload jsonb default '{}'::jsonb;
+alter table sales_candidates_current add column if not exists is_current boolean default true;
+alter table sales_candidates_current add column if not exists updated_at timestamptz default now();
+alter table immediate_targets_current add column if not exists current_id text;
+alter table immediate_targets_current add column if not exists run_id text;
+alter table immediate_targets_current add column if not exists port_call_id text;
+alter table immediate_targets_current add column if not exists master_vessel_id text;
+alter table immediate_targets_current add column if not exists vessel_name text;
+alter table immediate_targets_current add column if not exists port_code text;
+alter table immediate_targets_current add column if not exists port_name text;
+alter table immediate_targets_current add column if not exists commercial_value_score numeric default 0;
+alter table immediate_targets_current add column if not exists candidate_band text;
+alter table immediate_targets_current add column if not exists payload jsonb default '{}'::jsonb;
+alter table immediate_targets_current add column if not exists is_current boolean default true;
+alter table immediate_targets_current add column if not exists updated_at timestamptz default now();
+alter table port_summary_current add column if not exists port_unit_key text;
+alter table port_summary_current add column if not exists run_id text;
+alter table port_summary_current add column if not exists port_code text;
+alter table port_summary_current add column if not exists port_name text;
+alter table port_summary_current add column if not exists port_group text;
+alter table port_summary_current add column if not exists sub_port text;
+alter table port_summary_current add column if not exists display_scope text;
+alter table port_summary_current add column if not exists tier int;
+alter table port_summary_current add column if not exists total_vessels int default 0;
+alter table port_summary_current add column if not exists target_vessels int default 0;
+alter table port_summary_current add column if not exists sales_candidates int default 0;
+alter table port_summary_current add column if not exists immediate_targets int default 0;
+alter table port_summary_current add column if not exists anchorage_vessels int default 0;
+alter table port_summary_current add column if not exists long_stay_vessels int default 0;
+alter table port_summary_current add column if not exists port_opportunity_score numeric default 0;
+alter table port_summary_current add column if not exists payload jsonb default '{}'::jsonb;
+alter table port_summary_current add column if not exists is_current boolean default true;
+alter table port_summary_current add column if not exists updated_at timestamptz default now();
 alter table risk_history add column if not exists commercial_value_score int default 0;
 alter table risk_history add column if not exists data_confidence_score int default 0;
 alter table vessel_master add column if not exists vessel_type_group text;
