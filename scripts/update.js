@@ -25,6 +25,8 @@ const IMMEDIATE_TARGET_THRESHOLD = Number(process.env.IMMEDIATE_TARGET_THRESHOLD
 const CRITICAL_TARGET_THRESHOLD = Number(process.env.CRITICAL_TARGET_THRESHOLD || 90);
 const MAX_TARGET_VESSELS = Number(process.env.MAX_TARGET_VESSELS || 5000);
 const MAX_CANDIDATES = Number(process.env.MAX_CANDIDATES || 1000);
+const VALIDATION_MODE = String(process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
+const DEBUG_API_DIR = "dashboard/api/debug";
 
 // Canonical output fields for new pipeline logic:
 // score -> commercial_value_score
@@ -2120,14 +2122,27 @@ let startupConfigDiagnostics = configDiagnostics();
 
 function ensureDirs() {
   fs.mkdirSync("dashboard/api", { recursive: true });
+  fs.mkdirSync(DEBUG_API_DIR, { recursive: true });
   fs.mkdirSync("data/history", { recursive: true });
   fs.mkdirSync("data/reports", { recursive: true });
   fs.mkdirSync("public", { recursive: true });
-  for (const entry of fs.readdirSync("dashboard/api", { withFileTypes: true })) {
-    const target = `dashboard/api/${entry.name}`;
-    if (entry.isFile() && /\.(json|csv)$/i.test(entry.name)) fs.rmSync(target, { force: true });
-    if (entry.isDirectory() && entry.name === "ports") fs.rmSync(target, { recursive: true, force: true });
-  }
+}
+
+function shouldWriteDebugApiOutputs(report = {}) {
+  return String(report?.data_mode || "").toLowerCase() === "no_live_data";
+}
+
+function routeApiOutputPath(filePath, report = {}) {
+  const normalized = String(filePath || "").replace(/\\/g, "/");
+  if (!shouldWriteDebugApiOutputs(report) || !normalized.startsWith("dashboard/api/")) return normalized;
+  return `${DEBUG_API_DIR}/${normalized.slice("dashboard/api/".length)}`;
+}
+
+function writeApiJson(filePath, payload, report = {}) {
+  const target = routeApiOutputPath(filePath, report);
+  fs.mkdirSync(target.split("/").slice(0, -1).join("/"), { recursive: true });
+  fs.writeFileSync(target, JSON.stringify(payload, null, 2));
+  return target;
 }
 
 function riskLevel(score = 0) {
@@ -3340,6 +3355,19 @@ function countJsonRows(value) {
 }
 
 function writeStaticDatasetJson(path, payload, report = {}, manifest = {}) {
+  const outputPath = routeApiOutputPath(path, report);
+  if (outputPath !== path) {
+    const incomingRows = countJsonRows(payload);
+    fs.mkdirSync(outputPath.split("/").slice(0, -1).join("/"), { recursive: true });
+    fs.writeFileSync(outputPath, JSON.stringify(payload, null, 2));
+    manifest[path] = {
+      status: "written_to_debug_only",
+      output_path: outputPath,
+      rows: incomingRows,
+      reason: "no_live_data_must_not_overwrite_production_api_files"
+    };
+    return manifest[path];
+  }
   const existingPayload = readJsonFile(path, null);
   const existingRows = countJsonRows(existingPayload);
   const incomingRows = countJsonRows(payload);
@@ -4376,7 +4404,9 @@ try {
     version: VERSION,
     buildName: BUILD_NAME,
     apiSources: detectSecrets(),
-    supabaseStatus
+    supabaseStatus,
+    diagnosticsOnly: shouldWriteDebugApiOutputs(baseReport),
+    debugDir: DEBUG_API_DIR
   });
   const allCollectedVessels = activeRecordsOnly(snapshotOutputs.merged);
   const targetVesselsRaw = allCollectedVessels.filter(isMainCommercialVessel);
@@ -4582,6 +4612,9 @@ try {
   };
   const staticOutputManifest = {};
   report.static_output_write_status = staticOutputManifest;
+  report.output_mode = shouldWriteDebugApiOutputs(report) ? "debug_diagnostics_only" : "production_api";
+  report.production_api_write_protected = shouldWriteDebugApiOutputs(report);
+  report.debug_api_dir = shouldWriteDebugApiOutputs(report) ? DEBUG_API_DIR : null;
   report.dataset_generation_audit.static_outputs_generated = {
     ...report.dataset_generation_audit.static_outputs_generated,
     "dashboard/api/dashboard-summary.json": dashboardSummary.record_count
@@ -4589,34 +4622,34 @@ try {
 
   writeStaticDatasetJson("dashboard/api/all-collected-vessels.json", allCollectedVessels, report, staticOutputManifest);
   writeStaticDatasetJson("dashboard/api/target-vessels.json", targetVessels, report, staticOutputManifest);
-  fs.writeFileSync("dashboard/api/staying-vessels.json", JSON.stringify(stayingVessels, null, 2));
-  fs.writeFileSync("dashboard/api/arrival-pipeline.json", JSON.stringify(arrivalPipeline, null, 2));
-  fs.writeFileSync("dashboard/api/imo-recovery-queue.json", JSON.stringify(buildImoRecoveryQueue(vessels), null, 2));
-  fs.writeFileSync("dashboard/api/imo-recovery-priority.json", JSON.stringify(buildImoRecoveryQueue(vessels), null, 2));
-  fs.writeFileSync("dashboard/api/high-value-targets.json", JSON.stringify(buildHighValueTargets(vessels), null, 2));
-  fs.writeFileSync("dashboard/api/unknown-gt-review.json", JSON.stringify(buildUnknownGtReview(vessels), null, 2));
-  fs.writeFileSync("dashboard/api/high-value-low-confidence.json", JSON.stringify(buildHighValueLowConfidence(vessels), null, 2));
-  fs.writeFileSync("dashboard/api/congestion-watchlist.json", JSON.stringify(buildCongestionWatchlist(vessels), null, 2));
-  fs.writeFileSync("dashboard/api/agent-followup-queue.json", JSON.stringify(buildAgentFollowupQueue(vessels), null, 2));
-  fs.mkdirSync("dashboard/api/quality", { recursive: true });
-  fs.mkdirSync("dashboard/api/review", { recursive: true });
-  fs.writeFileSync("dashboard/api/quality/basic-info-coverage.json", JSON.stringify(buildBasicInfoCoverage(vessels), null, 2));
-  fs.writeFileSync("dashboard/api/quality/scoring-diagnostics.json", JSON.stringify(scoringDiagnostics, null, 2));
-  fs.writeFileSync("dashboard/api/quality/matching-diagnostics.json", JSON.stringify(matchingDiagnostics, null, 2));
-  fs.writeFileSync("dashboard/api/quality/dataset-generation-audit.json", JSON.stringify(report.dataset_generation_audit, null, 2));
-  fs.writeFileSync("dashboard/api/quality/imo-recovery.json", JSON.stringify(buildImoRecoveryKpis(vessels), null, 2));
-  fs.writeFileSync("dashboard/api/quality/prediction-feedback.json", JSON.stringify(predictionDiagnostics, null, 2));
-  fs.writeFileSync("dashboard/api/quality/data-quality.json", JSON.stringify(dataQualityLayer, null, 2));
-  fs.writeFileSync("dashboard/api/review/basic-info-missing.json", JSON.stringify(buildBasicInfoMissingReview(vessels), null, 2));
-  fs.writeFileSync("dashboard/api/predicted-arrivals.json", JSON.stringify(arrivalPipeline, null, 2));
+  writeApiJson("dashboard/api/staying-vessels.json", stayingVessels, report);
+  writeApiJson("dashboard/api/arrival-pipeline.json", arrivalPipeline, report);
+  writeApiJson("dashboard/api/imo-recovery-queue.json", buildImoRecoveryQueue(vessels), report);
+  writeApiJson("dashboard/api/imo-recovery-priority.json", buildImoRecoveryQueue(vessels), report);
+  writeApiJson("dashboard/api/high-value-targets.json", buildHighValueTargets(vessels), report);
+  writeApiJson("dashboard/api/unknown-gt-review.json", buildUnknownGtReview(vessels), report);
+  writeApiJson("dashboard/api/high-value-low-confidence.json", buildHighValueLowConfidence(vessels), report);
+  writeApiJson("dashboard/api/congestion-watchlist.json", buildCongestionWatchlist(vessels), report);
+  writeApiJson("dashboard/api/agent-followup-queue.json", buildAgentFollowupQueue(vessels), report);
+  fs.mkdirSync(routeApiOutputPath("dashboard/api/quality/basic-info-coverage.json", report).split("/").slice(0, -1).join("/"), { recursive: true });
+  fs.mkdirSync(routeApiOutputPath("dashboard/api/review/basic-info-missing.json", report).split("/").slice(0, -1).join("/"), { recursive: true });
+  writeApiJson("dashboard/api/quality/basic-info-coverage.json", buildBasicInfoCoverage(vessels), report);
+  writeApiJson("dashboard/api/quality/scoring-diagnostics.json", scoringDiagnostics, report);
+  writeApiJson("dashboard/api/quality/matching-diagnostics.json", matchingDiagnostics, report);
+  writeApiJson("dashboard/api/quality/dataset-generation-audit.json", report.dataset_generation_audit, report);
+  writeApiJson("dashboard/api/quality/imo-recovery.json", buildImoRecoveryKpis(vessels), report);
+  writeApiJson("dashboard/api/quality/prediction-feedback.json", predictionDiagnostics, report);
+  writeApiJson("dashboard/api/quality/data-quality.json", dataQualityLayer, report);
+  writeApiJson("dashboard/api/review/basic-info-missing.json", buildBasicInfoMissingReview(vessels), report);
+  writeApiJson("dashboard/api/predicted-arrivals.json", arrivalPipeline, report);
   writeStaticDatasetJson("dashboard/api/vessels.json", vessels, report, staticOutputManifest);
   writeStaticDatasetJson("data/latest-lite.json", vessels, report, staticOutputManifest);
   writeStaticDatasetJson("dashboard/api/candidates.json", candidateList, report, staticOutputManifest);
-  fs.writeFileSync("dashboard/api/contact-ready-vessels.json", JSON.stringify(contactReadyVessels, null, 2));
-  fs.writeFileSync("dashboard/api/fleet-opportunities.json", JSON.stringify(fleetOpportunities, null, 2));
-  fs.writeFileSync("dashboard/api/predicted-cleaning-opportunities.json", JSON.stringify(predictedCleaningOpportunities, null, 2));
-  fs.writeFileSync("dashboard/api/candidate-summary.json", JSON.stringify(buildCandidateSummary(vessels), null, 2));
-  fs.writeFileSync("dashboard/api/contact-queue.json", JSON.stringify(candidateList.slice(0, 50).map((v, index) => ({
+  writeApiJson("dashboard/api/contact-ready-vessels.json", contactReadyVessels, report);
+  writeApiJson("dashboard/api/fleet-opportunities.json", fleetOpportunities, report);
+  writeApiJson("dashboard/api/predicted-cleaning-opportunities.json", predictedCleaningOpportunities, report);
+  writeApiJson("dashboard/api/candidate-summary.json", buildCandidateSummary(vessels), report);
+  writeApiJson("dashboard/api/contact-queue.json", candidateList.slice(0, 50).map((v, index) => ({
     rank: index + 1,
     vessel_name: v.vessel_name,
     port: v.port,
@@ -4628,13 +4661,13 @@ try {
     contact_window: v.contact_window,
     next_action: v.candidate_next_action || v.recommended_action,
     reason_codes: v.reason_codes || []
-  })), null, 2));
-  fs.writeFileSync("dashboard/api/hot-candidates.json", JSON.stringify(candidateList.filter(v => v.is_immediate_candidate || (v.total_sales_priority_score || 0) >= IMMEDIATE_TARGET_THRESHOLD).slice(0, 40), null, 2));
-  fs.writeFileSync("dashboard/api/hot-vessels.json", JSON.stringify(hotVessels, null, 2));
+  })), report);
+  writeApiJson("dashboard/api/hot-candidates.json", candidateList.filter(v => v.is_immediate_candidate || (v.total_sales_priority_score || 0) >= IMMEDIATE_TARGET_THRESHOLD).slice(0, 40), report);
+  writeApiJson("dashboard/api/hot-vessels.json", hotVessels, report);
   writeStaticDatasetJson("dashboard/api/ports.json", portIntelligence.map(({ all_vessels, scored_vessels, sales_candidates, immediate_targets, berths, ...port }) => port), report, staticOutputManifest);
   writeStaticDatasetJson("dashboard/api/dashboard-summary.json", dashboardSummary, report, staticOutputManifest);
-  fs.writeFileSync("dashboard/api/port-opportunities.json", JSON.stringify(portOpportunities, null, 2));
-  fs.writeFileSync("dashboard/api/coverage-registry.json", JSON.stringify({
+  writeApiJson("dashboard/api/port-opportunities.json", portOpportunities, report);
+  writeApiJson("dashboard/api/coverage-registry.json", {
     generated_at: completedAt,
     data_mode: report.data_mode,
     record_count: vessels.length,
@@ -4655,9 +4688,9 @@ try {
       .map(({ port_code, port_name, vessel_count, candidate_count, immediate_target_count }) => ({ port: port_name, port_code, vessel_count, candidate_count, immediate_target_count })),
     ports: portIntelligence.map(({ port_code, port_name, vessel_count, candidate_count, immediate_target_count }) => ({ port_code, port_name, vessel_count, candidate_count, immediate_target_count })),
     normalized_fields: ["vessel_name", "imo", "mmsi", "call_sign", "vessel_type", "gt", "operator", "agent", "port_code", "port_name", "berth_name", "anchorage_name", "eta", "ata", "etb", "atb", "etd", "atd", "stay_hours", "current_call_stay_hours", "cumulative_stay_hours", "cumulative_stay_days", "berth_hours", "anchorage_hours", "hybrid_entity_key", "identification_method"]
-  }, null, 2));
+  }, report);
   for (const port of portIntelligence) {
-    const dir = `dashboard/api/ports/${port.port_code}`;
+    const dir = routeApiOutputPath(`dashboard/api/ports/${port.port_code}/vessels.json`, report).split("/").slice(0, -1).join("/");
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(`${dir}/vessels.json`, JSON.stringify(port.all_vessels, null, 2));
     fs.writeFileSync(`${dir}/candidates.json`, JSON.stringify(port.sales_candidates, null, 2));
@@ -4665,15 +4698,18 @@ try {
     fs.writeFileSync(`${dir}/congestion.json`, JSON.stringify(portCongestionHeatmap.find(p => String(p.port_code) === String(port.port_code) || p.port === port.port_name) || null, null, 2));
     fs.writeFileSync(`${dir}/anchorage.json`, JSON.stringify(buildPortAnchorage(allCollectedVessels, port.port_code), null, 2));
   }
-  fs.writeFileSync("dashboard/api/commercial-command-center.json", JSON.stringify(commercialCommandCenter, null, 2));
-  fs.writeFileSync("dashboard/api/port-congestion-heatmap.json", JSON.stringify(portCongestionHeatmap, null, 2));
-  fs.writeFileSync("dashboard/api/biofouling-timeline.json", JSON.stringify(biofoulingTimeline, null, 2));
-  fs.writeFileSync("dashboard/api/status.json", JSON.stringify(report, null, 2));
-  fs.writeFileSync("dashboard/api/readiness-gate.json", JSON.stringify(readinessGateReport, null, 2));
-  fs.writeFileSync("dashboard/api/readiness-gate-runtime.json", JSON.stringify(readinessGateReport, null, 2));
+  writeApiJson("dashboard/api/commercial-command-center.json", commercialCommandCenter, report);
+  writeApiJson("dashboard/api/port-congestion-heatmap.json", portCongestionHeatmap, report);
+  writeApiJson("dashboard/api/biofouling-timeline.json", biofoulingTimeline, report);
+  writeApiJson("dashboard/api/status.json", report, report);
+  writeApiJson("dashboard/api/readiness-gate.json", readinessGateReport, report);
+  writeApiJson("dashboard/api/readiness-gate-runtime.json", readinessGateReport, report);
   fs.writeFileSync("data/pipeline-report.json", JSON.stringify(report, null, 2));
   fs.writeFileSync(`data/reports/${today}.json`, JSON.stringify(report, null, 2));
   fs.copyFileSync("dashboard/index.html", "public/index.html");
+  if (VALIDATION_MODE === "production" && report.data_mode === "no_live_data") {
+    process.exitCode = 1;
+  }
 }
 
 console.log(`[HWK] v${VERSION} ${BUILD_NAME} dashboard data generated`);
@@ -4682,5 +4718,5 @@ console.log(`[HWK] v${VERSION} ${BUILD_NAME} dashboard data generated`);
 // even after all synchronous snapshot writes are complete. End the scheduled run
 // explicitly so GitHub Actions does not cancel a successful refresh at timeout.
 if (process.env.CI === "true") {
-  process.exit(0);
+  process.exit(process.exitCode || 0);
 }

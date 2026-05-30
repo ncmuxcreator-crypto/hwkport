@@ -202,19 +202,22 @@ export function buildBackendOpsReport({ version, buildName, records = [], apiSou
   };
 }
 
-export function writeSnapshotOutputs({ records = [], report = {}, version, buildName, apiSources = [], supabaseStatus }) {
+export function writeSnapshotOutputs({ records = [], report = {}, version, buildName, apiSources = [], supabaseStatus, diagnosticsOnly = false, debugDir = "dashboard/api/debug" }) {
   const previous = report.data_mode === "no_live_data" ? [] : safeReadJson("data/latest-lite.json", []);
   const merged = mergeSnapshots(records, Array.isArray(previous) ? previous : []);
   const today = new Date().toISOString().slice(0, 10);
   const candidateChanges = buildCandidateChanges(merged, Array.isArray(previous) ? previous : []);
   const backendOps = buildBackendOpsReport({ version, buildName, records: merged, apiSources, supabaseStatus });
+  const apiDir = diagnosticsOnly ? debugDir : "dashboard/api";
 
-  ensureDir("dashboard/api/backend-ops.json");
-  fs.writeFileSync("dashboard/api/backend-ops.json", JSON.stringify(backendOps, null, 2));
-  fs.writeFileSync("dashboard/api/candidate-changes.json", JSON.stringify(candidateChanges, null, 2));
-  fs.writeFileSync("dashboard/api/vessels.json", JSON.stringify(merged, null, 2));
-  fs.writeFileSync("data/latest-lite.json", JSON.stringify(merged, null, 2));
-  ensureDir(`data/history/${today}.json`);
-  fs.writeFileSync(`data/history/${today}.json`, JSON.stringify(merged, null, 2));
+  ensureDir(`${apiDir}/backend-ops.json`);
+  fs.writeFileSync(`${apiDir}/backend-ops.json`, JSON.stringify(backendOps, null, 2));
+  fs.writeFileSync(`${apiDir}/candidate-changes.json`, JSON.stringify(candidateChanges, null, 2));
+  fs.writeFileSync(`${apiDir}/vessels.json`, JSON.stringify(merged, null, 2));
+  if (!diagnosticsOnly) {
+    fs.writeFileSync("data/latest-lite.json", JSON.stringify(merged, null, 2));
+    ensureDir(`data/history/${today}.json`);
+    fs.writeFileSync(`data/history/${today}.json`, JSON.stringify(merged, null, 2));
+  }
   return { merged, backendOps, candidateChanges };
 }

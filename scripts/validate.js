@@ -5,6 +5,25 @@ if (!["production", "local"].includes(validationMode)) {
   throw new Error(`Invalid VALIDATION_MODE: ${validationMode}. Use production or local.`);
 }
 const validationWarnings = [];
+const DEBUG_API_DIR = "dashboard/api/debug";
+
+function outputPath(file) {
+  if (validationMode !== "local" || !String(file).startsWith("dashboard/api/")) return file;
+  const debugPath = `${DEBUG_API_DIR}/${String(file).slice("dashboard/api/".length)}`;
+  return fs.existsSync(debugPath) ? debugPath : file;
+}
+
+function outputExists(file) {
+  return fs.existsSync(outputPath(file));
+}
+
+function readOutputJson(file) {
+  return JSON.parse(fs.readFileSync(outputPath(file), "utf8"));
+}
+
+function usingDebugOutput(file) {
+  return outputPath(file).replace(/\\/g, "/").startsWith(`${DEBUG_API_DIR}/`);
+}
 
 const required = [
   "data/latest-lite.json",
@@ -48,16 +67,16 @@ const required = [
 ];
 
 for (const file of required) {
-  if (!fs.existsSync(file)) {
+  if (!outputExists(file)) {
     throw new Error(`Missing required output: ${file}`);
   }
 }
 
 const data = JSON.parse(fs.readFileSync("data/latest-lite.json", "utf8"));
 const report = JSON.parse(fs.readFileSync("data/pipeline-report.json", "utf8"));
-const vessels = JSON.parse(fs.readFileSync("dashboard/api/vessels.json", "utf8"));
-const allCollectedVessels = JSON.parse(fs.readFileSync("dashboard/api/all-collected-vessels.json", "utf8"));
-const targetVessels = JSON.parse(fs.readFileSync("dashboard/api/target-vessels.json", "utf8"));
+const vessels = readOutputJson("dashboard/api/vessels.json");
+const allCollectedVessels = readOutputJson("dashboard/api/all-collected-vessels.json");
+const targetVessels = readOutputJson("dashboard/api/target-vessels.json");
 
 function jsonRows(value) {
   if (Array.isArray(value)) return value;
@@ -91,9 +110,9 @@ const successfulPortOperationSources = collectorSources.filter(source =>
   Number(source.normalized_count || source.rows_normalized || source.row_count || source.rows_collected || 0) > 0
 );
 const vesselGroupValidation = {
-  all_collected_vessels_exists: fs.existsSync("dashboard/api/all-collected-vessels.json"),
+  all_collected_vessels_exists: outputExists("dashboard/api/all-collected-vessels.json"),
   all_collected_vessels_count: jsonRows(allCollectedVessels).length,
-  target_vessels_exists: fs.existsSync("dashboard/api/target-vessels.json"),
+  target_vessels_exists: outputExists("dashboard/api/target-vessels.json"),
   target_vessels_count: jsonRows(targetVessels).length,
   vessels_json_count: jsonRows(vessels).length,
   successful_port_operation_source_count: successfulPortOperationSources.length,
@@ -200,9 +219,9 @@ for (const vessel of vessels) {
 
 
 
-const status = JSON.parse(fs.readFileSync("dashboard/api/status.json", "utf8"));
-if (fs.existsSync("dashboard/api/backend-doctor.json")) {
-  const doctor = JSON.parse(fs.readFileSync("dashboard/api/backend-doctor.json", "utf8"));
+const status = readOutputJson("dashboard/api/status.json");
+if (outputExists("dashboard/api/backend-doctor.json")) {
+  const doctor = readOutputJson("dashboard/api/backend-doctor.json");
   if (doctor.files_have_rows === false && doctor.ok === true) {
     throw new Error("Backend doctor must not return ok=true for empty vessel data");
   }
@@ -219,8 +238,8 @@ if (fs.existsSync("dashboard/api/backend-doctor.json")) {
     if (!(marker in doctor)) throw new Error(`Backend doctor missing actual static output field: ${marker}`);
   }
 }
-if (fs.existsSync("dashboard/api/readiness-gate.json")) {
-  const readiness = JSON.parse(fs.readFileSync("dashboard/api/readiness-gate.json", "utf8"));
+if (outputExists("dashboard/api/readiness-gate.json")) {
+  const readiness = readOutputJson("dashboard/api/readiness-gate.json");
   if (!readiness.run_id || !readiness.generated_at) {
     throw new Error("Readiness gate must include run_id and generated_at");
   }
@@ -234,8 +253,8 @@ if (fs.existsSync("dashboard/api/readiness-gate.json")) {
     throw new Error("Readiness gate must not mark no_live_data as production_ready");
   }
 }
-if (fs.existsSync("dashboard/api/snapshot-guard.json")) {
-  const guard = JSON.parse(fs.readFileSync("dashboard/api/snapshot-guard.json", "utf8"));
+if (outputExists("dashboard/api/snapshot-guard.json")) {
+  const guard = readOutputJson("dashboard/api/snapshot-guard.json");
   if (Number(status.record_count || 0) === 0 && guard.status !== "empty_dataset") {
     throw new Error("Snapshot guard must mark zero-row outputs as empty_dataset");
   }
@@ -243,9 +262,12 @@ if (fs.existsSync("dashboard/api/snapshot-guard.json")) {
     throw new Error("Snapshot guard must not mark zero-row outputs as production_ready");
   }
 }
-if (fs.existsSync("dashboard/api/source-health-runtime.json")) {
-  const sourceHealth = JSON.parse(fs.readFileSync("dashboard/api/source-health-runtime.json", "utf8"));
-  if (status.run_id && sourceHealth.run_id && String(status.run_id) !== String(sourceHealth.run_id) && sourceHealth.stale_source_health !== true) {
+if (outputExists("dashboard/api/source-health-runtime.json")) {
+  const sourceHealth = readOutputJson("dashboard/api/source-health-runtime.json");
+  const localDebugStatusWithStaleMainSourceHealth = validationMode === "local" &&
+    String(status.data_mode || "") === "no_live_data" &&
+    !usingDebugOutput("dashboard/api/source-health-runtime.json");
+  if (status.run_id && sourceHealth.run_id && String(status.run_id) !== String(sourceHealth.run_id) && sourceHealth.stale_source_health !== true && !localDebugStatusWithStaleMainSourceHealth) {
     throw new Error("Source health runtime must mark stale_source_health=true when run_id differs from status.json");
   }
   for (const marker of ["run_id", "generated_at", "secrets_present", "enabled_collectors", "attempted_collectors", "skipped_collectors"]) {
@@ -303,7 +325,7 @@ if (status.collector_diagnostics?.fallback_used) {
 for (const forbidden of ["MV HF ZHOUSHAN", "MAERSK DEMO", "YEOSU TARGET", "integrated_vts_sample", "sample_snapshot"]) {
   const haystack = [
     JSON.stringify(vessels),
-    fs.existsSync("dashboard/api/status.json") ? fs.readFileSync("dashboard/api/status.json", "utf8") : ""
+    outputExists("dashboard/api/status.json") ? fs.readFileSync(outputPath("dashboard/api/status.json"), "utf8") : ""
   ].join("\n");
   if (haystack.includes(forbidden)) throw new Error(`Forbidden sample/demo vessel marker found: ${forbidden}`);
 }
