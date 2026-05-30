@@ -1756,8 +1756,24 @@ async function fetchSupabaseRows(env) {
 }
 
 async function fetchLatestSummarySnapshot(env) {
-  const response = await supabaseGet(env, "/rest/v1/dashboard_summary_snapshots?select=*&is_latest_successful=eq.true&order=generated_at.desc&limit=1");
-  return response.ok && response.rows.length ? response.rows[0] : null;
+  const response = await supabaseGet(env, "/rest/v1/dashboard_summary_snapshots?select=*&status=eq.success&order=generated_at.desc&limit=10");
+  if (!response.ok || !response.rows.length) return null;
+  const latest = response.rows[0];
+  const bestRecent = response.rows
+    .slice()
+    .sort((a, b) => Number(b.all_vessels_count || b.record_count || 0) - Number(a.all_vessels_count || a.record_count || 0))[0];
+  const latestCount = Number(latest.all_vessels_count || latest.record_count || 0);
+  const bestCount = Number(bestRecent?.all_vessels_count || bestRecent?.record_count || 0);
+  if (bestRecent && bestCount >= 100 && latestCount > 0 && latestCount < bestCount * 0.5) {
+    return {
+      ...bestRecent,
+      fallback_reason: "latest_summary_count_drop_guard",
+      guarded_latest_run_id: latest.run_id,
+      guarded_latest_count: latestCount,
+      guarded_reference_count: bestCount
+    };
+  }
+  return latest;
 }
 
 async function fetchSummarySnapshotByRun(env, runId) {
@@ -2832,6 +2848,9 @@ function buildStatusFromSummarySnapshot(snapshot = {}, source = {}, reason = "la
       summary_is_fallback: true,
       summary_fallback_reason: reason,
       last_successful_generated_at: snapshot.generated_at || null,
+      guarded_latest_run_id: snapshot.guarded_latest_run_id || null,
+      guarded_latest_count: snapshot.guarded_latest_count || null,
+      guarded_reference_count: snapshot.guarded_reference_count || null,
       current_run_status: source.pointer?.active_run_id ? "unknown" : "missing_active_run",
       current_run_validation_status: "unknown",
       summary_snapshot_rows: 1,
@@ -3736,7 +3755,7 @@ async function apiResponse(url, env) {
     const latestSummarySnapshot = await fetchLatestSummarySnapshot(env);
     if (latestSummarySnapshot) {
       const summarySource = { configured: pointer.configured, error: pointer.error, pointer };
-      const summary = buildDashboardSummaryFromSnapshot(latestSummarySnapshot, summarySource, pointer.error || (pointer.active_run_id && pointer.active_run_id !== latestSummarySnapshot.run_id ? "latest_successful_summary_snapshot" : "active_summary_snapshot"));
+      const summary = buildDashboardSummaryFromSnapshot(latestSummarySnapshot, summarySource, latestSummarySnapshot.fallback_reason || pointer.error || (pointer.active_run_id && pointer.active_run_id !== latestSummarySnapshot.run_id ? "latest_successful_summary_snapshot" : "active_summary_snapshot"));
       if (pathname.endsWith("/dashboard-summary.json")) return json(summary, { headers: corsHeaders() });
       if (pathname.endsWith("/status.json")) return json(summary.status, { headers: corsHeaders() });
       if (pathname.endsWith("/candidates/top.json")) return json({

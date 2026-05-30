@@ -3086,6 +3086,27 @@ export async function saveToSupabase(records, options = {}) {
   if (promotion.promotable) {
     try {
       const summarySnapshot = buildDashboardSummarySnapshot(records, runId, now, diagnostics);
+      const previousSummary = await supabase
+        .from("dashboard_summary_snapshots")
+        .select("run_id,all_vessels_count,record_count,generated_at")
+        .eq("status", "success")
+        .order("generated_at", { ascending: false })
+        .limit(10);
+      if (previousSummary.error) throw previousSummary.error;
+      const previousReference = (previousSummary.data || [])
+        .slice()
+        .sort((left, right) => Number(right.all_vessels_count || right.record_count || 0) - Number(left.all_vessels_count || left.record_count || 0))[0];
+      const previousCount = Number(previousReference?.all_vessels_count || previousReference?.record_count || 0);
+      const currentCount = Number(summarySnapshot.all_vessels_count || summarySnapshot.record_count || 0);
+      if (previousCount >= 100 && currentCount > 0 && currentCount < previousCount * 0.5) {
+        dashboardSummarySnapshotResult.summary_snapshot_write_status = "blocked_count_drop_guard";
+        dashboardSummarySnapshotResult.summary_snapshot_error = `Current summary count ${currentCount} is below 50% of previous successful count ${previousCount}.`;
+        dashboardSummarySnapshotResult.guarded_reference_run_id = previousReference?.run_id || null;
+        dashboardSummarySnapshotResult.guarded_reference_count = previousCount;
+        dashboardSummarySnapshotResult.guarded_current_count = currentCount;
+        blockPromotion(promotion, "summary_count_drop_guard", dashboardSummarySnapshotResult.summary_snapshot_error);
+        throw new Error(dashboardSummarySnapshotResult.summary_snapshot_error);
+      }
       await supabase
         .from("dashboard_summary_snapshots")
         .update({ is_latest_successful: false })
@@ -3121,8 +3142,10 @@ export async function saveToSupabase(records, options = {}) {
       }
       currentMaterializedResult.materialized_current_write_status = "written";
     } catch (error) {
-      dashboardSummarySnapshotResult.summary_snapshot_write_status = "failed";
-      dashboardSummarySnapshotResult.summary_snapshot_error = error.message;
+      if (dashboardSummarySnapshotResult.summary_snapshot_write_status !== "blocked_count_drop_guard") {
+        dashboardSummarySnapshotResult.summary_snapshot_write_status = "failed";
+        dashboardSummarySnapshotResult.summary_snapshot_error = error.message;
+      }
       currentMaterializedResult.materialized_current_write_status = "failed";
       currentMaterializedResult.materialized_current_error = error.message;
       blockPromotion(promotion, "no_fatal_db_write_error", "Dashboard summary snapshot write failed before promotion.");
