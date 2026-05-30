@@ -245,6 +245,15 @@ function addDaysCompact(days) {
   return formatDateCompact(date);
 }
 
+function compactDateMs(value) {
+  const text = String(value || "").trim();
+  if (!/^\d{8}$/.test(text)) return NaN;
+  const year = Number(text.slice(0, 4));
+  const month = Number(text.slice(4, 6));
+  const day = Number(text.slice(6, 8));
+  return Date.UTC(year, month - 1, day);
+}
+
 function configuredPortOperationPorts() {
   const raw = env("PORT_OPERATION_PORT_CODES") || env("PORT_MIS_PORT_CODES");
   const registryRows = portRegistryRows()
@@ -309,6 +318,66 @@ function configuredPortOperationPorts() {
     }
   }
   return mapped;
+}
+
+function buildCollectorPreflight() {
+  const registryExists = fs.existsSync(PORTS_REGISTRY_PATH);
+  const registry = registryExists ? parseReferenceCsv(fs.readFileSync(PORTS_REGISTRY_PATH, "utf8")) : [];
+  const normalizedRegistry = portRegistryRows();
+  const enabledRegistry = normalizedRegistry.filter(row => truthyFlag(row.enabled) && truthyFlag(row.has_port_operation));
+  const ports = configuredPortOperationPorts();
+  const sde = env("PORT_OPERATION_START_DATE") || addDaysCompact(-3);
+  const ede = env("PORT_OPERATION_END_DATE") || addDaysCompact(7);
+  const sdeMs = compactDateMs(sde);
+  const edeMs = compactDateMs(ede);
+  const numOfRows = Number(env("PORT_OPERATION_NUM_OF_ROWS") || 50);
+  const maxPages = Number(env("PORT_OPERATION_MAX_PAGES") || 20);
+  const serviceKey = envAny("PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY", "SERVICEKEY");
+  const apiUrl = env("PORT_OPERATION_API_URL");
+  const directions = (env("PORT_OPERATION_DEGB_VALUES") || "I,O")
+    .split(/[,\s]+/)
+    .map(value => value.trim())
+    .filter(Boolean);
+  const portOperationCollectorEnabled = ports.length > 0 && directions.length > 0;
+  const failures = [];
+  if (!serviceKey) failures.push("missing_PORT_OPERATION_SERVICE_KEY");
+  if (!apiUrl) failures.push("missing_PORT_OPERATION_API_URL");
+  if (!registryExists) failures.push("ports_registry_csv_missing");
+  if (registryExists && !registry.length) failures.push("ports_registry_csv_empty");
+  if (!enabledRegistry.length) failures.push("enabled_ports_count_zero");
+  if (!portOperationCollectorEnabled) failures.push("port_operation_collector_disabled");
+  if (!Number.isFinite(sdeMs) || !Number.isFinite(edeMs) || sdeMs > edeMs) failures.push("invalid_PORT_OPERATION_date_window");
+  if (!Number.isFinite(numOfRows) || numOfRows <= 0) failures.push("invalid_PORT_OPERATION_NUM_OF_ROWS");
+  if (!Number.isFinite(maxPages) || maxPages <= 0) failures.push("invalid_PORT_OPERATION_MAX_PAGES");
+  return {
+    ok: failures.length === 0,
+    failures,
+    preflight_failure_reason: failures[0] || null,
+    port_operation_collector_enabled: portOperationCollectorEnabled,
+    port_operation_secret_present: Boolean(serviceKey),
+    port_operation_api_url_present: Boolean(apiUrl),
+    port_operation_api_url_effective: Boolean(apiUrl || DEFAULT_PORT_OPERATION_API_URL),
+    ports_registry_path: PORTS_REGISTRY_PATH,
+    ports_registry_loaded: registryExists && registry.length > 0,
+    ports_registry_rows_count: registry.length,
+    enabled_ports_count: enabledRegistry.length,
+    enabled_ports_loaded_count: enabledRegistry.length,
+    enabled_ports_passed_to_collector_count: ports.length,
+    ports_attempted_count: 0,
+    ports_skipped_reason: failures[0] || null,
+    date_window: { sde, ede, valid: Number.isFinite(sdeMs) && Number.isFinite(edeMs) && sdeMs <= edeMs },
+    numOfRows,
+    maxPages,
+    deGb_values: directions,
+    first_5_ports_to_attempt: ports.slice(0, 5).map(port => ({
+      prtAgCd: port.code,
+      port_code: port.portCode,
+      port_name: port.portName,
+      port_name_ko: port.portNameKo,
+      tier: port.tier,
+      sub_port: port.subPort
+    }))
+  };
 }
 
 function maskServiceKey(url) {
@@ -1638,6 +1707,27 @@ async function collectRealRows() {
   const records = [];
   let totalChildEnrichmentAttempts = 0;
   diagnostics = { generated_at: now, attempted_count: 0, success_count: 0, failed_count: 0, skipped_count: 0, real_row_count: 0, actionable_row_count: 0, fallback_used: false, env_presence: runtimeEnvDiagnostics(), sources: [] };
+  const preflight = buildCollectorPreflight();
+  diagnostics.preflight = preflight;
+  diagnostics.preflight_status = preflight.ok ? "passed" : "failed";
+  diagnostics.preflight_failure_reason = preflight.preflight_failure_reason;
+  diagnostics.port_operation_collection_plan = preflight;
+  diagnostics.coverage = {
+    ...(diagnostics.coverage || {}),
+    ...preflight,
+    successful_ports_count: 0,
+    failed_ports_count: 0,
+    no_data_ports_count: 0,
+    port_operation_rows_by_port: {}
+  };
+  if (!preflight.ok) {
+    diagnostics.fallback_used = true;
+    diagnostics.skipped_count = preflight.enabled_ports_passed_to_collector_count * Math.max(1, preflight.deGb_values.length);
+    diagnostics.sources = [];
+    const error = new Error(`Collector preflight failed: ${preflight.preflight_failure_reason}`);
+    error.preflight = preflight;
+    throw error;
+  }
   if (env("COLLECTOR_DEBUG_ONLY") || debugVerboseEnabled()) {
     console.log("[HWK] collector env presence", JSON.stringify(runtimeEnvDiagnostics()));
   }

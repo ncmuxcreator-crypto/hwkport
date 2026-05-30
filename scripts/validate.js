@@ -261,14 +261,24 @@ if (!status.backend_stability_batch || !status.runtime_budget || !status.master_
 if (!status.collector_diagnostics || typeof status.collector_diagnostics.attempted_count !== "number") {
   throw new Error("Missing collector diagnostics");
 }
+if (!status.collector_diagnostics.preflight || !("preflight_failure_reason" in status.collector_diagnostics.preflight)) {
+  throw new Error("Collector diagnostics must include preflight check results");
+}
+if (status.data_mode === "no_live_data" && !status.preflight_failure_reason && status.collector_diagnostics.preflight_status === "failed") {
+  throw new Error("No-live-data preflight failures must expose preflight_failure_reason");
+}
 if (!status.commercial_command_center || !Array.isArray(status.port_congestion_heatmap) || !Array.isArray(status.biofouling_timeline)) {
   throw new Error("Missing commercial command-center frontend outputs");
 }
 if (typeof status.actionable_rows !== "number" || typeof status.collector_diagnostics?.actionable_row_count !== "number") {
   throw new Error("Missing actionable_rows collector metric");
 }
-if (status.collector_diagnostics?.fallback_used && (status.data_mode !== "no_live_data" || status.status !== "degraded_sample_only")) {
-  throw new Error("Collector fallback must publish no_live_data with degraded_sample_only status");
+if (status.collector_diagnostics?.fallback_used) {
+  const preflightFailed = status.collector_diagnostics?.preflight_status === "failed";
+  const allowedStatus = status.status === "degraded_sample_only" || (preflightFailed && status.status === "failed");
+  if (status.data_mode !== "no_live_data" || !allowedStatus) {
+    throw new Error("Collector fallback must publish no_live_data with degraded_sample_only status or failed preflight status");
+  }
 }
 for (const forbidden of ["MV HF ZHOUSHAN", "MAERSK DEMO", "YEOSU TARGET", "integrated_vts_sample", "sample_snapshot"]) {
   const haystack = [

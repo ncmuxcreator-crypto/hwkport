@@ -73,6 +73,9 @@ const report = {
     ports_skipped_reason: diagnostics.port_operation_collection_plan?.ports_skipped_reason || null,
     first_5_ports_to_attempt: diagnostics.port_operation_collection_plan?.first_5_ports_to_attempt || []
   },
+  preflight: diagnostics.preflight || null,
+  preflight_status: diagnostics.preflight_status || null,
+  preflight_failure_reason: diagnostics.preflight_failure_reason || diagnostics.preflight?.preflight_failure_reason || null,
   realDataReady: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && Number(status.record_count || 0) > 0),
   note: "Current-run source health. If run_id differs from status.json, treat this file as stale."
 };

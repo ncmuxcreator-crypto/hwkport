@@ -3427,6 +3427,7 @@ function buildDatasetGenerationAudit({
     new Set(portOperationAttempted.map(source => source.prtAgCd).filter(Boolean)).size
   );
   const portOperationRowsCollected = portOperationAttempted.reduce((sum, source) => sum + Number(source.rows_collected || source.row_count || 0), 0);
+  const preflight = collectorDiagnostics.preflight || {};
   const watchlistGenerated = allCollectedVessels.filter(v => !isSalesCandidate(v) && isWatchlistVessel(v)).length;
   const salesTargetsGenerated = Number(salesCandidates.length || 0);
   const immediateTargetsGenerated = Number(immediateTargets.length || 0);
@@ -3459,9 +3460,9 @@ function buildDatasetGenerationAudit({
   let failedStage = null;
   let rootCause = "dataset_generation_completed";
   if (sourceRowsCollected === 0) {
-    failedStage = portsAttemptedCount === 0 ? "source_collection_not_attempted" : "source_collection";
+    failedStage = preflight.ok === false ? "collector_preflight" : portsAttemptedCount === 0 ? "source_collection_not_attempted" : "source_collection";
     rootCause = portsAttemptedCount === 0
-      ? (portOperationPlan.ports_skipped_reason || (!portOperationPlan.port_operation_secret_present ? "missing_PORT_OPERATION_SERVICE_KEY" : !portOperationPlan.port_operation_api_url_present ? "missing_PORT_OPERATION_API_URL" : "port_operation_collector_not_attempted"))
+      ? (collectorDiagnostics.preflight_failure_reason || preflight.preflight_failure_reason || portOperationPlan.ports_skipped_reason || (!portOperationPlan.port_operation_secret_present ? "missing_PORT_OPERATION_SERVICE_KEY" : !portOperationPlan.port_operation_api_url_present ? "missing_PORT_OPERATION_API_URL" : "port_operation_collector_not_attempted"))
       : report?.data_mode === "no_live_data"
         ? "local_static_no_live_data_export_without_required_secrets"
         : "source_collection_returned_zero_rows";
@@ -3476,6 +3477,7 @@ function buildDatasetGenerationAudit({
     rootCause = "active_dataset_exists_but_vessels_json_export_empty";
   }
   const gateBlockReasons = [];
+  if (preflight.ok === false) gateBlockReasons.push(`Collector preflight failed: ${preflight.preflight_failure_reason || collectorDiagnostics.preflight_failure_reason || "unknown"}.`);
   if (!portsAttemptedCount) gateBlockReasons.push("No enabled Port Operation ports were attempted.");
   if (!sourceRowsCollected) gateBlockReasons.push("No source rows were collected in this local/static run.");
   if (report?.data_mode === "no_live_data") gateBlockReasons.push("data_mode is no_live_data, so generated JSON intentionally contains zero vessels/candidates.");
@@ -3504,6 +3506,9 @@ function buildDatasetGenerationAudit({
       candidates_json_rows: candidatesJsonRows
     },
     enabled_ports_count: enabledPortsCount,
+    preflight_status: collectorDiagnostics.preflight_status || (preflight.ok === false ? "failed" : null),
+    preflight_failure_reason: collectorDiagnostics.preflight_failure_reason || preflight.preflight_failure_reason || null,
+    preflight_failures: preflight.failures || [],
     enabled_ports_loaded_count: Number(portOperationPlan.enabled_ports_loaded_count || enabledPortsCount),
     enabled_ports_passed_to_collector_count: Number(portOperationPlan.enabled_ports_passed_to_collector_count || 0),
     ports_attempted_count: portsAttemptedCount,
@@ -4296,6 +4301,7 @@ try {
 } catch (error) {
   status = "failed";
   errorMessage = error?.message || String(error);
+  collectorDiagnosticsAfterCollection = getCollectorDiagnostics();
 } finally {
   ensureDirs();
 
@@ -4329,6 +4335,8 @@ try {
     supabase_write: supabaseWrite,
     gdrive_archive: gdriveArchive,
     frontend_poll_interval_seconds: 900,
+    preflight_status: collectorDiagnostics.preflight_status || null,
+    preflight_failure_reason: collectorDiagnostics.preflight_failure_reason || collectorDiagnostics.preflight?.preflight_failure_reason || null,
     collection_schedule: {
       github_actions_cron: "0 */4 * * *",
       meaning: "GitHub Actions collects public data every 4 hours or when manually triggered. The dashboard reads the latest successful Supabase snapshot first and does not collect source APIs in the browser.",
