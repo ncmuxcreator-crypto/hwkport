@@ -2813,6 +2813,8 @@ function buildStatusFromSummarySnapshot(snapshot = {}, source = {}, reason = "la
     summary_run_id: snapshot.run_id || null,
     generated_at: new Date().toISOString(),
     data_freshness: freshness,
+    auto_update_interval_hours: 4,
+    auto_update_label: "데이터는 4시간마다 자동 업데이트됩니다.",
     is_fallback: true,
     fallback_reason: reason,
     latest_successful_summary_run_id: snapshot.run_id || null,
@@ -3461,6 +3463,8 @@ function buildStatus(records, source) {
       data_age_minutes: dataAgeMinutes,
       is_stale: Boolean(source.pointer?.is_stale)
     },
+    auto_update_interval_hours: 4,
+    auto_update_label: "데이터는 4시간마다 자동 업데이트됩니다.",
     version: "worker-live-api-v1",
     status: source.error && !records.length ? "degraded" : "success",
     data_mode: dataMode,
