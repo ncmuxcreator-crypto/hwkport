@@ -548,7 +548,9 @@ for (const file of [
   "docs/data-contract.md",
   "docs/data-dictionary.md",
   "docs/platform-safeguards.md",
+  "docs/release-checklist.md",
   "docs/runbook.md",
+  "docs/troubleshooting.md",
   "migrations/README.md",
   "migrations/20260531_001_foundation_safeguards.sql",
   "migrations/20260531_002_lineage_and_guardrails.sql",
@@ -571,6 +573,14 @@ for (const marker of ["vessel_master", "port_call_master", "vessel_snapshots", "
 const platformSafeguards = fs.readFileSync("docs/platform-safeguards.md", "utf8");
 for (const marker of ["Single Source of Truth", "Idempotency", "Run ID Discipline", "Backfill and Reprocess", "Access Control Preparation"]) {
   if (!platformSafeguards.includes(marker)) throw new Error(`Platform safeguards missing section: ${marker}`);
+}
+const releaseChecklist = fs.readFileSync("docs/release-checklist.md", "utf8");
+for (const marker of ["backend-doctor", "all_vessels_count", "target_ratio", "no_live_data", "active_dataset_pointer"]) {
+  if (!releaseChecklist.includes(marker)) throw new Error(`Release checklist missing marker: ${marker}`);
+}
+const troubleshooting = fs.readFileSync("docs/troubleshooting.md", "utf8");
+for (const marker of ["Empty Dashboard", "Missing Config", "Target Count Mismatch", "Stale Data", "Export Issues"]) {
+  if (!troubleshooting.includes(marker)) throw new Error(`Troubleshooting guide missing marker: ${marker}`);
 }
 const migrationFiles = fs.readdirSync("migrations").filter(file => /\.sql$/i.test(file));
 if (migrationFiles.length < 1) {

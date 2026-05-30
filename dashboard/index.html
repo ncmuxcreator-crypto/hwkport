@@ -6,243 +6,152 @@
 <title>항만 영업 인텔리전스 대시보드</title>
 <style>
 :root{
-  --bg:#050a12;--surface:#0b1322;--panel:#101827;--panel2:#0d1728;--line:#26364d;
-  --text:#eef6ff;--muted:#9fb0c5;--soft:#c9d8e9;--blue:#38bdf8;--green:#22c55e;
-  --amber:#f59e0b;--orange:#fb923c;--red:#ef4444;--cold:#64748b;
+  --bg:#050a12;--panel:#0f1728;--panel2:#111d31;--line:#29384f;
+  --text:#eef6ff;--muted:#9aaabe;--soft:#cbd8ea;--blue:#38bdf8;
+  --green:#22c55e;--yellow:#facc15;--orange:#fb923c;--red:#ef4444;
 }
 *{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{margin:0;background:radial-gradient(circle at 50% -20%,#10233b 0,#050a12 42%,#030712 100%);color:var(--text);font-family:Arial,"Noto Sans KR",system-ui,sans-serif;font-size:14px;letter-spacing:0}
-button,input,select{font:inherit}
-button{min-height:44px;cursor:pointer}
-.app{max-width:1760px;margin:0 auto;padding:18px 18px 42px}
-.topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:14px}
-.eyebrow{font-size:12px;font-weight:900;color:var(--blue);text-transform:uppercase}
-h1{margin:5px 0 7px;font-size:30px;line-height:1.1}
-.sub{max-width:960px;color:var(--muted);line-height:1.55}
-.status{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.badge,.chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;font-weight:800;white-space:nowrap}
-.badge{border:1px solid #155e75;background:#083344;color:#a5f3fc;padding:9px 13px}
-.badge.ready{border-color:#166534;background:#14532d;color:#bbf7d0}.badge.warn{border-color:#92400e;background:#78350f;color:#fde68a}.badge.error{border-color:#991b1b;background:#7f1d1d;color:#fecaca}
-.notice{border:1px solid #92400e;background:#451a03;color:#fde68a;border-radius:8px;padding:12px;margin:12px 0}
-.shell{display:grid;grid-template-columns:280px minmax(0,1fr) 360px;gap:14px;align-items:start}
-.side,.main,.right{min-width:0}
-.sticky{position:sticky;top:12px}
-.panel,.card,.metric,.health-card{background:rgba(16,24,39,.94);border:1px solid var(--line);border-radius:8px}
-.panel{overflow:hidden}
-.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line)}
-.panel-title{margin:0;font-size:16px}.small{font-size:12px;color:var(--muted);line-height:1.5}
-.kpi-grid{display:grid;grid-template-columns:1fr;gap:9px}
-.metric{padding:12px}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:5px;color:#bae6fd;font-size:25px;line-height:1}
-.health-list{display:grid;gap:7px;padding:12px}.health-row{display:flex;justify-content:space-between;gap:10px;color:var(--soft);font-size:13px}
-.health-row b{color:var(--text)}.health-row.warn b{color:#fde68a}.health-row.danger b{color:#fecaca}
-.section{margin-bottom:14px}.section-title{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 9px}.section-title h2{font-size:17px;margin:0}
-.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}
-.card{padding:13px;min-width:0}.card h3{margin:0 0 7px;font-size:15px;line-height:1.25}.card.clickable:hover{border-color:#60a5fa;background:#132034}
-.row{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.score{font-size:30px;font-weight:900;color:var(--blue);line-height:1}.score-label{font-size:11px;color:var(--muted);margin-top:3px;text-align:right}
-.chip{font-size:11px;padding:4px 8px;background:#1f2a3b;color:#d7e0ee}.chip.hot{background:#7f1d1d;color:#fecaca}.chip.warm{background:#78350f;color:#fde68a}.chip.cold{background:#1e293b;color:#cbd5e1}.chip.good{background:#14532d;color:#bbf7d0}.chip.info{background:#172554;color:#bfdbfe}.chip.warn{background:#78350f;color:#fde68a}.chip.danger{background:#7f1d1d;color:#fecaca}
-.kv{display:grid;grid-template-columns:minmax(88px,auto) 1fr;gap:6px 10px;margin-top:8px}.k{color:var(--muted)}
-.subchips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.subchip{min-height:32px;border:1px solid #28405e;background:#0b1220;color:#bfdbfe;border-radius:999px;padding:5px 9px}
-.accordion-hint{display:none;color:#93c5fd;font-size:12px;font-weight:800}
-.toolbar{display:grid;grid-template-columns:2fr repeat(4,minmax(120px,1fr));gap:8px;padding:12px;border-bottom:1px solid var(--line)}
-.toolbar input,.toolbar select,.toolbar button{min-width:0;background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px}
-.toolbar button{color:#bae6fd;font-weight:800}
-.tabs{display:flex;gap:8px;flex-wrap:wrap;padding:12px 12px 0}.tabs button{background:#0b1220;color:#bae6fd;border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-weight:900}.tabs button.active{background:#1d4ed8;color:#fff;border-color:#60a5fa}
-.table-shell{display:none}.table-shell.open{display:block}.tablewrap{overflow:auto;max-height:620px}table{width:100%;border-collapse:collapse;min-width:1540px}th,td{text-align:left;padding:9px;border-bottom:1px solid var(--line);vertical-align:top}th{position:sticky;top:0;background:#0b1220;color:#93c5fd;font-size:12px;z-index:1}tr:hover td{background:#121c2c}
-.mobile-list{display:none;padding:10px}.vessel-mobile{margin-bottom:10px}.mobile-detail{display:none;margin-top:9px}.vessel-mobile.expanded .mobile-detail{display:grid}
-.pager{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;border-top:1px solid var(--line)}.pager button{background:#0b1220;color:#bae6fd;border:1px solid var(--line);border-radius:7px;padding:6px 11px}.pager button:disabled{opacity:.45;cursor:not-allowed}
-.empty{padding:16px;color:var(--muted);line-height:1.55}.skeleton{position:relative;overflow:hidden;background:#101827;border:1px solid var(--line);border-radius:8px;min-height:92px}.skeleton:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(148,163,184,.14),transparent);animation:shimmer 1.3s infinite}@keyframes shimmer{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
-.heat{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px}.heatcell{border:1px solid var(--line);border-radius:8px;background:#0d1422;padding:10px}.bar{height:8px;border-radius:999px;background:#1e293b;overflow:hidden;margin-top:8px}.bar span{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--amber),var(--red))}
-.detail{padding:14px}.footer{margin-top:20px;color:var(--muted);font-size:12px}
-.only-mobile{display:none}
-@media(max-width:1320px){.shell{grid-template-columns:240px minmax(0,1fr)}.right{grid-column:1/-1}.right .sticky{position:static}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.heat{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:900px){.app{padding:12px 10px 34px}.topbar{display:block}h1{font-size:24px}.status{justify-content:flex-start;margin-top:10px}.shell{display:block}.side .sticky{position:static}.kpi-grid{position:sticky;top:0;z-index:5;grid-template-columns:repeat(5,minmax(104px,1fr));overflow-x:auto;padding:8px 0;background:linear-gradient(180deg,#050a12 75%,rgba(5,10,18,0));margin:0 -2px}.metric{min-width:104px}.metric strong{font-size:22px}.cards,.cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}.toolbar{grid-template-columns:1fr 1fr}.toolbar input{grid-column:1/-1}.tablewrap{display:none}.mobile-list{display:block}.right{margin-top:14px}.only-mobile{display:inline-flex}.hide-mobile{display:none}.accordion-hint{display:inline}.port-body{display:none}.port-card.expanded .port-body{display:block}}
-@media(max-width:620px){body{font-size:14px}.sub{font-size:13px}.cards,.cards.two{grid-template-columns:1fr}.panel-head{align-items:flex-start;flex-direction:column}.kv{grid-template-columns:1fr}.heat{grid-template-columns:1fr}.score{font-size:26px}.card{padding:12px}.section{margin-bottom:16px}}
+html,body{min-width:0;overflow-x:hidden}
+body{margin:0;background:radial-gradient(circle at top,#10233b 0,#050a12 44%,#030712 100%);color:var(--text);font-family:Arial,"Noto Sans KR",system-ui,sans-serif;font-size:14px}
+button,input,select{font:inherit}button{min-height:44px;cursor:pointer}
+.app{max-width:1600px;margin:0 auto;padding:16px}
+.topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;background:linear-gradient(180deg,#050a12 80%,rgba(5,10,18,0))}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}.menu{width:44px;border:1px solid var(--line);border-radius:8px;background:#0b1220;color:#dbeafe}.title{min-width:0}.title h1{margin:0;font-size:22px;line-height:1.15}.title p{margin:4px 0 0;color:var(--muted);font-size:13px}
+.statusbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}.badge,.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:800;white-space:nowrap}.badge{border:1px solid #155e75;background:#083344;color:#a5f3fc}.badge.ok{border-color:#166534;background:#14532d;color:#bbf7d0}.badge.warn{border-color:#92400e;background:#78350f;color:#fde68a}.badge.err{border-color:#991b1b;background:#7f1d1d;color:#fecaca}.chip{background:#172554;color:#bfdbfe}.chip.hot{background:#7f1d1d;color:#fecaca}.chip.warm{background:#713f12;color:#fde68a}.chip.cold{background:#1e293b;color:#cbd5e1}.chip.good{background:#14532d;color:#bbf7d0}
+.notice{border:1px solid #92400e;background:#451a03;color:#fde68a;border-radius:8px;padding:12px;margin:10px 0;line-height:1.5}.notice.err{border-color:#991b1b;background:#450a0a;color:#fecaca}
+.grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}.panel,.card,.metric{min-width:0;max-width:100%;overflow-wrap:anywhere;background:rgba(15,23,40,.96);border:1px solid var(--line);border-radius:8px}.panel{overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line)}.panel-head h2{margin:0;font-size:17px}.small{font-size:12px;color:var(--muted);line-height:1.5}
+.kpi{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.metric{padding:12px}.metric span{display:flex;gap:5px;align-items:center;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:7px;color:#bae6fd;font-size:26px;line-height:1}
+.cards{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.card{padding:13px}.card h3{margin:0 0 7px;font-size:15px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.row{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.score{font-size:28px;font-weight:900;color:var(--blue);line-height:1}.kv{display:grid;grid-template-columns:minmax(90px,auto) minmax(0,1fr);gap:7px 10px;margin-top:8px}.k{color:var(--muted)}.subchips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.subchip,.ghost{border:1px solid var(--line);border-radius:8px;background:#0b1220;color:#bfdbfe;padding:8px 10px;font-weight:800}.subchip{border-radius:999px;min-height:34px}
+.toolbar{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:12px;border-bottom:1px solid var(--line)}.toolbar input,.toolbar select,.toolbar button{min-width:0;background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:10px}.toolbar-actions{display:flex;gap:8px;flex-wrap:wrap}.tabs{display:flex;gap:8px;flex-wrap:wrap;padding:12px 12px 0}.tabs button{border:1px solid var(--line);border-radius:8px;background:#0b1220;color:#bae6fd;padding:9px 12px;font-weight:900}.tabs button.active{background:#1d4ed8;color:#fff;border-color:#60a5fa}
+.tablewrap{display:none;overflow:auto;max-height:620px}table{width:100%;min-width:1180px;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid var(--line);vertical-align:top}th{position:sticky;top:0;background:#0b1220;color:#93c5fd;font-size:12px;z-index:1}tr:hover td{background:#121c2c}.mobile-list{display:grid;gap:10px;padding:10px}.mobile-detail{display:none;margin-top:8px}.vessel-card.expanded .mobile-detail{display:grid}.pager{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line)}.pager button{border:1px solid var(--line);border-radius:8px;background:#0b1220;color:#bfdbfe;padding:8px 11px}.pager button:disabled{opacity:.45;cursor:not-allowed}
+.skeleton{position:relative;overflow:hidden;min-height:86px;background:#101827;border:1px solid var(--line);border-radius:8px}.skeleton:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(148,163,184,.14),transparent);animation:shimmer 1.2s infinite}@keyframes shimmer{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.tooltip{border:0;background:transparent;color:#93c5fd;min-height:0;padding:0;font-weight:900}.health{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:12px}.health-row{display:flex;justify-content:space-between;gap:10px;color:var(--soft)}.health-row b{color:var(--text)}.health-row.warn b{color:#fde68a}.health-row.err b{color:#fecaca}.empty{padding:16px;color:var(--muted);line-height:1.55}
+@media(min-width:768px){.kpi{grid-template-columns:repeat(3,minmax(0,1fr))}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.toolbar{grid-template-columns:2fr repeat(3,minmax(130px,1fr));align-items:center}.toolbar-actions{grid-column:1/-1}.health{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(min-width:1200px){.app{padding:18px}.layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px}.kpi{grid-template-columns:repeat(6,minmax(0,1fr))}.main-row{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(320px,.8fr);gap:14px;align-items:start}.cards.ports{grid-template-columns:repeat(3,minmax(0,1fr))}.tablewrap{display:block}.mobile-list{display:none}.toolbar{grid-template-columns:minmax(260px,2fr) repeat(4,minmax(120px,1fr))}.toolbar-actions{grid-column:auto}.sticky{position:sticky;top:82px}}
 </style>
 </head>
 <body>
 <div class="app">
   <header class="topbar">
-    <div>
-      <div class="eyebrow">항만 영업 인텔리전스</div>
-      <h1>항만 영업 인텔리전스 대시보드</h1>
-      <div class="sub">첫 화면은 주요 지표, 항만 현황, HOT 후보 TOP 10만 빠르게 표시합니다. 전체 선박 목록과 상세 정보는 항구 선택 또는 더 보기 클릭 시 필요한 만큼 불러옵니다. 데이터는 4시간마다 자동 업데이트됩니다.</div>
+    <div class="brand">
+      <button class="menu" type="button" aria-label="메뉴">☰</button>
+      <div class="title">
+        <h1>항만 영업 인텔리전스 대시보드</h1>
+        <p>요약 지표와 HOT 후보를 먼저 보여주고, 전체 목록은 필요할 때만 불러옵니다.</p>
+      </div>
     </div>
-    <div class="status">
-      <span id="statusBadge" class="badge">데이터 확인 중</span>
-      <span id="versionBadge" class="chip info">요약 기준 확인 중</span>
+    <div class="statusbar">
+      <span id="sourceBadge" class="badge">데이터 확인 중</span>
+      <span id="freshBadge" class="chip">기준 시각 확인 중</span>
+      <button id="refreshBtn" class="ghost" type="button">새로고침</button>
     </div>
   </header>
-  <div id="dataNotice"></div>
+  <div id="notice"></div>
 
-  <div class="shell">
-    <aside class="side">
-      <div class="sticky">
-        <section class="section">
-          <div class="section-title"><h2>주요 지표</h2><span class="chip info">요약 우선 로딩</span></div>
-          <div class="kpi-grid">
-            <div class="metric"><span>영업대상</span><strong id="mTarget">-</strong></div>
-            <div class="metric"><span>즉시영업후보</span><strong id="mImmediate">-</strong></div>
-            <div class="metric"><span>고위험선박</span><strong id="mHighRisk">-</strong></div>
-            <div class="metric"><span>묘박/대기</span><strong id="mAnchorage">-</strong></div>
-            <div class="metric"><span>입항예정</span><strong id="mArrival">-</strong></div>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="section-title"><h2>데이터 상태</h2><span id="healthBadge" class="chip info">확인 중</span></div>
-          <div class="health-card">
-            <div id="dataHealth" class="health-list"></div>
-          </div>
-        </section>
-      </div>
+  <div class="layout">
+    <aside class="grid sticky">
+      <section class="panel">
+        <div class="panel-head"><h2>데이터 상태</h2><span id="healthBadge" class="chip">확인 중</span></div>
+        <div id="healthRows" class="health"><div class="skeleton"></div></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>용어 설명</h2><span class="small">마우스를 올려 확인</span></div>
+        <div id="termRows" class="health"></div>
+      </section>
     </aside>
 
-    <main class="main">
-      <section class="section">
-        <div class="section-title">
-          <h2>항만 인텔리전스</h2>
-          <span id="portCountBadge" class="chip info">항만 0</span>
-        </div>
-        <div id="portOverview" class="cards">
+    <main class="grid">
+      <section>
+        <div class="panel-head" style="border:0;padding-left:0"><h2>주요 지표</h2><span id="datasetBadge" class="chip">요약 로딩 중</span></div>
+        <div class="kpi" id="kpiGrid">
+          <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
           <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
         </div>
       </section>
 
-      <section class="section">
-        <div class="section-title">
-          <h2>영업 후보 선박 목록</h2>
-          <button id="openListBtn" class="subchip" type="button">더 보기</button>
+      <section class="main-row">
+        <div class="panel">
+          <div class="panel-head"><h2>항만별 현황</h2><span id="portCount" class="chip">0개 항만</span></div>
+          <div id="ports" class="cards ports" style="padding:12px"><div class="skeleton"></div><div class="skeleton"></div></div>
         </div>
-        <div id="tableShell" class="panel table-shell">
-          <div class="tabs">
-            <button id="targetTab" class="active" type="button">영업대상선박 (<span id="targetTabCount">0</span>)</button>
-            <button id="allTab" type="button">전체선박 (<span id="allTabCount">0</span>)</button>
-          </div>
-          <div class="toolbar">
-            <input id="searchBox" placeholder="선박명, IMO, MMSI, 호출부호, 항만, 영업메모 검색">
-            <select id="portFilter"><option value="">전체 항만</option></select>
-            <select id="subPortFilter"><option value="">전체 서브항</option></select>
-            <select id="statusFilter"><option value="">전체 상태</option><option value="staying">체류</option><option value="arrival">입항 예정</option><option value="anchorage">묘박/대기</option></select>
-            <select id="pageSizeSelect"><option value="50">50개</option><option value="100">100개</option><option value="200">200개</option></select>
-          </div>
-          <div id="tableStaleNotice" class="notice" style="display:none">요약 수치가 새 데이터 기준입니다. 목록을 새 기준으로 갱신하려면 목록 갱신을 눌러 주세요. <button id="refreshTableBtn" class="subchip" type="button">목록 갱신</button></div>
-          <div class="panel-head">
-            <div><strong id="tableTitle">영업대상선박</strong><div class="small" id="tableSub">상업 가치와 작업 가능성을 기준으로 선별된 영업 후보 선박입니다.</div></div>
-            <div id="tableCount" class="chip info">0건</div>
-          </div>
-          <div class="tablewrap">
-            <table>
-              <thead><tr id="tableHead"></tr></thead>
-              <tbody id="vesselRows"></tbody>
-            </table>
-          </div>
-          <div id="mobileVesselList" class="mobile-list"></div>
-          <div id="pager" class="pager"></div>
+        <div class="panel">
+          <div class="panel-head"><h2>HOT 후보 TOP 10</h2><span class="chip hot">점수순</span></div>
+          <div id="hotList" class="cards" style="padding:12px"><div class="skeleton"></div></div>
         </div>
       </section>
 
-      <section class="section" id="congestionSection" data-lazy="true">
-        <div class="panel">
-          <div class="panel-head"><strong>체선 / 묘박 요약</strong><span class="small">화면 진입 시 가볍게 표시</span></div>
-          <div id="congestionHeat" class="heat"><div class="empty">체선 데이터를 준비 중입니다.</div></div>
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2>영업 후보 선박 목록</h2><div id="tableCaption" class="small">영업 후보를 페이지 단위로 표시합니다.</div></div>
+          <span id="tableCount" class="chip">0건</span>
         </div>
+        <div class="tabs">
+          <button id="targetTab" class="active" type="button">영업대상 (<span id="targetCount">0</span>)</button>
+          <button id="allTab" type="button">전체선박 (<span id="allCount">0</span>)</button>
+        </div>
+        <div id="staleNotice" class="notice" style="display:none">목록은 이전 데이터 기준입니다. 새 목록으로 갱신하려면 목록 갱신을 눌러주세요.</div>
+        <div class="toolbar">
+          <input id="search" placeholder="선명, IMO, MMSI, 항구, 운영선사 검색">
+          <select id="portFilter"><option value="">전체 항만</option></select>
+          <select id="sortOrder"><option value="score_desc">상업가치 점수 높은 순</option><option value="stay_desc">체류시간 긴 순</option><option value="name_asc">선명 오름차순</option></select>
+          <select id="pageSize"><option value="25">25건</option><option value="50" selected>50건</option><option value="100">100건</option></select>
+          <div class="toolbar-actions">
+            <button id="loadTable" type="button">목록 보기</button>
+            <button id="exportTable" type="button">현재 표 CSV</button>
+            <button id="exportTargets" type="button">영업대상 CSV</button>
+            <button id="exportPorts" type="button">항만요약 CSV</button>
+          </div>
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>순위</th><th>선명</th><th>IMO</th><th>항구</th><th>상태</th><th>체류</th><th>운영선사</th><th>대리점</th><th>연락준비도</th><th>상업가치</th><th>추천 액션</th></tr></thead>
+            <tbody id="rows"><tr><td colspan="11" class="empty">목록 보기를 누르면 데이터를 불러옵니다.</td></tr></tbody>
+          </table>
+        </div>
+        <div id="mobileRows" class="mobile-list"><div class="empty">목록 보기를 누르면 데이터를 불러옵니다.</div></div>
+        <div id="pager" class="pager"></div>
       </section>
     </main>
-
-    <aside class="right">
-      <div class="sticky">
-        <section class="section">
-          <div class="section-title"><h2>HOT 후보 TOP 10</h2><span class="chip hot">우선 연락</span></div>
-          <div id="hotCandidates" class="cards two">
-            <div class="skeleton"></div><div class="skeleton"></div>
-          </div>
-        </section>
-        <section class="section">
-          <div class="panel">
-            <div class="panel-head"><strong>선박 상세</strong><span id="detailBand" class="chip info">선택 없음</span></div>
-            <div id="detail" class="detail small">항만 카드나 선박 카드를 선택하면 상세 정보와 영업 메모가 표시됩니다.</div>
-          </div>
-        </section>
-      </div>
-    </aside>
   </div>
-
-  <div class="footer">항만운영 API를 기본 선박 원장으로 사용하고, 도선·선석·터미널·AIS/VTS와 CSV는 보강 신호로만 사용합니다. 보강 실패는 선박을 숨기지 않습니다.</div>
 </div>
-
 <script>
-const state={summary:null,status:null,doctor:null,ports:[],subPorts:[],hot:[],tableRows:[],csvRows:[],csvError:"",dataSource:"API",group:"target",page:1,pageSize:50,total:0,totalPages:1,allTotal:0,targetTotal:0,tableLoaded:false,congestionLoaded:false,currentSummaryRunId:null,currentTableRunId:null,latestActiveRunId:null,selectedPort:"",selectedSubPort:"",memo:new Map()};
+const state={summary:null,status:null,doctor:null,sourceHealth:null,portsPayload:null,top:null,rows:[],group:"target",page:1,pageSize:50,total:0,loaded:false,filters:{port:"",sort:"score_desc",search:""}};
 const $=id=>document.getElementById(id);
 const api=p=>fetch(p,{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null);
-const arr=v=>Array.isArray(v)?v:(Array.isArray(v?.data)?v.data:(Array.isArray(v?.vessels)?v.vessels:(Array.isArray(v?.candidates)?v.candidates:(Array.isArray(v?.items)?v.items:[]))));
+const arr=v=>Array.isArray(v)?v:Array.isArray(v?.data)?v.data:Array.isArray(v?.items)?v.items:Array.isArray(v?.vessels)?v.vessels:Array.isArray(v?.candidates)?v.candidates:[];
 const n=v=>Number.isFinite(Number(v))?Number(v):0;
 const fmt=v=>Number.isFinite(Number(v))?Number(v).toLocaleString("ko-KR"):"-";
-const text=(...vals)=>vals.find(v=>v!==undefined&&v!==null&&String(v).trim()!=="")||"-";
-const esc=v=>String(v??"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const runIdFrom=p=>p?.active_run_id||p?.summary_run_id||p?.status?.active_run_id||p?.source_runtime?.active_run_id||null;
-const score=v=>Math.max(0,Math.min(100,n(v.commercial_value_score||v.salesScore||v.sales_score||v.biofoulingScore||v.foulingScore||v.biofouling_score||v.biofouling_exposure_score||v.predicted_cleaning_opportunity_score||0)));
-const gt=v=>n(v.gt||v.grtg||v.intrlGrtg);
-const stay=v=>n(v.cumulative_stay_hours||v.stay_hours||v.current_call_stay_hours);
-const anch=v=>n(v.anchorage_hours);
-const speed=v=>n(v.speed||v.sog||v.last_speed);
-const draft=v=>n(v.draft||v.draught);
-const age=v=>n(v.vessel_age||v.age);
-const bio=v=>n(v.biofouling_exposure_score||v.biofoulingScore||v.foulingScore||v.biofouling_score||v.predicted_cleaning_opportunity_score||score(v));
-const portMetric=(obj,...keys)=>{for(const key of keys){if(obj&&Object.prototype.hasOwnProperty.call(obj,key)&&obj[key]!==undefined&&obj[key]!==null&&obj[key]!=="")return n(obj[key])}return 0};
-const portKoMap={"020":"부산항","030":"인천항","031":"평택·당진항","620":"여수·광양항","820":"울산항","810":"포항항","621":"대산항","622":"마산권역","070":"목포항","080":"군산항","120":"동해·묵호항","940":"제주항"};
-const typeKo={bulk_carrier:"벌크선",bulk:"벌크선",tanker:"탱커",crude_tanker:"원유운반선",product_tanker:"석유제품운반선",container_ship:"컨테이너선",container:"컨테이너선",pctc:"자동차운반선",lng_carrier:"LNG 운반선",lpg_carrier:"LPG 운반선",cruise:"크루즈선",passenger:"여객선",general_cargo:"일반화물선",unknown:"확인 필요"};
-const memo=(key,fn)=>state.memo.has(key)?state.memo.get(key):(state.memo.set(key,fn()),state.memo.get(key));
-function vesselName(v){return text(v.vessel_name,v.name,v.ship_name,"선명 확인 필요")}
-function vesselKey(v){return text(v.port_call_id,v.snapshot_id,v.master_vessel_id,v.hybrid_entity_key,v.vessel_id,v.imo,v.mmsi,v.call_sign,vesselName(v))}
-function portName(v){const code=String(v?.port_code||v?.code||"");const raw=text(v?.port_name_ko,v?.port_name,v?.name,v?.port,portKoMap[code],code);if(/^korea$/i.test(String(raw))||/^unknown$/i.test(String(raw)))return"항만 확인 필요";return portKoMap[code]||raw}
-function subPort(v){return text(v.sub_port,v.sub_port_name,v.terminal_name,v.berth_name,v.anchorage_name,"기타/확인 필요")}
-function vesselType(v){const raw=String(text(v.vessel_type_group,v.vessel_type,v.vsslKndNm,"unknown")).trim();const key=raw.toLowerCase().replace(/[\s-]+/g,"_");return typeKo[key]||raw}
-function statusBucket(v){const s=String(v.status_bucket||v.operational_status||v.status||"").toLowerCase();if(s==="anchorage_waiting"||v.is_anchorage_waiting||anch(v)>0)return"묘박/대기";if(s==="berthed")return"접안";if(s==="arrived_staying"||stay(v)>0)return"체류";if(s==="arriving_soon"||s.includes("arrival"))return"입항 예정";if(s==="departed")return"출항 완료";return text(v.status_bucket,v.operational_status,"확인 필요")}
-function grade(v){const s=score(v), b=bio(v), hot=stay(v)>=72||anch(v)>=72||b>=75||s>=75;const warm=s>=50||b>=50||stay(v)>=24||anch(v)>=24;if(hot)return["HOT","hot"];if(warm)return["WARM","warm"];return["COLD","cold"]}
-function whyNow(v){return text(v.why_now,v.candidate_summary_ko,v.opportunity_summary,score(v)>=75?"상업 가치와 작업 가능성 기준으로 우선 확인이 필요합니다.":"상업 신호 확인이 필요합니다.")}
-function action(v){return text(v.recommended_action,v.recommended_next_action,score(v)>=75?"대리점 확인 후 견적 제안":"선박 스케줄 확인")}
-function timeLabel(v,key,empty){return text(v[key],empty)}
-function salesScore(v){return Math.max(score(v),bio(v),n(v.salesScore||v.sales_score||v.total_sales_priority_score))}
-function eventTime(v){const raw=text(v.eta,v.ata,v.etb,v.atb,"");const t=raw?Date.parse(raw):Number.POSITIVE_INFINITY;return Number.isFinite(t)?t:Number.POSITIVE_INFINITY}
-function hotCompare(a,b){return salesScore(b)-salesScore(a)||stay(b)-stay(a)||eventTime(a)-eventTime(b)||String(vesselName(a)).localeCompare(String(vesselName(b)),"ko")}
-function getSalesCandidates(vessels=[]){return memo(`sales-${vessels.length}-${vessels.map(v=>vesselKey(v)).slice(0,5).join("|")}`,()=>vessels.filter(v=>salesScore(v)>=50||String(v.candidate_band||v.sales_priority_band||"").includes("target")||grade(v)[0]==="HOT").sort(hotCompare))}
-function getHotTop(vessels=[]){return [...vessels].filter(v=>salesScore(v)>0).sort(hotCompare).slice(0,10)}
-function renderKpi(){const s=state.status||{};const csvCandidates=state.csvRows.length?getSalesCandidates(state.csvRows):[];const hotTop=state.csvRows.length?getHotTop(state.csvRows):getHotTop(state.hot);const highRisk=n(s.high_risk_vessel_count)||n(s.score_75_plus)||hotTop.filter(v=>grade(v)[0]==="HOT").length;const arrival=n(s.arrival_pipeline_count)||n(s.predicted_arrivals_count);$("mTarget").textContent=fmt(csvCandidates.length||n(s.sales_candidate_count)||n(s.sales_target_count)||n(s.target_vessel_count)||state.targetTotal);$("mImmediate").textContent=fmt(hotTop.filter(v=>salesScore(v)>=75).length||n(s.immediate_target_count));$("mHighRisk").textContent=fmt(highRisk);$("mAnchorage").textContent=fmt(n(s.anchorage_waiting_count)||n(s.anchorage_detected_count)||n(s.scoring_diagnostics?.anchorage_detected_count)||state.csvRows.filter(v=>/묘박/.test(statusBucket(v))).length);$("mArrival").textContent=fmt(arrival||state.csvRows.filter(v=>/입항/.test(statusBucket(v))).length);const freshness=s.data_freshness?.active_collected_at||s.last_successful_generated_at||s.completed_at||s.generated_at||state.summary?.generated_at;const live=state.csvRows.length>0||(n(s.record_count)||n(s.all_collected_vessel_count)||n(state.summary?.record_count))>0;const badge=$("statusBadge");badge.className=`badge ${live?"ready":s.data_mode==="no_live_data"?"error":"warn"}`;badge.textContent=state.csvRows.length?"CSV 데이터 표시 중":live?"운영 데이터 표시 중":s.data_mode==="no_live_data"?"정적 운영 데이터 없음":"데이터 확인 필요";$("versionBadge").textContent=freshness?`기준 ${new Date(freshness).toLocaleString("ko-KR",{timeZone:"Asia/Seoul",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})}`:"기준 시각 확인 필요";const staticEmpty=state.doctor&&state.doctor.production_ready===false&&n(state.doctor.record_count)===0&&!state.csvRows.length;const csvError=state.csvError?`<div class="notice">CSV 데이터를 불러오지 못했습니다. 기존 데이터가 있으면 계속 사용합니다.</div>`:"";$("dataNotice").innerHTML=csvError+(staticEmpty?'<div class="notice">현재 정적 산출물에는 운영 데이터가 없습니다. 마지막 정상 데이터 또는 운영 데이터셋을 확인하세요.</div>':state.summary?.is_fallback?'<div class="notice">최신 수집이 진행 중이거나 실패하여 마지막 정상 수치를 표시 중입니다.</div>':"")}
-function dataHealthRows(){const s=state.status||{},d=s.data_quality_layer||{},dd=s.dedupe_diagnostics||{};const mismatch=(state.ports||[]).filter(p=>p.data_mismatch||p.sub_port_total_mismatch).length;return[{label:"데이터 소스",value:state.dataSource,warn:null},{label:"IMO 중복",value:n(dd.duplicate_imo_count||s.duplicate_imo_count),warn:1},{label:"MMSI 중복",value:n(dd.duplicate_mmsi_count||s.duplicate_mmsi_count),warn:1},{label:"호출부호 중복",value:n(dd.duplicate_call_sign_count||s.duplicate_call_sign_count),warn:1},{label:"ETA 누락",value:n(d.eta_missing_count||s.missing_eta_count),warn:1},{label:"좌표 누락",value:n(d.coordinate_missing_count||s.missing_coordinate_count),warn:1},{label:"선종 누락",value:n(d.vessel_type_unknown_count||s.vessel_type_unknown_count),warn:1},{label:"항구/서브항 합계 불일치",value:mismatch,warn:1}]}
-function renderHealth(){const rows=dataHealthRows();const issues=rows.filter(r=>r.warn!==null&&r.value>=r.warn).length;$("healthBadge").className=`chip ${issues?"warn":"good"}`;$("healthBadge").textContent=issues?`주의 ${issues}`:"정상";$("dataHealth").innerHTML=rows.map(r=>`<div class="health-row ${r.warn!==null&&r.value>=r.warn?"warn":""}"><span>${r.label}</span><b>${r.warn===null?esc(r.value):fmt(r.value)}</b></div>`).join("")}
-function validatePortMismatch(port,subs){const total=portMetric(port,"total_vessels","vessel_count","target_vessels","target_vessel_count");const sum=subs.reduce((a,p)=>a+portMetric(p,"total_vessels","vessel_count","target_vessels","target_vessel_count"),0);return subs.length&&total>0&&sum>0&&Math.abs(total-sum)>0?{total,sum}:null}
-function buildPortsFromVessels(vessels=[]){const map=new Map();for(const v of vessels){const name=portName(v);const row=map.get(name)||{port_name:name,total_vessels:0,target_vessels:0,sales_targets:0,anchorage_vessels:0,long_stay_vessels:0};row.total_vessels+=1;if(salesScore(v)>=50)row.target_vessels+=1;if(salesScore(v)>=65)row.sales_targets+=1;if(/묘박/.test(statusBucket(v)))row.anchorage_vessels+=1;if(stay(v)>=72)row.long_stay_vessels+=1;map.set(name,row)}return[...map.values()].sort((a,b)=>b.target_vessels-a.target_vessels||b.total_vessels-a.total_vessels)}
-function buildSubPortsFromVessels(vessels=[]){const map=new Map();for(const v of vessels){const parent=portName(v),sub=subPort(v),key=`${parent}|${sub}`;const row=map.get(key)||{parent_port_name:parent,port_group:parent,sub_port:sub,unit_label:sub,total_vessels:0,target_vessels:0,sales_targets:0,anchorage_vessels:0};row.total_vessels+=1;if(salesScore(v)>=50)row.target_vessels+=1;if(salesScore(v)>=65)row.sales_targets+=1;if(/묘박/.test(statusBucket(v)))row.anchorage_vessels+=1;map.set(key,row)}return[...map.values()]}
-function renderPorts(){const parentRows=memo("ports-parent",()=>{const rows=state.csvRows.length?buildPortsFromVessels(state.csvRows):(state.ports.length?state.ports:arr(state.status?.port_intelligence||state.summary?.port_summary));return rows.filter(p=>portName(p)!=="항만 확인 필요").slice(0,30)});const subs=state.csvRows.length?buildSubPortsFromVessels(state.csvRows):(state.subPorts||[]);$("portCountBadge").textContent=`항만 ${fmt(parentRows.length)} · 서브항 ${fmt(subs.length)}`;if(!parentRows.length){$("portOverview").innerHTML='<div class="empty">항만별 활성 데이터가 없습니다.</div>';return}const html=parentRows.map(p=>{const name=portName(p);const children=subs.filter(s=>String(s.parent_port_name||s.port_group||portName(s))===name||String(s.port_code||"")===String(p.port_code||""));const mismatch=validatePortMismatch(p,children);const total=portMetric(p,"total_vessels","vessel_count","target_vessels","target_vessel_count");const target=portMetric(p,"sales_targets","sales_candidates","candidate_count","target_vessels");const anchorage=portMetric(p,"anchorage_vessels","anchorage_waiting");return`<article class="card clickable port-card" data-port="${esc(name)}"><div class="row"><h3>${name}</h3><span class="chip ${mismatch?"danger":"info"}">${fmt(total)}척</span></div><div class="small">${text(p.port_group,p.display_scope,"항만/터미널 단위")} <span class="accordion-hint">· 탭하여 펼치기</span></div><div class="port-body"><div class="kv"><span class="k">영업 검토군</span><span>${fmt(target)}</span><span class="k">묘박/대기</span><span>${fmt(anchorage)}</span><span class="k">장기 체류</span><span>${fmt(portMetric(p,"long_idle_vessels","long_stay_vessels"))}</span></div>${mismatch?`<div class="notice">데이터 불일치: 모항 ${fmt(mismatch.total)} / 서브항 합계 ${fmt(mismatch.sum)}</div>`:""}<div class="subchips">${children.slice(0,8).map(c=>`<button class="subchip" type="button" data-port="${esc(name)}" data-sub="${esc(text(c.unit_label,c.sub_port,c.port_name_ko,c.port_name))}">${esc(text(c.unit_label,c.sub_port,c.port_name_ko,c.port_name))} ${fmt(portMetric(c,"total_vessels","vessel_count"))}</button>`).join("")}</div></div></article>`}).join("");$("portOverview").innerHTML=html;document.querySelectorAll(".port-card").forEach(el=>el.onclick=e=>{const sub=e.target?.dataset?.sub||"";if(window.innerWidth<=900&&!sub){el.classList.toggle("expanded");return}state.selectedPort=el.dataset.port||"";state.selectedSubPort=sub;openTable("all",1);});updatePortFilters(parentRows,subs)}
-function updatePortFilters(ports,subs){const pf=$("portFilter"),sf=$("subPortFilter");const pv=pf.value,sv=sf.value;pf.innerHTML='<option value="">전체 항만</option>'+ports.map(p=>`<option value="${esc(portName(p))}">${esc(portName(p))}</option>`).join("");sf.innerHTML='<option value="">전체 서브항</option>'+subs.map(p=>`<option value="${esc(text(p.unit_label,p.sub_port,p.port_name_ko,p.port_name))}">${esc(text(p.unit_label,p.sub_port,p.port_name_ko,p.port_name))}</option>`).join("");pf.value=state.selectedPort||pv;sf.value=state.selectedSubPort||sv}
-function candidateCard(v,index=0){const [label,cls]=grade(v);return`<article class="card clickable" data-key="${esc(vesselKey(v))}"><div class="row"><h3>${index?`${index}. `:""}${esc(vesselName(v))}</h3><span class="chip ${cls}">${label}</span></div><div class="small">점수 ${fmt(salesScore(v))} · ${esc(portName(v))} / ${esc(subPort(v))} · ${esc(statusBucket(v))}</div><div class="kv"><span class="k">ETA/ETB</span><span>${esc(timeLabel(v,"eta","확인 필요"))} / ${esc(timeLabel(v,"etb","선석정보 필요"))}</span><span class="k">ATA/ATB</span><span>${esc(timeLabel(v,"ata","미입항/확인 필요"))} / ${esc(timeLabel(v,"atb","선석정보 필요"))}</span><span class="k">체류</span><span>${stay(v)?`${fmt(Math.round(stay(v)/24*10)/10)}일`:"계산 불가"}</span><span class="k">바이오파울링 점수</span><span>${fmt(bio(v))}</span></div><div class="row"><div class="small">${esc(whyNow(v))}</div><div><div class="score">${fmt(salesScore(v))}</div><div class="score-label">점수</div></div></div></article>`}
-function renderHot(){const source=state.csvRows.length?state.csvRows:state.hot;const rows=getHotTop(source);$("hotCandidates").innerHTML=rows.length?rows.map((v,i)=>candidateCard(v,i+1)).join(""):'<div class="empty">HOT 후보가 없습니다. 요약 데이터 또는 후보 API를 확인해 주세요.</div>';bindVesselClicks()}
-function filteredTableRows(){const key=JSON.stringify({rows:state.tableRows.length,group:state.group,port:$("portFilter").value,sub:$("subPortFilter").value,q:$("searchBox").value,status:$("statusFilter").value});return memo(`filter-${key}`,()=>{const q=String($("searchBox").value||"").toLowerCase();const port=$("portFilter").value;const sub=$("subPortFilter").value;const status=$("statusFilter").value;const base=state.group==="target"?getSalesCandidates(state.tableRows):state.tableRows;return base.filter(v=>{const hay=[vesselName(v),v.imo,v.mmsi,v.call_sign,portName(v),subPort(v),v.sales_note,v.notes,v.memo,whyNow(v)].join(" ").toLowerCase();if(q&&!hay.includes(q))return false;if(port&&portName(v)!==port)return false;if(sub&&subPort(v)!==sub)return false;if(status==="staying"&&!/체류|접안/.test(statusBucket(v)))return false;if(status==="arrival"&&!/입항/.test(statusBucket(v)))return false;if(status==="anchorage"&&!/묘박/.test(statusBucket(v)))return false;return true}).sort(hotCompare)})}
-function renderTable(){const rows=filteredTableRows();$("targetTab").classList.toggle("active",state.group==="target");$("allTab").classList.toggle("active",state.group==="all");$("tableTitle").textContent=state.group==="all"?"전체선박":"영업 후보 선박 목록";$("tableSub").textContent=state.group==="all"?"수집된 전체 선박 목록입니다. 영업 후보가 아닌 선박도 포함됩니다.":"상업 가치와 작업 가능성을 기준으로 선별된 영업 후보 선박입니다.";$("tableCount").textContent=`${fmt(state.group==="target"?rows.length:(state.total||rows.length))}건`;$("targetTabCount").textContent=fmt(state.targetTotal||getSalesCandidates(state.tableRows).length);$("allTabCount").textContent=fmt(state.allTotal||state.status?.all_collected_vessel_count||state.summary?.all_vessels_count||state.tableRows.length);const heads=["선명","IMO","MMSI","항구","서브항","ETA","ETB","ATA","ATB","상태","체류일수","선종","선령","흘수","속력","바이오파울링 점수","추천등급","영업메모"];$("tableHead").innerHTML=heads.map(h=>`<th>${h}</th>`).join("");const emptyText=state.group==="target"?"영업 후보 선박이 없습니다":"표시할 선박이 없습니다";$("vesselRows").innerHTML=rows.length?rows.map(v=>{const [g,c]=grade(v);return`<tr data-key="${esc(vesselKey(v))}"><td><strong>${esc(vesselName(v))}</strong></td><td>${esc(text(v.imo,"-"))}</td><td>${esc(text(v.mmsi,"-"))}</td><td>${esc(portName(v))}</td><td>${esc(subPort(v))}</td><td>${esc(timeLabel(v,"eta","확인 필요"))}</td><td>${esc(timeLabel(v,"etb","선석정보 필요"))}</td><td>${esc(timeLabel(v,"ata","미입항/확인 필요"))}</td><td>${esc(timeLabel(v,"atb","선석정보 필요"))}</td><td>${esc(statusBucket(v))}</td><td>${stay(v)?fmt(Math.round(stay(v)/24*10)/10):"계산 불가"}</td><td>${esc(vesselType(v))}</td><td>${age(v)||"-"}</td><td>${draft(v)||"-"}</td><td>${speed(v)||"-"}</td><td>${fmt(bio(v))}</td><td><span class="chip ${c}">${g}</span></td><td>${esc(text(v.memo,v.sales_note,action(v)))}</td></tr>`}).join(""):`<tr><td colspan="18" class="empty">${emptyText}</td></tr>`;$("mobileVesselList").innerHTML=rows.length?rows.map(v=>{const [g,c]=grade(v);return`<article class="card vessel-mobile" data-key="${esc(vesselKey(v))}"><div class="row"><h3>${esc(vesselName(v))}</h3><span class="chip ${c}">${g}</span></div><div class="small">${esc(portName(v))} / ${esc(subPort(v))} · ${esc(statusBucket(v))}</div><div class="kv"><span class="k">ETA/ETB</span><span>${esc(timeLabel(v,"eta","확인 필요"))} / ${esc(timeLabel(v,"etb","선석정보 필요"))}</span><span class="k">ATA/ATB</span><span>${esc(timeLabel(v,"ata","미입항/확인 필요"))} / ${esc(timeLabel(v,"atb","선석정보 필요"))}</span><span class="k">체류일수</span><span>${stay(v)?fmt(Math.round(stay(v)/24*10)/10):"계산 불가"}</span><span class="k">바이오파울링 점수</span><span>${fmt(bio(v))}</span></div><div class="mobile-detail kv"><span class="k">선종</span><span>${esc(vesselType(v))}</span><span class="k">IMO/MMSI</span><span>${esc(text(v.imo,"-"))} / ${esc(text(v.mmsi,"-"))}</span><span class="k">추천등급</span><span>${esc(action(v))}</span></div></article>`}).join(""):`<div class="empty">${emptyText}</div>`;renderPager();bindVesselClicks()}
-function renderPager(){const totalPages=Math.max(1,state.totalPages||1);$("pager").innerHTML=`<button ${state.page<=1?"disabled":""} data-page="${state.page-1}">이전 페이지</button><span class="chip info">${fmt(state.page)} / ${fmt(totalPages)}</span><button ${state.page>=totalPages?"disabled":""} data-page="${state.page+1}">다음 페이지</button>`;document.querySelectorAll("[data-page]").forEach(b=>b.onclick=()=>loadVessels(state.group,n(b.dataset.page)||1))}
-function renderCongestion(){const heat=arr(state.status?.all_port_congestion_heatmap).length?arr(state.status.all_port_congestion_heatmap):arr(state.summary?.congestion_summary);$("congestionHeat").innerHTML=heat.length?heat.slice(0,10).map(p=>{const val=n(p.port_congestion_score||p.congestion_score||p.anchorage_density_score);return`<div class="heatcell"><strong>${esc(portName(p))}</strong><div class="small">묘박/대기 ${fmt(p.anchorage_vessels)} · 장기 체류 ${fmt(p.long_idle_vessels||p.long_stay_vessels)} · 체선 ${fmt(val)}</div><div class="bar"><span style="width:${Math.min(100,val)}%"></span></div></div>`}).join(""):'<div class="empty">체선 데이터가 없습니다.</div>'}
-function renderDetail(v){const [g,c]=grade(v);$("detailBand").className=`chip ${c}`;$("detailBand").textContent=g;$("detail").innerHTML=`<h3 style="margin:0 0 8px">${esc(vesselName(v))}</h3><div class="kv"><span class="k">항구/서브항</span><span>${esc(portName(v))} / ${esc(subPort(v))}</span><span class="k">상태</span><span>${esc(statusBucket(v))}</span><span class="k">선종</span><span>${esc(vesselType(v))}</span><span class="k">GT</span><span>${fmt(gt(v))}</span><span class="k">바이오파울링 점수</span><span>${fmt(bio(v))}</span><span class="k">상업 가치</span><span>${fmt(score(v))}</span><span class="k">왜 지금</span><span>${esc(whyNow(v))}</span><span class="k">추천 행동</span><span>${esc(action(v))}</span></div>`}
-function bindVesselClicks(){document.querySelectorAll("[data-key]").forEach(el=>el.onclick=async()=>{const key=el.getAttribute("data-key");if(el.classList.contains("vessel-mobile"))el.classList.toggle("expanded");const local=[...state.hot,...state.tableRows].find(x=>vesselKey(x)===key);if(local)renderDetail(local);const detail=await api(`/api/vessels/${encodeURIComponent(key)}`);if(detail&&!detail.error)renderDetail(detail)})}
-function renderAll(){state.memo.clear();renderKpi();renderHealth();renderPorts();renderHot();if(state.congestionLoaded)renderCongestion();if(state.tableLoaded)renderTable()}
-function parseCsv(text){const rows=[];let row=[],field="",quoted=false;for(let i=0;i<String(text||"").length;i++){const ch=text[i],next=text[i+1];if(quoted&&ch==='"'&&next==='"'){field+='"';i++;continue}if(ch==='"'){quoted=!quoted;continue}if(!quoted&&ch===","){row.push(field);field="";continue}if(!quoted&&(ch==="\n"||ch==="\r")){if(ch==="\r"&&next==="\n")i++;row.push(field);if(row.some(v=>String(v).trim()))rows.push(row);row=[];field="";continue}field+=ch}row.push(field);if(row.some(v=>String(v).trim()))rows.push(row);const headers=(rows.shift()||[]).map(h=>String(h||"").trim());return rows.map(cells=>Object.fromEntries(headers.map((h,i)=>[h,cells[i]??""])))}
-function pick(row,...keys){for(const key of keys){if(row[key]!==undefined&&row[key]!==null&&String(row[key]).trim()!=="")return row[key]}return null}
-function normalizeVesselData(row={},index=0){return{source_name:"CSV",vessel_id:`csv_${index}_${pick(row,"imo","IMO","mmsi","MMSI","vesselName","name","shipName")||"unknown"}`,vessel_name:pick(row,"vesselName","name","shipName")||"선명 확인 필요",imo:pick(row,"imo","IMO"),mmsi:pick(row,"mmsi","MMSI"),call_sign:pick(row,"callSign","callsign"),port:pick(row,"port","portName"),port_name:pick(row,"port","portName"),sub_port:pick(row,"subPort","berth","terminal"),berth_name:pick(row,"berth"),terminal_name:pick(row,"terminal"),eta:pick(row,"eta","ETA"),etb:pick(row,"etb","ETB"),ata:pick(row,"ata","ATA"),atb:pick(row,"atb","ATB"),status:pick(row,"status"),vessel_type:pick(row,"vesselType","shipType"),draft:pick(row,"draft"),speed:pick(row,"speed"),vessel_age:pick(row,"age"),biofoulingScore:pick(row,"biofoulingScore","foulingScore"),salesScore:pick(row,"salesScore","biofoulingScore","foulingScore"),memo:pick(row,"memo"),commercial_value_score:n(pick(row,"salesScore","biofoulingScore","foulingScore")),biofouling_exposure_score:n(pick(row,"biofoulingScore","foulingScore","salesScore"))}}
-function csvUrlFromConfig(summary,status){const params=new URLSearchParams(location.search);return params.get("csv")||summary?.source_csv_url||status?.source_csv_url||status?.config?.SOURCE_CSV_URL||""}
-async function loadCsvSource(summary,status){const url=csvUrlFromConfig(summary,status);state.csvError="";if(!url)return[];try{const res=await fetch(url,{cache:"no-store"});if(!res.ok)throw new Error(`CSV HTTP ${res.status}`);const rows=parseCsv(await res.text()).map(normalizeVesselData);state.dataSource="CSV";return rows}catch(error){state.csvError=error?.message||String(error);return[]}}
-async function loadSummary(){const [summary,status,top,ports,doctor]=await Promise.all([api("/api/dashboard-summary.json"),api("/api/status.json"),api("/api/candidates/top.json"),api("/api/ports.json"),api("/api/backend-doctor.json")]);state.summary=summary||{};state.status={...(summary?.status||{}),...(status||{})};state.doctor=doctor||null;state.csvRows=await loadCsvSource(state.summary,state.status);state.dataSource=state.csvRows.length?"CSV":(state.status?.data_mode==="no_live_data"?"샘플 데이터":"API");state.ports=state.csvRows.length?buildPortsFromVessels(state.csvRows):(arr(ports).length?arr(ports):arr(summary?.port_summary||summary?.ports));state.subPorts=state.csvRows.length?buildSubPortsFromVessels(state.csvRows):(Array.isArray(ports?.port_units)?ports.port_units:(Array.isArray(summary?.port_units)?summary.port_units:[]));state.hot=state.csvRows.length?state.csvRows:[...arr(top?.immediate_targets),...arr(top?.opportunities),...arr(summary?.immediate_targets),...arr(summary?.predicted_cleaning_opportunities)];state.currentSummaryRunId=runIdFrom(summary)||runIdFrom(status);state.latestActiveRunId=state.currentSummaryRunId;renderAll()}
-async function loadVessels(group=state.group,page=1){state.group=group;state.page=page;state.pageSize=n($("pageSizeSelect").value)||state.pageSize;if(state.csvRows.length){const source=group==="target"?getSalesCandidates(state.csvRows):[...state.csvRows].sort(hotCompare);state.total=source.length;state.totalPages=Math.max(1,Math.ceil(source.length/state.pageSize));state.allTotal=state.csvRows.length;state.targetTotal=getSalesCandidates(state.csvRows).length;state.tableRows=source.slice((page-1)*state.pageSize,page*state.pageSize);state.currentTableRunId=state.currentSummaryRunId;state.tableLoaded=true;$("tableShell").classList.add("open");$("tableStaleNotice").style.display="none";renderTable();return}let payload=await api(`/api/vessels?group=${encodeURIComponent(group)}&page=${page}&pageSize=${state.pageSize}&sort=commercial_value_score&dir=desc`);if(!payload){const staticPath=group==="all"?"/api/all-collected-vessels.json":"/api/target-vessels.json";const staticRows=await api(staticPath);const rows=group==="target"?getSalesCandidates(arr(staticRows)):arr(staticRows);payload={data:rows,total:rows.length,totalPages:1,groupCounts:{[group]:rows.length}}}state.tableRows=arr(payload);state.total=n(payload?.total)||state.tableRows.length;state.totalPages=n(payload?.totalPages)||1;state.allTotal=n(payload?.groupCounts?.all)||n(payload?.all_vessels_api_count)||state.allTotal;state.targetTotal=n(payload?.groupCounts?.target)||n(payload?.target_vessels_api_count)||getSalesCandidates(state.tableRows).length||state.targetTotal;state.currentTableRunId=runIdFrom(payload)||state.currentSummaryRunId;state.tableLoaded=true;$("tableShell").classList.add("open");$("tableStaleNotice").style.display=state.currentSummaryRunId&&state.currentTableRunId&&state.currentSummaryRunId!==state.currentTableRunId?"block":"none";renderTable()}
-function openTable(group=state.group,page=1){$("portFilter").value=state.selectedPort||$("portFilter").value;$("subPortFilter").value=state.selectedSubPort||$("subPortFilter").value;loadVessels(group,page);setTimeout(()=>$("tableShell").scrollIntoView({block:"start"}),0)}
-async function poll(){const status=await api("/api/status.json");const latest=runIdFrom(status);if(latest&&state.currentSummaryRunId&&latest!==state.currentSummaryRunId){await loadSummary();$("tableStaleNotice").style.display=state.tableLoaded?"block":"none"}}
-["searchBox","portFilter","subPortFilter","statusFilter"].forEach(id=>$(id).addEventListener("input",()=>{state.selectedPort=$("portFilter").value;state.selectedSubPort=$("subPortFilter").value;if(state.tableLoaded)renderTable()}));
-$("pageSizeSelect").onchange=()=>loadVessels(state.group,1);
-$("openListBtn").onclick=()=>openTable("target",1);
-$("targetTab").onclick=()=>loadVessels("target",1);
-$("allTab").onclick=()=>loadVessels("all",1);
-$("refreshTableBtn").onclick=()=>loadVessels(state.group,1);
+const esc=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const pick=(obj,...keys)=>keys.map(k=>obj?.[k]).find(v=>v!==undefined&&v!==null&&String(v).trim()!=="")??"";
+const runId=p=>p?.active_run_id||p?.summary_run_id||p?.run_id||p?.status?.active_run_id||"";
+const score=v=>n(pick(v,"commercial_value_score","salesScore","sales_score","total_sales_priority_score","biofouling_exposure_score","biofouling_score"));
+const stay=v=>n(pick(v,"cumulative_stay_hours","stay_hours","current_call_stay_hours"));
+const vesselName=v=>pick(v,"vessel_name","name","ship_name")||"선명 확인 필요";
+const portName=v=>pick(v,"port_name","port_name_ko","port")||"항만 확인 필요";
+const statusText=v=>pick(v,"status_bucket","operational_status","status")||"상태 확인 필요";
+const operator=v=>pick(v,"operator_name","operator")||"확인 필요";
+const agent=v=>pick(v,"agent_name","agent","satmntEntrpsNm","entrpsCdNm")||"확인 필요";
+const action=v=>pick(v,"recommended_action","recommended_next_action")||"확인 필요";
+const why=v=>pick(v,"why_now","candidate_summary_ko","opportunity_summary")||"확인 필요";
+function grade(v){const s=score(v);if(s>=75)return["HOT","hot"];if(s>=50)return["WARM","warm"];return["COLD","cold"]}
+function compareRows(a,b){const mode=$("sortOrder").value;if(mode==="stay_desc")return stay(b)-stay(a)||score(b)-score(a);if(mode==="name_asc")return vesselName(a).localeCompare(vesselName(b),"ko");return score(b)-score(a)||stay(b)-stay(a)||vesselName(a).localeCompare(vesselName(b),"ko")}
+function getSalesCandidates(rows=[]){return rows.filter(v=>score(v)>=50||/target|candidate|critical/i.test(String(v.candidate_band||v.sales_priority_band||""))).sort(compareRows)}
+function saveFilters(){localStorage.setItem("port-dashboard-filters",JSON.stringify({group:state.group,port:$("portFilter").value,sort:$("sortOrder").value,pageSize:$("pageSize").value}))}
+function restoreFilters(){try{const v=JSON.parse(localStorage.getItem("port-dashboard-filters")||"{}");state.group=v.group||"target";$("portFilter").value=v.port||"";$("sortOrder").value=v.sort||"score_desc";$("pageSize").value=v.pageSize||"50"}catch{}}
+function renderKpi(){const s=state.summary||{};const st=state.status||{};const data=[["영업대상",s.sales_target_count??st.sales_target_count??st.sales_candidate_count??0,"후보 목록"],["즉시영업후보",s.immediate_target_count??st.immediate_target_count??0,"우선 연락"],["고위험선박",st.high_risk_count??s.score_75_plus_count??0,"주의 필요"],["입항예정",st.arrival_pipeline_count??s.arrival_pipeline_count??0,"예정"],["묘박/대기",st.anchorage_waiting_count??st.anchorage_detected_count??0,"대기"],["총 선박 수",s.all_vessels_count??st.all_vessels_count??st.record_count??0,"전체"]];$("kpiGrid").innerHTML=data.map(([a,b,c])=>`<div class="metric"><span>${a} ${term(a)}</span><strong>${fmt(b)}</strong><span>${c}</span></div>`).join("")}
+function term(label){const defs={"상업가치 점수":"선박 규모, 작업가능성, 체선, 노출, 연락 가능성을 합친 영업 우선순위입니다.","작업가능성":"체류 중이고 출항 일정이 촉박하지 않아 실제 작업을 검토할 여지가 있는 정도입니다.","체선점수":"묘박/대기/장기체류 등 항만 혼잡 노출 신호입니다.","데이터 신뢰도":"IMO, GT, 호출부호, 항만/시간/선석 정보가 얼마나 채워졌는지 보는 보조 지표입니다.","영업대상":"상업가치와 조건이 일정 기준 이상인 후보 선박입니다.","즉시영업후보":"현재 또는 단기 작업 가능성이 높아 우선 확인할 선박입니다."};return defs[label]?`<button class="tooltip" title="${esc(defs[label])}" type="button">?</button>`:""}
+function renderTerms(){const labels=["상업가치 점수","작업가능성","체선점수","데이터 신뢰도","영업대상","즉시영업후보"];$("termRows").innerHTML=labels.map(l=>`<div class="health-row"><span>${l}</span><b>${term(l)}</b></div>`).join("")}
+function renderStatus(){const d=state.doctor||{}, h=state.sourceHealth||{}, s=state.summary||{}, st=state.status||{};const live=n(s.record_count||st.record_count)>0;const fallback=Boolean(s.fallback_used||st.fallback_used);$("sourceBadge").className=`badge ${live?"ok":fallback?"warn":"err"}`;$("sourceBadge").textContent=live?`데이터 소스: ${s.data_source_used||st.data_source_used||"API"}`:fallback?"마지막 정상 데이터 또는 진단 표시":"운영 데이터 없음";const t=s.generated_at||st.generated_at||st.completed_at;$("freshBadge").textContent=t?`기준 ${new Date(t).toLocaleString("ko-KR",{timeZone:"Asia/Seoul",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})}`:"기준 시각 확인 필요";$("datasetBadge").textContent=`run ${runId(s)||runId(st)||"확인 필요"}`;const warnings=[];if(!live)warnings.push("현재 정적 산출물에는 운영 데이터가 없습니다.");if(fallback)warnings.push("마지막 정상 스냅샷 또는 fallback 수치를 표시 중입니다.");if(d.production_ready===false)warnings.push("backend-doctor가 production_ready=false를 보고했습니다.");$("notice").innerHTML=warnings.map(w=>`<div class="notice">${esc(w)}</div>`).join("");const rows=[["backend-doctor",d.ok===true?"정상":"주의",d.ok===true?"":"warn"],["source-health",h.stale_source_health?"stale":"확인",h.stale_source_health?"warn":""],["마지막 정상 run",st.latest_successful_summary_run_id||s.summary_run_id||"확인 필요",""],["누락 설정",(st.config_diagnostics?.missing_required_config||h.missing_required_config||[]).length||0,((st.config_diagnostics?.missing_required_config||[]).length?"warn":"")],["데이터 상태",d.data_status||st.data_mode||"확인 중",d.data_status==="empty_dataset"?"err":""]];$("healthRows").innerHTML=rows.map(([a,b,c])=>`<div class="health-row ${c}"><span>${a}</span><b>${esc(b)}</b></div>`).join("");$("healthBadge").className=`chip ${live?"good":"warm"}`;$("healthBadge").textContent=live?"정상":"주의"}
+function renderPorts(){const rows=arr(state.portsPayload).length?arr(state.portsPayload):arr(state.summary?.ports||state.summary?.port_summary);$("portCount").textContent=`${fmt(rows.length)}개 항만`;$("ports").innerHTML=rows.length?rows.slice(0,18).map(p=>{const total=n(p.total_vessels||p.vessel_count||p.target_vessels||p.target_vessel_count);const target=n(p.sales_targets||p.sales_candidates||p.candidate_count||p.target_vessels);return`<article class="card"><div class="row"><h3>${esc(portName(p))}</h3><span class="chip">${fmt(total)}척</span></div><div class="kv"><span class="k">영업대상</span><span>${fmt(target)}</span><span class="k">묘박/대기</span><span>${fmt(p.anchorage_vessels||p.anchorage_waiting)}</span><span class="k">장기 체류</span><span>${fmt(p.long_stay_vessels||p.long_idle_vessels)}</span></div></article>`}).join(""):`<div class="empty">항만 요약 데이터가 없습니다.</div>`;const options=[...new Set(rows.map(portName).filter(Boolean))];$("portFilter").innerHTML='<option value="">전체 항만</option>'+options.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join("");restoreFilters()}
+function renderHot(){const rows=getSalesCandidates([...arr(state.top?.immediate_targets),...arr(state.top?.opportunities),...arr(state.summary?.immediate_targets),...arr(state.summary?.opportunities)]).slice(0,10);$("hotList").innerHTML=rows.length?rows.map((v,i)=>{const [g,c]=grade(v);return`<article class="card"><div class="row"><h3>${i+1}. ${esc(vesselName(v))}</h3><span class="chip ${c}">${g}</span></div><div class="small">${esc(portName(v))} · ${esc(statusText(v))}</div><div class="row"><div class="small">${esc(why(v))}</div><div class="score">${fmt(score(v))}</div></div></article>`}).join(""):`<div class="empty">HOT 후보 데이터가 없습니다.</div>`}
+function renderRows(){const q=$("search").value.toLowerCase();let rows=[...state.rows];if(state.group==="target")rows=getSalesCandidates(rows);if($("portFilter").value)rows=rows.filter(v=>portName(v)===$("portFilter").value);if(q)rows=rows.filter(v=>[vesselName(v),v.imo,v.mmsi,portName(v),operator(v),agent(v)].join(" ").toLowerCase().includes(q));rows.sort(compareRows);state.total=rows.length;$("tableCount").textContent=`${fmt(rows.length)}건`;$("targetCount").textContent=fmt(state.group==="target"?rows.length:getSalesCandidates(state.rows).length);$("allCount").textContent=fmt(state.group==="all"?rows.length:state.rows.length);const pageRows=rows.slice((state.page-1)*state.pageSize,state.page*state.pageSize);if(!pageRows.length){$("rows").innerHTML='<tr><td colspan="11" class="empty">영업 후보 선박이 없습니다.</td></tr>';$("mobileRows").innerHTML='<div class="empty">영업 후보 선박이 없습니다.</div>'}else{$("rows").innerHTML=pageRows.map((v,i)=>`<tr><td>${(state.page-1)*state.pageSize+i+1}</td><td>${esc(vesselName(v))}</td><td>${esc(pick(v,"imo")||"-")}</td><td>${esc(portName(v))}</td><td>${esc(statusText(v))}</td><td>${stay(v)?fmt(Math.round(stay(v)/24*10)/10)+"일":"계산 불가"}</td><td>${esc(operator(v))}</td><td>${esc(agent(v))}</td><td>${fmt(pick(v,"contact_readiness_score")||0)}</td><td>${fmt(score(v))}</td><td>${esc(action(v))}</td></tr>`).join("");$("mobileRows").innerHTML=pageRows.map((v,i)=>{const [g,c]=grade(v);return`<article class="card vessel-card" tabindex="0"><div class="row"><h3>${(state.page-1)*state.pageSize+i+1}. ${esc(vesselName(v))}</h3><span class="chip ${c}">${g}</span></div><div class="small">${esc(portName(v))} · ${esc(statusText(v))} · 점수 ${fmt(score(v))}</div><div class="mobile-detail kv"><span class="k">운영선사</span><span>${esc(operator(v))}</span><span class="k">대리점</span><span>${esc(agent(v))}</span><span class="k">연락준비도</span><span>${fmt(pick(v,"contact_readiness_score")||0)}</span><span class="k">왜 지금</span><span>${esc(why(v))}</span><span class="k">추천 액션</span><span>${esc(action(v))}</span></div></article>`}).join("")}document.querySelectorAll(".vessel-card").forEach(el=>el.onclick=()=>el.classList.toggle("expanded"));renderPager();saveFilters()}
+function renderPager(){const pages=Math.max(1,Math.ceil(state.total/state.pageSize));$("pager").innerHTML=`<button ${state.page<=1?"disabled":""} id="prevPage">이전 페이지</button><span class="chip">${fmt(state.page)} / ${fmt(pages)}</span><button ${state.page>=pages?"disabled":""} id="nextPage">다음 페이지</button>`;$("prevPage").onclick=()=>{state.page--;renderRows()};$("nextPage").onclick=()=>{state.page++;renderRows()}}
+async function loadTable(group=state.group){state.group=group;state.page=1;state.pageSize=n($("pageSize").value)||50;saveFilters();$("rows").innerHTML='<tr><td colspan="11"><div class="skeleton"></div></td></tr>';$("mobileRows").innerHTML='<div class="skeleton"></div>';const payload=await api(`/api/vessels?group=${group}&page=1&pageSize=500`);let rows=arr(payload);if(!rows.length)rows=arr(await api(group==="all"?"/api/all-collected-vessels.json":"/api/target-vessels.json"));state.rows=rows;state.loaded=true;const summaryRun=runId(state.summary)||runId(state.status), tableRun=runId(payload);$("staleNotice").style.display=summaryRun&&tableRun&&summaryRun!==tableRun?"block":"none";renderRows()}
+function downloadCsv(name,rows){const headers=["vessel_name","imo","mmsi","port_name","status","operator","agent","contact_readiness_score","commercial_value_score","recommended_action"];const csv=[headers.join(","),...rows.map(v=>headers.map(h=>`"${String(h==="operator"?operator(v):h==="agent"?agent(v):h==="recommended_action"?action(v):h==="commercial_value_score"?score(v):h==="port_name"?portName(v):h==="status"?statusText(v):pick(v,h)||"").replace(/"/g,'""')}"`).join(","))].join("\n");const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)}
+function exportPorts(){const rows=arr(state.portsPayload).length?arr(state.portsPayload):arr(state.summary?.ports||state.summary?.port_summary);const headers=["port_name","total_vessels","target_vessels","anchorage_vessels","long_stay_vessels"];const csv=[headers.join(","),...rows.map(p=>headers.map(h=>`"${String(h==="port_name"?portName(p):p[h]??"").replace(/"/g,'""')}"`).join(","))].join("\n");const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="port-summary.csv";a.click();URL.revokeObjectURL(a.href)}
+async function loadSummary(){const [summary,status,doctor,sourceHealth,ports,top]=await Promise.all([api("/api/dashboard-summary.json"),api("/api/status.json"),api("/api/backend-doctor.json"),api("/api/source-health-runtime.json"),api("/api/ports.json"),api("/api/candidates/top.json")]);state.summary=summary||{};state.status={...(summary?.status||{}),...(status||{})};state.doctor=doctor||{};state.sourceHealth=sourceHealth||{};state.portsPayload=ports||{};state.top=top||{};renderKpi();renderStatus();renderPorts();renderHot();renderTerms()}
+$("refreshBtn").onclick=()=>loadSummary();$("loadTable").onclick=()=>loadTable(state.group);$("targetTab").onclick=()=>{$("targetTab").classList.add("active");$("allTab").classList.remove("active");loadTable("target")};$("allTab").onclick=()=>{$("allTab").classList.add("active");$("targetTab").classList.remove("active");loadTable("all")};["search","portFilter","sortOrder","pageSize"].forEach(id=>$(id).oninput=()=>{state.page=1;state.pageSize=n($("pageSize").value)||50;if(state.loaded)renderRows();saveFilters()});$("exportTable").onclick=()=>downloadCsv("current-table.csv",state.rows);$("exportTargets").onclick=async()=>downloadCsv("target-vessels.csv",getSalesCandidates(state.rows.length?state.rows:arr(await api("/api/target-vessels.json"))));$("exportPorts").onclick=exportPorts;
 loadSummary();
-if("IntersectionObserver" in window){const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){state.congestionLoaded=true;renderCongestion();observer.disconnect()}},{rootMargin:"160px"});observer.observe($("congestionSection"))}else{state.congestionLoaded=true;renderCongestion()}
-setInterval(poll,60000);
 </script>
 </body>
 </html>
