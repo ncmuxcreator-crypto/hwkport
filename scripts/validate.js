@@ -30,6 +30,7 @@ const required = [
   "dashboard/api/hot-candidates.json",
   "dashboard/api/ports.json",
   "dashboard/api/coverage-registry.json",
+  "dashboard/api/readiness-gate.json",
   "dashboard/api/backend-ops.json",
   "dashboard/api/candidate-changes.json",
   ".github/workflows/longterm-update.yml",
@@ -150,6 +151,15 @@ if (fs.existsSync("dashboard/api/backend-doctor.json")) {
   }
   if (Number(doctor.record_count || 0) === 0 && doctor.data_status !== "empty_dataset") {
     throw new Error("Backend doctor must mark record_count=0 as empty_dataset");
+  }
+}
+if (fs.existsSync("dashboard/api/readiness-gate.json")) {
+  const readiness = JSON.parse(fs.readFileSync("dashboard/api/readiness-gate.json", "utf8"));
+  if (!readiness.run_id || !readiness.generated_at) {
+    throw new Error("Readiness gate must include run_id and generated_at");
+  }
+  if (status.run_id && readiness.run_id && String(status.run_id) !== String(readiness.run_id) && readiness.stale_readiness_gate !== true) {
+    throw new Error("Readiness gate must mark stale_readiness_gate=true when run_id differs from status.json");
   }
 }
 if (!status.candidate_ops || !status.backend_health || !status.seven_pack_summary) {
