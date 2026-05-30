@@ -12,7 +12,7 @@ import {
 const SOURCE_TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 25000);
 const MAX_OUTPUT_ROWS = Number(process.env.MAX_OUTPUT_ROWS || 10000);
 const MAX_SOURCE_ROWS = Number(process.env.MAX_SOURCE_ROWS || 5000);
-const MAX_CHILD_ENRICHMENT_ROWS = Number(process.env.MAX_CHILD_ENRICHMENT_ROWS || 10);
+const MAX_CHILD_ENRICHMENT_ROWS = Number(process.env.MAX_CHILD_ENRICHMENT_ROWS || 100);
 const COLLECTOR_RUNTIME_BUDGET_MS = Number(process.env.COLLECTOR_RUNTIME_BUDGET_MS || 300000);
 const DEFAULT_PORT_OPERATION_API_URL = "http://apis.data.go.kr/1192000/VsslEtrynd5/Info5";
 const DEFAULT_CARGO_HARBOR_USE_API_URL = "http://apis.data.go.kr/1192000/CargHarborUse2/Info";

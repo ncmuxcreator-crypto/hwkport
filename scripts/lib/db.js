@@ -49,6 +49,54 @@ function commercialScore(record = {}) {
   return Number(record.commercial_value_score || record.total_sales_priority_score || record.cleaning_candidate_score || 0);
 }
 
+function isDepartedRecord(record = {}) {
+  return String(record.status_bucket || record.operational_status || record.status || "").toLowerCase() === "departed" || Boolean(record.atd);
+}
+
+function isHardCandidateExcluded(record = {}) {
+  const text = [record.vessel_name, record.name, record.source, record.source_name, record.data_mode, record.commercial_relevance_status, record.exclusion_reason]
+    .filter(Boolean)
+    .join(" ");
+  return /sample|demo|fallback|synthetic/i.test(text) ||
+    record.excluded_from_commercial_targets === true ||
+    record.commercial_relevance_status === "excluded_non_commercial_type";
+}
+
+function hasCurrentOrNearTermWorkFeasibility(record = {}) {
+  const status = String(record.status_bucket || record.operational_status || record.status || "").toLowerCase();
+  return Number(record.work_feasibility_score || record.cleaning_window_score || 0) >= 35 ||
+    Number(record.work_window_hours || record.predicted_work_window_hours || 0) > 0 ||
+    ["arrived_staying", "berthed", "anchorage_waiting"].includes(status) ||
+    Boolean(record.is_anchorage_waiting) ||
+    (Number(record.stay_hours || record.cumulative_stay_hours || 0) > 0 && !record.atd);
+}
+
+function withinCommercialPercentile(record = {}, limit) {
+  const global = Number(record.global_percentile);
+  const port = Number(record.port_percentile);
+  return (Number.isFinite(global) && global <= limit) || (Number.isFinite(port) && port <= limit);
+}
+
+function isImmediateTargetRecord(record = {}) {
+  if (isHardCandidateExcluded(record) || isDepartedRecord(record)) return false;
+  if (record.is_immediate_candidate === true || ["critical", "immediate_target"].includes(record.candidate_band)) return true;
+  return commercialScore(record) >= 75 && withinCommercialPercentile(record, 10) && hasCurrentOrNearTermWorkFeasibility(record);
+}
+
+function isSalesTargetRecord(record = {}) {
+  if (isHardCandidateExcluded(record) || isDepartedRecord(record)) return false;
+  if (isImmediateTargetRecord(record)) return true;
+  if (["sales_target"].includes(record.candidate_band)) return true;
+  return commercialScore(record) >= 65 && withinCommercialPercentile(record, 20);
+}
+
+function isWatchlistRecord(record = {}) {
+  if (isHardCandidateExcluded(record) || isDepartedRecord(record)) return false;
+  if (isSalesTargetRecord(record)) return false;
+  const score = commercialScore(record);
+  return score >= 50 && score < 65;
+}
+
 function imoRecoveryPriority(record = {}) {
   const score = commercialScore(record);
   const gt = Number(record.gt || record.grtg || record.intrlGrtg || 0);
@@ -684,10 +732,10 @@ async function runLeanRetentionCleanup(supabase) {
   const result = {};
   for (const [table, column, days] of jobs) {
     try {
-      const { error } = await supabase.from(table).delete().lt(column, retentionCutoff(days));
-      result[table] = error ? `skipped:${error.message}` : `retained_${days}d`;
+      const { error, count } = await supabase.from(table).delete({ count: "exact" }).lt(column, retentionCutoff(days));
+      result[table] = error ? { status: "skipped", error: error.message, retention_days: days, rows_deleted: 0 } : { status: "retained", retention_days: days, rows_deleted: Number(count || 0) };
     } catch (error) {
-      result[table] = `skipped:${error.message}`;
+      result[table] = { status: "skipped", error: error.message, retention_days: days, rows_deleted: 0 };
     }
   }
   return result;
@@ -863,8 +911,8 @@ function buildHistoricalWarehouseRows(records = [], runId, now) {
     const [portCode, subPort] = key.split("|");
     const scores = rows.map(commercialScore);
     const congestionScores = rows.map(row => row.congestion_score || row.port_congestion_score);
-    const immediateTargets = rows.filter(row => commercialScore(row) >= 75).length;
-    const salesTargets = rows.filter(row => commercialScore(row) >= 65 && commercialScore(row) < 75).length;
+    const immediateTargets = rows.filter(isImmediateTargetRecord).length;
+    const salesTargets = rows.filter(row => isSalesTargetRecord(row) && !isImmediateTargetRecord(row)).length;
     return {
       snapshot_date: snapshotDate,
       run_id: runId,
@@ -872,10 +920,10 @@ function buildHistoricalWarehouseRows(records = [], runId, now) {
       port_name: rows.find(row => row.port_name || row.port)?.port_name || rows.find(row => row.port)?.port || null,
       sub_port: subPort || "",
       total_vessels: rows.length,
-      target_vessels: rows.filter(row => commercialScore(row) >= 65).length,
+      target_vessels: rows.filter(isSalesTargetRecord).length,
       immediate_targets: immediateTargets,
       sales_targets: salesTargets,
-      watchlist_count: rows.filter(row => commercialScore(row) >= 50 && commercialScore(row) < 65).length,
+      watchlist_count: rows.filter(isWatchlistRecord).length,
       anchorage_vessels: rows.filter(row => row.is_anchorage_waiting || scoreNumber(row.anchorage_hours) > 0).length,
       long_stay_vessels: rows.filter(row => scoreNumber(row.stay_hours) >= 72 || scoreNumber(row.anchorage_hours) >= 72).length,
       avg_stay_hours: average(rows.map(row => row.stay_hours)),
@@ -895,8 +943,8 @@ function buildHistoricalWarehouseRows(records = [], runId, now) {
     operator_name: rows.find(row => row.operator_name || row.operator)?.operator_name || rows.find(row => row.operator)?.operator || operatorNormalized,
     operator_normalized: operatorNormalized,
     active_vessels: new Set(rows.map(row => row.master_vessel_id || row.hybrid_entity_key || row.imo || row.mmsi || row.call_sign || row.vessel_name).filter(Boolean)).size,
-    target_vessels: rows.filter(row => commercialScore(row) >= 65).length,
-    immediate_targets: rows.filter(row => commercialScore(row) >= 75).length,
+    target_vessels: rows.filter(isSalesTargetRecord).length,
+    immediate_targets: rows.filter(isImmediateTargetRecord).length,
     avg_commercial_value_score: average(rows.map(commercialScore)),
     avg_biofouling_exposure_score: average(rows.map(row => row.biofouling_exposure_score || row.biofouling_risk_score)),
     avg_congestion_score: average(rows.map(row => row.congestion_score || row.port_congestion_score)),
@@ -1044,9 +1092,10 @@ export async function saveToSupabase(records, options = {}) {
     staying_vessels_count: records.filter(r => ["arrived_staying", "berthed", "anchorage_waiting"].includes(r.status_bucket)).length,
     arrival_pipeline_count: records.filter(r => r.status_bucket === "arriving_soon").length,
     scored_vessels_count: records.filter(r => typeof r.total_sales_priority_score === "number").length,
-    candidates_count: records.filter(r => (r.commercial_value_score || r.total_sales_priority_score || 0) >= 50 || r.is_cleaning_candidate).length,
-    sales_candidates_count: records.filter(r => (r.commercial_value_score || r.total_sales_priority_score || 0) >= 50 || r.is_cleaning_candidate).length,
-    immediate_targets_count: records.filter(r => (r.commercial_value_score || r.total_sales_priority_score || 0) >= 75 || r.is_immediate_candidate).length,
+    candidates_count: records.filter(r => isSalesTargetRecord(r) || isImmediateTargetRecord(r)).length,
+    watchlist_count: records.filter(isWatchlistRecord).length,
+    sales_candidates_count: records.filter(isSalesTargetRecord).length,
+    immediate_targets_count: records.filter(isImmediateTargetRecord).length,
     high_score_not_promoted_count: highScoreNotPromotedCount,
     candidate_promotion_error: highScoreNotPromotedCount > 0,
     exclusion_reason_counts: exclusionReasonCounts,
@@ -2474,6 +2523,29 @@ export async function saveToSupabase(records, options = {}) {
   }
 
   const retentionCleanup = await runLeanRetentionCleanup(supabase);
+  const dbRowsWrittenByTable = {
+    vessel_snapshots: recordsSaved,
+    vessel_entities: entities.length,
+    vessel_master: masterRows.length,
+    port_call_master: portCallMasterRows.length,
+    opportunity_master: opportunityRows.length,
+    risk_history: riskRows.length,
+    vessel_events: events.length,
+    pilot_schedule_events: pilotEvents.length,
+    port_congestion_snapshots: congestionRows.length,
+    enrichment_match_candidates: enrichmentMatchRows.length,
+    commercial_leads: commercialLeadRows.length,
+    feature_store: featureStoreRows.length,
+    rule_evaluations: ruleEvaluationRows.length,
+    explainability_snapshots: explainabilityRows.length,
+    model_training_rows: trainingRows.length,
+    vessel_snapshot_daily: historicalSnapshotResult.vessel_snapshot_daily_rows_written,
+    port_snapshot_daily: historicalSnapshotResult.port_snapshot_daily_rows_written,
+    operator_snapshot_daily: historicalSnapshotResult.operator_snapshot_daily_rows_written,
+    route_snapshot_daily: historicalSnapshotResult.route_snapshot_daily_rows_written,
+    commercial_opportunity_daily: historicalSnapshotResult.commercial_opportunity_daily_rows_written
+  };
+  const retentionRowsDeletedByTable = Object.fromEntries(Object.entries(retentionCleanup || {}).map(([table, value]) => [table, Number(value?.rows_deleted || 0)]));
 
   return {
     runId,
@@ -2499,6 +2571,8 @@ export async function saveToSupabase(records, options = {}) {
     operatorGraphRowsSaved: operatorGraphRows.length,
     modelTrainingRowsSaved: trainingRows.length,
     ...historicalSnapshotResult,
+    db_rows_written_by_table: dbRowsWrittenByTable,
+    retention_rows_deleted_by_table: retentionRowsDeletedByTable,
     retentionCleanup,
     routePatternRowsSaved: routePatternRows.length,
     vesselRouteHistoryRowsSaved: vesselRouteHistoryRows.length,

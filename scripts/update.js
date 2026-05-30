@@ -5,6 +5,7 @@ import { archiveRawToGDrive, buildRawArchivePayload } from "./lib/gdrive.js";
 import { detectSecrets } from "./lib/secrets.js";
 import { writeSnapshotOutputs, buildBackendOpsReport } from "./lib/snapshot-store.js";
 import { enrichWithReferenceDictionaries, loadReferenceDictionaries } from "./lib/reference-dictionaries.js";
+import { PIPELINE_STAGES, sourceOfTruthTables } from "./pipeline/index.js";
 
 const VERSION = "17.7.0";
 const BUILD_NAME = "Backend Stability Batch";
@@ -1999,7 +2000,7 @@ function isImmediateTarget(v = {}) {
 
 function isWatchlistVessel(v = {}) {
   const score = Number(v.commercial_value_score || v.total_sales_priority_score || v.cleaning_candidate_score || 0);
-  return !isDepartedRecord(v) && !isHardCandidateExcluded(v) && (score >= 50 || withinCommercialPercentile(v, 40));
+  return !isDepartedRecord(v) && !isHardCandidateExcluded(v) && score >= 50 && score < SALES_CANDIDATE_THRESHOLD;
 }
 
 function commercialExclusionReason(v = {}) {
@@ -2786,6 +2787,8 @@ function buildMatchingDiagnostics(records = []) {
   const ulsanMatched = sourceMatched(/ulsan|울산/);
   const berthMatched = sourceMatched(/berth|terminal|facility|선석|터미널/);
   return {
+    source_rows_collected: sourceRows.length,
+    source_rows_matched: matchedRows.length,
     enrichment_rows_collected: sourceRows.length,
     enrichment_rows_matched: matchedRows.length,
     enrichment_rows_unmatched: Math.max(0, sourceRows.length - matchedRows.length),
@@ -3018,6 +3021,11 @@ function buildScoringDiagnostics(records = []) {
     review_target_threshold: REVIEW_TARGET_THRESHOLD,
     sales_candidate_threshold: SALES_CANDIDATE_THRESHOLD,
     immediate_target_threshold: IMMEDIATE_TARGET_THRESHOLD,
+    candidate_threshold_used: {
+      watchlist: "commercial_value_score 50-64",
+      sales_target: "commercial_value_score >= 65 AND global_percentile <= 20 OR port_percentile <= 20",
+      immediate_target: "commercial_value_score >= 75 AND global_percentile <= 10 OR port_percentile <= 10 AND current/near-term work feasibility"
+    },
     commercial_score_bands: {
       critical: "90+",
       immediate_target: "75-89",
@@ -3062,7 +3070,7 @@ function buildScoringDiagnostics(records = []) {
     candidate_classification_logic: {
       immediate_targets: "score >= 75 AND top 10% global/port AND current/near-term work feasibility",
       sales_targets: "score >= 65 AND top 20% global/port",
-      watchlist: "score >= 50 OR top 40% global/port",
+      watchlist: "score 50-64, excluding sales/immediate targets",
       percentile_fallback: "if rank fields are missing, percentile guard fails so target ratio cannot inflate"
     },
     watchlist_count: records.filter(v => !isSalesCandidate(v) && isWatchlistVessel(v)).length,
@@ -4161,6 +4169,11 @@ try {
     port_congestion_heatmap: portCongestionHeatmap,
     biofouling_timeline: biofoulingTimeline,
     deployment_readiness: buildDeploymentReadiness(baseReport, vessels, detectSecrets())
+  };
+  report.backend_architecture = {
+    pipeline_stages: PIPELINE_STAGES,
+    source_of_truth_tables: sourceOfTruthTables,
+    production_serving_rule: "Dashboard APIs read the latest active dataset via active_dataset_pointer; generated no_live_data JSON must not replace promoted production data."
   };
 
   try {

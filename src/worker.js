@@ -2,6 +2,8 @@
 const SALES_CANDIDATE_THRESHOLD = 65;
 const IMMEDIATE_TARGET_THRESHOLD = 75;
 const CRITICAL_TARGET_THRESHOLD = 90;
+const PORT_REGISTRY_SOURCE = "data/reference/ports_registry.csv";
+const PORT_REGISTRY_GENERATED_FROM_CSV = true;
 const PORT_REGISTRY = [
   { port_code: "020", port_name_ko: "부산항", tier: 1, sort: 10 },
   { port_code: "820", port_name_ko: "울산항", tier: 1, sort: 20 },
@@ -9,8 +11,8 @@ const PORT_REGISTRY = [
   { port_code: "031", port_name_ko: "평택·당진항", tier: 1, sort: 40 },
   { port_code: "030", port_name_ko: "인천항", tier: 1, sort: 50 },
   { port_code: "810", port_name_ko: "포항항", tier: 1, sort: 60 },
-  { port_code: "622", port_name_ko: "하동항", sub_port: "Hadong", tier: 2, sort: 110 },
-  { port_code: "622", port_name_ko: "삼천포항", sub_port: "Samcheonpo", tier: 2, sort: 120 },
+  { port_code: "622", port_name_ko: "하동항", sub_port: "하동항", tier: 2, sort: 110 },
+  { port_code: "622", port_name_ko: "삼천포항", sub_port: "삼천포항", tier: 2, sort: 120 },
   { port_code: "621", port_name_ko: "대산항", tier: 2, sort: 130 },
   { port_code: "622", port_name_ko: "마산·진해항", sub_port: "마산·진해항", tier: 2, sort: 140 },
   { port_code: "622", port_name_ko: "통영항", sub_port: "통영항", tier: 2, sort: 150 },
@@ -24,7 +26,7 @@ const PORT_REGISTRY = [
   { port_code: "030", port_name_ko: "영흥 터미널", sub_port: "영흥 터미널", tier: 3, sort: 240 },
   { port_code: "621", port_name_ko: "태안 터미널", sub_port: "태안 터미널", tier: 3, sort: 250 },
   { port_code: "031", port_name_ko: "당진 산업터미널", sub_port: "당진 산업터미널", tier: 3, sort: 260 },
-  { port_code: "820", port_name_ko: "LNG·산업 터미널", sub_port: "LNG/Industrial", tier: 3, sort: 270 }
+  { port_code: "820", port_name_ko: "LNG·산업 터미널", sub_port: "LNG·산업 터미널", tier: 3, sort: 270 }
 ];
 const BASIC_INFO_FIELDS = [
   "vessel_name", "normalized_vessel_name", "call_sign", "imo", "mmsi", "vessel_type", "vessel_type_group",

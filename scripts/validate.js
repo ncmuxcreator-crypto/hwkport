@@ -179,7 +179,7 @@ const longtermJobTimeouts = workflow.match(/^\s{4}timeout-minutes:\s*30\s*$/gm) 
 if (!longtermJobTimeouts.length) {
   throw new Error("Longterm workflow job timeout must be 30 minutes");
 }
-if (!workflow.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflow.includes("MAX_SOURCE_ROWS") || !workflow.includes("MAX_OUTPUT_ROWS: 10000") || !workflow.includes("MAX_SOURCE_ROWS: 5000") || !workflow.includes("MAX_TARGET_VESSELS: 5000") || !workflow.includes("MAX_CANDIDATES: 1000") || !workflow.includes("MAX_CHILD_ENRICHMENT_ROWS: 24") || !workflow.includes("PORT_OPERATION_NUM_OF_ROWS: 50") || !workflow.includes("PORT_OPERATION_MAX_PAGES: 20") || !workflow.includes('PORT_OPERATION_DEGB_VALUES: "I,O"') || !workflow.includes("ENABLE_SOURCE_CSV") || !workflow.includes("COLLECTOR_DEBUG_VERBOSE") || !workflow.includes("DB_STORAGE_MODE: lean") || !workflow.includes("DB_ANALYTICS_SCOPE: candidate") || !workflow.includes("DB_FOUNDATION_WRITE_MODE: minimal") || !workflow.includes("EVENT_PREVIOUS_SNAPSHOT_LIMIT: 1500") || !workflow.includes("SUPABASE_BATCH_SIZE: 200") || !workflow.includes("DB_RETENTION_CLEANUP") || workflow.includes("COLLECTOR_DEBUG_ONLY: port_operation_busan") || !workflow.includes("SOURCE_TIMEOUT_MS: 30000") || !workflow.includes("COLLECTOR_RUNTIME_BUDGET_MS: 720000") || !workflow.includes("timeout-minutes: 20")) {
+if (!workflow.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflow.includes("MAX_SOURCE_ROWS") || !workflow.includes("MAX_OUTPUT_ROWS: 10000") || !workflow.includes("MAX_SOURCE_ROWS: 5000") || !workflow.includes("MAX_TARGET_VESSELS: 5000") || !workflow.includes("MAX_CANDIDATES: 1000") || !workflow.includes("MAX_CHILD_ENRICHMENT_ROWS: 100") || !workflow.includes("PORT_OPERATION_NUM_OF_ROWS: 50") || !workflow.includes("PORT_OPERATION_MAX_PAGES: 20") || !workflow.includes('PORT_OPERATION_DEGB_VALUES: "I,O"') || !workflow.includes("ENABLE_SOURCE_CSV") || !workflow.includes("COLLECTOR_DEBUG_VERBOSE") || !workflow.includes("DB_STORAGE_MODE: lean") || !workflow.includes("DB_ANALYTICS_SCOPE: candidate") || !workflow.includes("DB_FOUNDATION_WRITE_MODE: minimal") || !workflow.includes("EVENT_PREVIOUS_SNAPSHOT_LIMIT: 1500") || !workflow.includes("SUPABASE_BATCH_SIZE: 200") || !workflow.includes("DB_RETENTION_CLEANUP") || workflow.includes("COLLECTOR_DEBUG_ONLY: port_operation_busan") || !workflow.includes("SOURCE_TIMEOUT_MS: 30000") || !workflow.includes("COLLECTOR_RUNTIME_BUDGET_MS: 720000") || !workflow.includes("timeout-minutes: 20")) {
   throw new Error("Longterm workflow must bound collector runtime and child enrichment");
 }
 for (const marker of ["github.run_id", "github.ref", "runner.os", "github.workflow", "timestamp=$(date -u"]) {
@@ -265,6 +265,9 @@ const worker = fs.readFileSync("src/worker.js", "utf8");
 if (!worker.includes("vessel_snapshots") || !worker.includes("SUPABASE_URL") || !worker.includes("env.ASSETS.fetch")) {
   throw new Error("Worker must serve dashboard assets and live Supabase API routes");
 }
+if (!worker.includes("PORT_REGISTRY_SOURCE") || !worker.includes("data/reference/ports_registry.csv") || !worker.includes("PORT_REGISTRY_GENERATED_FROM_CSV")) {
+  throw new Error("Worker port registry must be marked as generated from ports_registry.csv");
+}
 if (!worker.includes("cumulative_stay_hours") || !worker.includes("CUMULATIVE_STAY_90D_PLUS")) {
   throw new Error("Worker must preserve cumulative stay beyond short port-call windows");
 }
@@ -282,6 +285,17 @@ if (!gdriveLib.includes("supportsAllDrives=true") || !gdriveLib.includes("normal
 const dbLib = fs.readFileSync("scripts/lib/db.js", "utf8");
 if (!dbLib.includes("SUPABASE_BATCH_SIZE") || !dbLib.includes("batchSize")) {
   throw new Error("Supabase writes must be batched to avoid long single upserts");
+}
+const updateScript = fs.readFileSync("scripts/update.js", "utf8");
+for (const marker of ["PIPELINE_STAGES", "sourceOfTruthTables", "candidate_threshold_used", "source_rows_collected", "source_rows_matched", "enrichment_match_rate", "db_rows_written_by_table", "retention_rows_deleted_by_table"]) {
+  if (!updateScript.includes(marker) && !dbLib.includes(marker)) throw new Error(`Backend architecture diagnostics missing marker: ${marker}`);
+}
+const scoreScript = fs.readFileSync("scripts/score.js", "utf8");
+if (!scoreScript.includes("Legacy compatibility shim") || !scoreScript.includes("commercial_value_score")) {
+  throw new Error("scripts/score.js must be a legacy shim and must not define a competing scoring engine");
+}
+for (const moduleFile of ["collection.js", "normalization.js", "enrichment.js", "scoring.js", "prediction.js", "persistence.js", "reporting.js", "index.js"]) {
+  if (!fs.existsSync(`scripts/pipeline/${moduleFile}`)) throw new Error(`Missing pipeline module: ${moduleFile}`);
 }
 if (!dbLib.includes('.from("vessel_snapshots")') || !dbLib.includes(".insert(batch)") || dbLib.includes("onConflict: \"snapshot_date,vessel_id,port\"")) {
   throw new Error("Supabase vessel_snapshots must be append-only, not latest-state upsert only");
