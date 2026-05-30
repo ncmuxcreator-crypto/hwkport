@@ -2129,7 +2129,13 @@ function ensureDirs() {
 }
 
 function shouldWriteDebugApiOutputs(report = {}) {
-  return String(report?.data_mode || "").toLowerCase() === "no_live_data";
+  const dataMode = String(report?.data_mode || report?.data_mode_detail?.mode || "").toLowerCase();
+  const recordCount = Number(report?.record_count || 0);
+  const allVesselsCount = Number(report?.all_collected_vessel_count || report?.all_vessels_count || 0);
+  return dataMode === "no_live_data" ||
+    dataMode === "degraded_sample_only" ||
+    recordCount <= 0 ||
+    allVesselsCount <= 0;
 }
 
 function routeApiOutputPath(filePath, report = {}) {
@@ -3371,14 +3377,14 @@ function writeStaticDatasetJson(path, payload, report = {}, manifest = {}) {
   const existingPayload = readJsonFile(path, null);
   const existingRows = countJsonRows(existingPayload);
   const incomingRows = countJsonRows(payload);
-  const shouldPreserve = report?.data_mode === "no_live_data" && existingRows > 0 && incomingRows === 0;
+  const shouldPreserve = shouldWriteDebugApiOutputs(report) && existingRows > 0;
   fs.mkdirSync(path.split("/").slice(0, -1).join("/"), { recursive: true });
   if (shouldPreserve) {
     manifest[path] = {
       status: "preserved_previous_successful_static_output",
       rows: existingRows,
       incoming_rows: incomingRows,
-      reason: "no_live_data_run_must_not_overwrite_previous_nonempty_static_dataset"
+      reason: "last_successful_dataset_lock_prevented_overwrite"
     };
     return manifest[path];
   }
@@ -4612,9 +4618,23 @@ try {
   };
   const staticOutputManifest = {};
   report.static_output_write_status = staticOutputManifest;
-  report.output_mode = shouldWriteDebugApiOutputs(report) ? "debug_diagnostics_only" : "production_api";
-  report.production_api_write_protected = shouldWriteDebugApiOutputs(report);
-  report.debug_api_dir = shouldWriteDebugApiOutputs(report) ? DEBUG_API_DIR : null;
+  const lastSuccessfulDatasetLocked = shouldWriteDebugApiOutputs(report);
+  report.last_successful_dataset_lock = {
+    locked: lastSuccessfulDatasetLocked,
+    reason: lastSuccessfulDatasetLocked
+      ? String(report.data_mode || report.data_mode_detail?.mode || "").toLowerCase() === "degraded_sample_only"
+        ? "degraded_sample_only"
+        : Number(report.record_count || 0) <= 0 || Number(report.all_collected_vessel_count || 0) <= 0
+          ? "empty_dataset"
+          : String(report.data_mode || "").toLowerCase() || "dataset_not_successful"
+      : null,
+    action: lastSuccessfulDatasetLocked
+      ? "keep_serving_last_successful_dataset"
+      : "write_current_successful_dataset"
+  };
+  report.output_mode = lastSuccessfulDatasetLocked ? "debug_diagnostics_only" : "production_api";
+  report.production_api_write_protected = lastSuccessfulDatasetLocked;
+  report.debug_api_dir = lastSuccessfulDatasetLocked ? DEBUG_API_DIR : null;
   report.dataset_generation_audit.static_outputs_generated = {
     ...report.dataset_generation_audit.static_outputs_generated,
     "dashboard/api/dashboard-summary.json": dashboardSummary.record_count

@@ -431,8 +431,16 @@ function shouldPromoteRun(records = [], diagnostics = {}) {
   const targetRatio = records.length ? salesTargets / records.length : 0;
   const architectureDiagnostics = buildPortCallArchitectureDiagnostics(records);
   const validationMode = String(process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
+  const fallbackUsed = diagnostics.fallback_used === true;
+  const dataMode = String(diagnostics.data_mode || diagnostics.data_mode_detail?.mode || "").toLowerCase();
+  const lastSuccessfulDatasetLock = records.length <= 0 ||
+    fallbackUsed ||
+    dataMode === "no_live_data" ||
+    dataMode === "degraded_sample_only";
   const validationGates = {
-    no_live_data_not_promotable: records.length > 0,
+    last_successful_dataset_lock_clear: !lastSuccessfulDatasetLock,
+    no_live_data_not_promotable: records.length > 0 && dataMode !== "no_live_data",
+    degraded_sample_only_not_promotable: !fallbackUsed && dataMode !== "degraded_sample_only",
     all_vessels_count_positive: records.length > 0,
     port_call_master_count_positive: architectureDiagnostics.port_call_master_count > 0,
     port_call_id_coverage_above_threshold: architectureDiagnostics.port_call_id_coverage >= Number(process.env.PORT_CALL_ID_COVERAGE_MIN || 0.8),
@@ -443,7 +451,8 @@ function shouldPromoteRun(records = [], diagnostics = {}) {
     no_fatal_db_write_error: diagnostics.fatal_db_write_error !== true
   };
   return {
-    promotable: attempted > 0 &&
+    promotable: !lastSuccessfulDatasetLock &&
+      attempted > 0 &&
       portOperationSuccess >= 1 &&
       records.length > 0 &&
       records.filter(r => ["target_vessel", "unknown_gt_review"].includes(r.commercial_relevance_status)).length > 0 &&
@@ -462,6 +471,25 @@ function shouldPromoteRun(records = [], diagnostics = {}) {
     targetRatio,
     target_ratio_max: Number(process.env.TARGET_RATIO_MAX || 0.3),
     target_ratio_warning: targetRatio > Number(process.env.TARGET_RATIO_MAX || 0.3) ? "Target qualification is too broad." : "",
+    last_successful_dataset_lock: {
+      locked: lastSuccessfulDatasetLock,
+      reason: records.length <= 0
+        ? "empty_dataset"
+        : fallbackUsed
+          ? "collector_fallback_used"
+          : dataMode === "no_live_data"
+            ? "no_live_data"
+            : dataMode === "degraded_sample_only"
+              ? "degraded_sample_only"
+              : null,
+      record_count: records.length,
+      all_vessels_count: records.length,
+      data_mode: dataMode || null,
+      fallback_used: fallbackUsed,
+      action: lastSuccessfulDatasetLock
+        ? "keep_serving_last_successful_dataset"
+        : "eligible_for_promotion_checks"
+    },
     ...architectureDiagnostics,
     validationGates,
     promotion_blockers: Object.entries(validationGates).filter(([, value]) => value === false).map(([key]) => key)
@@ -1738,7 +1766,16 @@ export async function saveToSupabase(records, options = {}) {
   const runId = options.runId || createRunId();
   const diagnostics = options.diagnostics || {};
   const promotion = shouldPromoteRun(records, diagnostics);
-  const runStatus = options.status === "failed" ? "failed" : promotion.promotable ? "promotable" : records.length ? "degraded_not_promoted" : "no_live_data";
+  const lockedDataset = promotion.last_successful_dataset_lock?.locked === true;
+  const runStatus = options.status === "failed"
+    ? "failed"
+    : promotion.promotable
+      ? "promotable"
+      : records.length
+        ? lockedDataset
+          ? "degraded_sample_only"
+          : "degraded_not_promoted"
+        : "no_live_data";
   const storageMode = leanStorageEnabled() ? "lean" : "full";
   const batchSize = Number(process.env.SUPABASE_BATCH_SIZE || 100);
   const preRetentionCleanup = await runLeanRetentionCleanup(supabase);
@@ -1771,6 +1808,7 @@ export async function saveToSupabase(records, options = {}) {
       db_foundation_write_mode: foundationWriteMode(),
       db_retention_cleanup: String(process.env.DB_RETENTION_CLEANUP || "true").toLowerCase() !== "false",
       db_pre_retention_cleanup: preRetentionCleanup,
+      last_successful_dataset_lock: promotion.last_successful_dataset_lock,
       candidate_promotion_audit: {
         candidate_generation_count: records.filter(r => commercialScore(r) >= 50 && !isHardCandidateExcluded(r) && !isDepartedRecord(r)).length,
         candidate_promotion_count: records.filter(r => isSalesTargetRecord(r) || isImmediateTargetRecord(r)).length,
@@ -1955,7 +1993,17 @@ export async function saveToSupabase(records, options = {}) {
   }));
 
   if (!rows.length) {
-    return { runId, recordsSaved: 0, table: "vessel_snapshots", mode: "empty", promoted: false, promotion };
+    return {
+      runId,
+      recordsSaved: 0,
+      table: "vessel_snapshots",
+      mode: "empty",
+      promoted: false,
+      promotion,
+      last_successful_dataset_lock: promotion.last_successful_dataset_lock,
+      summary_snapshot_write_status: "skipped_last_successful_dataset_lock",
+      materialized_current_write_status: "skipped_last_successful_dataset_lock"
+    };
   }
 
   const previousSnapshotMap = await fetchPreviousSnapshotMap(supabase);
@@ -3300,17 +3348,19 @@ export async function saveToSupabase(records, options = {}) {
   }
 
   const dashboardSummarySnapshotResult = {
-    summary_snapshot_write_status: "skipped_not_promoted",
+    summary_snapshot_write_status: promotion.last_successful_dataset_lock?.locked ? "skipped_last_successful_dataset_lock" : "skipped_not_promoted",
     summary_snapshot_rows: 0,
     latest_successful_summary_run_id: null,
-    summary_snapshot_error: null
+    summary_snapshot_error: null,
+    last_successful_dataset_lock: promotion.last_successful_dataset_lock || null
   };
   const currentMaterializedResult = {
-    materialized_current_write_status: "skipped_not_promoted",
+    materialized_current_write_status: promotion.last_successful_dataset_lock?.locked ? "skipped_last_successful_dataset_lock" : "skipped_not_promoted",
     sales_candidates_current_rows: 0,
     immediate_targets_current_rows: 0,
     port_summary_current_rows: 0,
-    materialized_current_error: null
+    materialized_current_error: null,
+    last_successful_dataset_lock: promotion.last_successful_dataset_lock || null
   };
 
   if (promotion.promotable) {
@@ -3441,6 +3491,7 @@ export async function saveToSupabase(records, options = {}) {
       retention_rows_deleted_by_table: retentionRowsDeletedByTable,
       dashboard_summary_snapshot: dashboardSummarySnapshotResult,
       materialized_current_tables: currentMaterializedResult,
+      last_successful_dataset_lock: promotion.last_successful_dataset_lock,
       port_call_architecture: {
         port_call_id_coverage: promotion.port_call_id_coverage,
         port_call_master_count: intelligencePopulationDiagnostics.port_call_master_count,
