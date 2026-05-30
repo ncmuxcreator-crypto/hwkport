@@ -49,13 +49,46 @@ for (const file of required) {
 const data = JSON.parse(fs.readFileSync("data/latest-lite.json", "utf8"));
 const report = JSON.parse(fs.readFileSync("data/pipeline-report.json", "utf8"));
 const vessels = JSON.parse(fs.readFileSync("dashboard/api/vessels.json", "utf8"));
+const allCollectedVessels = JSON.parse(fs.readFileSync("dashboard/api/all-collected-vessels.json", "utf8"));
+const targetVessels = JSON.parse(fs.readFileSync("dashboard/api/target-vessels.json", "utf8"));
+
+function jsonRows(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.vessels)) return value.vessels;
+  if (Array.isArray(value?.candidates)) return value.candidates;
+  return [];
+}
 
 if (!Array.isArray(data)) {
   throw new Error("Invalid latest-lite.json");
 }
+if (!Array.isArray(vessels)) {
+  throw new Error("Invalid vessels.json");
+}
+if (!Array.isArray(allCollectedVessels)) {
+  throw new Error("Invalid all-collected-vessels.json");
+}
+if (!Array.isArray(targetVessels)) {
+  throw new Error("Invalid target-vessels.json");
+}
 
 if (!report.status || typeof report.record_count !== "number") {
   throw new Error("Invalid pipeline-report.json");
+}
+const vesselGroupValidation = {
+  all_collected_vessels_exists: fs.existsSync("dashboard/api/all-collected-vessels.json"),
+  all_collected_vessels_count: jsonRows(allCollectedVessels).length,
+  target_vessels_exists: fs.existsSync("dashboard/api/target-vessels.json"),
+  target_vessels_count: jsonRows(targetVessels).length,
+  vessels_json_count: jsonRows(vessels).length
+};
+if (!vesselGroupValidation.all_collected_vessels_exists || !vesselGroupValidation.target_vessels_exists) {
+  throw new Error(`Missing vessel group static JSON outputs: ${JSON.stringify(vesselGroupValidation)}`);
+}
+if (report.data_mode !== "no_live_data" && report.record_count > 0 && vesselGroupValidation.all_collected_vessels_count === 0) {
+  throw new Error(`all-collected-vessels.json must contain rows when live record_count > 0: ${JSON.stringify(vesselGroupValidation)}`);
 }
 
 for (const item of data) {
@@ -299,6 +332,9 @@ if (!worker.includes("cumulative_stay_hours") || !worker.includes("CUMULATIVE_ST
 }
 for (const route of ["/dashboard-summary.json", "/api/vessels/", "pageRows", "/candidates/top.json", "/ports.json", "/candidates.json", "/hot-candidates.json", "/target-vessels.json", "/staying-vessels.json", "/arrival-pipeline.json", "/predicted-arrivals.json", "/lead-pipeline.json", "/alert-candidates.json", "/imo-recovery-queue.json", "/high-value-targets.json", "/review/unknown-gt.json", "/review/high-value-low-confidence.json", "/review/congestion-watchlist.json", "target-vessels|staying-vessels|arrivals", "/api/ports/", "congestion", "anchorage", "/master/unknown-imo.json", "/api/history/ports.json", "/api/history/operators.json", "/api/history/routes.json", "/api/history/opportunities.json", "/api/health/pipeline.json", "/api/config-status.json", "active_dataset_pointer"]) {
   if (!worker.includes(route)) throw new Error(`Worker missing port-first API route marker: ${route}`);
+}
+for (const marker of ["/all-collected-vessels.json", "/target-vessels.json", "group\") || \"target\"", "vesselGroupRows(allRecords, group)"]) {
+  if (!worker.includes(marker)) throw new Error(`Worker missing vessel group API marker: ${marker}`);
 }
 for (const marker of ["data_source_used", "supabase_active_dataset", "local_static_snapshot", "diagnostics_only_no_live_data", "fallback_used", "fallback_reason"]) {
   if (!worker.includes(marker)) throw new Error(`Worker missing production data source marker: ${marker}`);

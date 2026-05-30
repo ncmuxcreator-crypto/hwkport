@@ -5,6 +5,8 @@ const requiredFiles = [
   ".github/workflows/longterm-update.yml",
   "dashboard/api/status.json",
   "dashboard/api/vessels.json",
+  "dashboard/api/all-collected-vessels.json",
+  "dashboard/api/target-vessels.json",
   "dashboard/api/candidates.json",
   "dashboard/api/candidate-summary.json",
   "dashboard/api/coverage-registry.json"
@@ -40,9 +42,13 @@ function rowsFromJson(value) {
 
 const status = readJson("dashboard/api/status.json", {});
 const vesselsPayload = readJson("dashboard/api/vessels.json", []);
+const allCollectedPayload = readJson("dashboard/api/all-collected-vessels.json", []);
+const targetVesselsPayload = readJson("dashboard/api/target-vessels.json", []);
 const candidatesPayload = readJson("dashboard/api/candidates.json", []);
 const candidateSummary = readJson("dashboard/api/candidate-summary.json", {});
 const vessels = rowsFromJson(vesselsPayload);
+const allCollectedVessels = rowsFromJson(allCollectedPayload);
+const targetVessels = rowsFromJson(targetVesselsPayload);
 const candidates = rowsFromJson(candidatesPayload);
 const recordCount = Number(status.record_count || vessels.length || 0);
 const candidateCount = Number(candidateSummary.candidate_count || candidateSummary.current_candidate_count || candidates.length || 0);
@@ -56,6 +62,8 @@ for (const file of requiredFiles) {
 }
 
 const filesHaveRows = vessels.length > 0 && recordCount > 0;
+const allCollectedVesselsExists = fs.existsSync("dashboard/api/all-collected-vessels.json");
+const targetVesselsExists = fs.existsSync("dashboard/api/target-vessels.json");
 const dataMode = status.data_mode || "unknown";
 const dataStatus = filesHaveRows ? "ready" : "empty_dataset";
 const productionReady = filesExist &&
@@ -68,6 +76,11 @@ const report = {
   checked_at: new Date().toISOString(),
   files_exist: filesExist,
   files_have_rows: filesHaveRows,
+  all_collected_vessels_exists: allCollectedVesselsExists,
+  all_collected_vessels_count: allCollectedVessels.length,
+  target_vessels_exists: targetVesselsExists,
+  target_vessels_count: targetVessels.length,
+  vessels_json_count: vessels.length,
   record_count: recordCount,
   vessel_rows: vessels.length,
   candidate_count: candidateCount,

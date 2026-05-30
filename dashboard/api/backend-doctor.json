@@ -1,8 +1,13 @@
 {
   "ok": false,
-  "checked_at": "2026-05-30T13:27:35.076Z",
+  "checked_at": "2026-05-30T13:42:53.969Z",
   "files_exist": true,
   "files_have_rows": false,
+  "all_collected_vessels_exists": true,
+  "all_collected_vessels_count": 0,
+  "target_vessels_exists": true,
+  "target_vessels_count": 0,
+  "vessels_json_count": 0,
   "record_count": 0,
   "vessel_rows": 0,
   "candidate_count": 0,
@@ -15,6 +20,8 @@
     ".github/workflows/longterm-update.yml": "ok",
     "dashboard/api/status.json": "ok",
     "dashboard/api/vessels.json": "ok",
+    "dashboard/api/all-collected-vessels.json": "ok",
+    "dashboard/api/target-vessels.json": "ok",
     "dashboard/api/candidates.json": "ok",
     "dashboard/api/candidate-summary.json": "ok",
     "dashboard/api/coverage-registry.json": "ok"
