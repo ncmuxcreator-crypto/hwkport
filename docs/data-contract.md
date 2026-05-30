@@ -14,6 +14,14 @@ Every API response should include these top-level fields when possible:
 
 Static JSON fallback files should use `run_id` when they represent a concrete run. Worker/Supabase responses may use `active_run_id` and `summary_run_id`.
 
+## Canonical ownership
+
+- `vessel_master` owns vessel identity.
+- `port_call_master` owns unique port visits.
+- `vessel_snapshots` owns run-level state.
+- `active_dataset_pointer` owns the live dashboard source.
+- Daily snapshot tables own historical intelligence.
+
 ## Vessel row contract
 
 Every vessel, candidate, opportunity, or port-call row should include these fields:

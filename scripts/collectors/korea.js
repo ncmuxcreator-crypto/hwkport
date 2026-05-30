@@ -12,7 +12,9 @@ import {
 const SOURCE_TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 25000);
 const MAX_OUTPUT_ROWS = Number(process.env.MAX_OUTPUT_ROWS || 10000);
 const MAX_SOURCE_ROWS = Number(process.env.MAX_SOURCE_ROWS || 5000);
+const MAX_PORTS_PER_RUN = Number(process.env.MAX_PORTS_PER_RUN || 50);
 const MAX_CHILD_ENRICHMENT_ROWS = Number(process.env.MAX_CHILD_ENRICHMENT_ROWS || 100);
+const MAX_API_RESPONSE_BYTES = Number(process.env.MAX_API_RESPONSE_BYTES || 25000000);
 const COLLECTOR_RUNTIME_BUDGET_MS = Number(process.env.COLLECTOR_RUNTIME_BUDGET_MS || 300000);
 const SOURCE_MAX_RETRIES = Number(process.env.SOURCE_MAX_RETRIES || 2);
 const DEFAULT_PORT_OPERATION_API_URL = "http://apis.data.go.kr/1192000/VsslEtrynd5/Info5";
@@ -296,7 +298,8 @@ function configuredPortOperationPorts() {
     existing.anchorageRelevance = existing.anchorageRelevance === "high" || port.anchorageRelevance !== "high" ? existing.anchorageRelevance : port.anchorageRelevance;
     return map;
   }, new Map()).values()];
-  if (!raw) return registry;
+  const applyPortLimit = ports => ports.slice(0, Math.max(1, MAX_PORTS_PER_RUN));
+  if (!raw) return applyPortLimit(registry);
   const mapped = [...registry];
   for (const part of raw.split(/[,\n]+/).map(v => v.trim()).filter(Boolean)) {
     const [name, code] = part.split(/[:=]/).map(v => v?.trim()).filter(Boolean);
@@ -330,7 +333,7 @@ function configuredPortOperationPorts() {
       });
     }
   }
-  return mapped;
+  return applyPortLimit(mapped);
 }
 
 function buildCollectorPreflight() {
@@ -740,7 +743,20 @@ async function fetchTextOnce(source, extraParams = {}) {
     const started = Date.now();
     const res = await fetch(url, { signal: controller.signal, headers: { accept: "application/json, text/csv, text/xml, */*" } });
     const contentType = res.headers.get("content-type") || "";
+    const contentLength = Number(res.headers.get("content-length") || 0);
+    if (MAX_API_RESPONSE_BYTES > 0 && contentLength > MAX_API_RESPONSE_BYTES) {
+      const error = new Error(`API response too large: ${contentLength} bytes`);
+      error.failure_reason = "api_response_too_large";
+      error.response_content_type = contentType;
+      throw error;
+    }
     const buffer = await res.arrayBuffer();
+    if (MAX_API_RESPONSE_BYTES > 0 && buffer.byteLength > MAX_API_RESPONSE_BYTES) {
+      const error = new Error(`API response too large: ${buffer.byteLength} bytes`);
+      error.failure_reason = "api_response_too_large";
+      error.response_content_type = contentType;
+      throw error;
+    }
     const text = decodeResponse(buffer, contentType);
     if (!res.ok) {
       const error = new Error(`HTTP ${res.status}`);
