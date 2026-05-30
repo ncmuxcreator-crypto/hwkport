@@ -1,4 +1,5 @@
 ﻿const API_CACHE_SECONDS = 300;
+const AUTO_UPDATE_INTERVAL_HOURS = 4;
 const SALES_CANDIDATE_THRESHOLD = 65;
 const IMMEDIATE_TARGET_THRESHOLD = 75;
 const CRITICAL_TARGET_THRESHOLD = 90;
@@ -2771,9 +2772,11 @@ function buildDashboardSummary(allRecords = [], source = {}) {
     generated_at: status.generated_at,
     data_freshness: status.data_freshness,
     record_count: status.record_count,
+    all_vessels_count: status.all_vessels_count,
     target_count: buckets.target_vessels.length,
+    sales_target_count: buckets.sales_candidates.length,
     immediate_target_count: buckets.immediate_targets.length,
-    opportunity_count: opportunities.length + immediateTargets.length,
+    opportunity_count: status.opportunity_count,
     status,
     ports: buildPorts(activeRecords),
     immediate_targets: immediateTargets,
@@ -2799,10 +2802,11 @@ function buildDashboardSummary(allRecords = [], source = {}) {
 
 function snapshotDataFreshness(snapshot = {}) {
   const generatedAt = snapshot.generated_at || snapshot.created_at || null;
+  const dataAgeMinutes = generatedAt ? Math.round((Date.now() - new Date(generatedAt).getTime()) / 60000) : null;
   return {
     active_collected_at: generatedAt,
-    data_age_minutes: generatedAt ? Math.round((Date.now() - new Date(generatedAt).getTime()) / 60000) : null,
-    is_stale: true
+    data_age_minutes: dataAgeMinutes,
+    is_stale: dataAgeMinutes === null ? true : dataAgeMinutes > AUTO_UPDATE_INTERVAL_HOURS * 60
   };
 }
 
@@ -2813,7 +2817,7 @@ function buildStatusFromSummarySnapshot(snapshot = {}, source = {}, reason = "la
     summary_run_id: snapshot.run_id || null,
     generated_at: new Date().toISOString(),
     data_freshness: freshness,
-    auto_update_interval_hours: 4,
+    auto_update_interval_hours: AUTO_UPDATE_INTERVAL_HOURS,
     auto_update_label: "데이터는 4시간마다 자동 업데이트됩니다.",
     is_fallback: true,
     fallback_reason: reason,
@@ -3455,15 +3459,16 @@ function buildStatus(records, source) {
   const activeRunId = source.pointer?.active_run_id || null;
   const activeCollectedAt = source.pointer?.active_collected_at || source.pointer?.promoted_at || null;
   const dataAgeMinutes = activeCollectedAt ? Math.round((Date.now() - new Date(activeCollectedAt).getTime()) / 60000) : null;
+  const dataIsStale = dataAgeMinutes === null ? Boolean(source.pointer?.is_stale) : dataAgeMinutes > AUTO_UPDATE_INTERVAL_HOURS * 60;
   return {
     active_run_id: activeRunId,
     generated_at: new Date().toISOString(),
     data_freshness: {
       active_collected_at: activeCollectedAt,
       data_age_minutes: dataAgeMinutes,
-      is_stale: Boolean(source.pointer?.is_stale)
+      is_stale: dataIsStale
     },
-    auto_update_interval_hours: 4,
+    auto_update_interval_hours: AUTO_UPDATE_INTERVAL_HOURS,
     auto_update_label: "데이터는 4시간마다 자동 업데이트됩니다.",
     version: "worker-live-api-v1",
     status: source.error && !records.length ? "degraded" : "success",
@@ -3472,9 +3477,10 @@ function buildStatus(records, source) {
     live_data_available: Boolean(displayableRows),
     displayable_vessel_count: displayableRows,
     completed_at: new Date().toISOString(),
-    record_count: buckets.target_vessels.length,
+    record_count: records.length,
     target_count: buckets.target_vessels.length,
     opportunity_count: buckets.sales_candidates.length,
+    all_vessels_count: records.length,
     all_collected_vessel_count: records.length,
     all_display_vessel_count: allDisplayVessels.length,
     monitoring_vessel_count: monitoringVessels.length,
@@ -3523,7 +3529,7 @@ function buildStatus(records, source) {
       active_run_id: activeRunId,
       active_collected_at: activeCollectedAt,
       promoted_at: source.pointer?.promoted_at || null,
-      is_stale: Boolean(source.pointer?.is_stale),
+      is_stale: dataIsStale,
       pointer_source: source.pointer?.pointer_source || "none",
       fallback_pointer: Boolean(source.pointer?.fallback_pointer),
       using_latest_snapshot_fallback: usingSnapshotFallback,
@@ -3704,7 +3710,7 @@ async function buildPipelineHealth(env) {
   const dataAgeMinutes = activeCollectedAt ? Math.round((Date.now() - new Date(activeCollectedAt).getTime()) / 60000) : null;
   const warnings = {
     no_live_data: !pointer.active_run_id && !pointer.legacy_latest,
-    stale_data: Boolean(pointer.is_stale) || (dataAgeMinutes !== null && dataAgeMinutes > 24 * 60),
+    stale_data: dataAgeMinutes === null ? Boolean(pointer.is_stale) : dataAgeMinutes > AUTO_UPDATE_INTERVAL_HOURS * 60,
     source_failure: failedSources.length > 0,
     target_ratio_too_high: targetRatio > 30 || targetRatio > 0.3,
     enrichment_match_rate_low: collectedRows > 0 && enrichmentMatchRate < 20,
