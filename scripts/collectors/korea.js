@@ -8,6 +8,7 @@ import {
   scoreMatch,
   matchConfidenceBand as sharedMatchConfidenceBand
 } from "../lib/matching.js";
+import { DEFAULT_PORT_OPERATION_API_URL } from "../lib/runtime-config-audit.js";
 
 const SOURCE_TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 25000);
 const MAX_OUTPUT_ROWS = Number(process.env.MAX_OUTPUT_ROWS || 10000);
@@ -17,7 +18,6 @@ const MAX_CHILD_ENRICHMENT_ROWS = Number(process.env.MAX_CHILD_ENRICHMENT_ROWS |
 const MAX_API_RESPONSE_BYTES = Number(process.env.MAX_API_RESPONSE_BYTES || 25000000);
 const COLLECTOR_RUNTIME_BUDGET_MS = Number(process.env.COLLECTOR_RUNTIME_BUDGET_MS || 300000);
 const SOURCE_MAX_RETRIES = Number(process.env.SOURCE_MAX_RETRIES || 2);
-const DEFAULT_PORT_OPERATION_API_URL = "http://apis.data.go.kr/1192000/VsslEtrynd5/Info5";
 const DEFAULT_CARGO_HARBOR_USE_API_URL = "http://apis.data.go.kr/1192000/CargHarborUse2/Info";
 const PORTS_REGISTRY_PATH = path.join("data", "reference", "ports_registry.csv");
 const DEFAULT_PORT_REGISTRY = [
@@ -208,6 +208,7 @@ function runtimeEnvDiagnostics() {
     PORT_FACILITY_API_KEY: Boolean(process.env.PORT_FACILITY_API_KEY),
     SERVICE_KEY: Boolean(process.env.SERVICE_KEY),
     SERVICEKEY: Boolean(process.env.SERVICEKEY),
+    YGPA_SERVICE_KEY: Boolean(process.env.YGPA_SERVICE_KEY),
     DATA_GO_KR_API_KEY: Boolean(process.env.DATA_GO_KR_API_KEY),
     COLLECTOR_DEBUG_ONLY: process.env.COLLECTOR_DEBUG_ONLY || ""
   };
@@ -236,7 +237,7 @@ function collectorSkipReason(reason = "", { validationMode = "" } = {}) {
   if ((text.includes("missing_port_operation_service_key") || text.includes("missing_service_key") || text.includes("embedded_key")) && mode === "local") return "local_no_secret_mode";
   if (text.includes("missing_port_operation_service_key") || text.includes("missing_service_key") || text.includes("embedded_key")) return "missing_service_key";
   if (text.includes("missing_port_operation_api_url") || text.includes("missing_api_url") || text.includes("missing_url")) return "missing_api_url";
-  if (mode === "local" && !envAny("PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY", "SERVICEKEY")) return "local_no_secret_mode";
+  if (mode === "local" && !envAny("PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY", "SERVICEKEY", "YGPA_SERVICE_KEY")) return "local_no_secret_mode";
   return "unknown_error";
 }
 
@@ -358,8 +359,8 @@ function buildCollectorPreflight() {
   const edeMs = compactDateMs(ede);
   const numOfRows = Number(env("PORT_OPERATION_NUM_OF_ROWS") || 50);
   const maxPages = Number(env("PORT_OPERATION_MAX_PAGES") || 20);
-  const serviceKey = envAny("PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY", "SERVICEKEY");
-  const apiUrl = env("PORT_OPERATION_API_URL");
+  const serviceKey = envAny("PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY", "SERVICEKEY", "YGPA_SERVICE_KEY");
+  const apiUrl = env("PORT_OPERATION_API_URL") || DEFAULT_PORT_OPERATION_API_URL;
   const directions = (env("PORT_OPERATION_DEGB_VALUES") || "I,O")
     .split(/[,\s]+/)
     .map(value => value.trim())
@@ -367,7 +368,6 @@ function buildCollectorPreflight() {
   const portOperationCollectorEnabled = ports.length > 0 && directions.length > 0;
   const failures = [];
   if (!serviceKey) failures.push("missing_PORT_OPERATION_SERVICE_KEY");
-  if (!apiUrl) failures.push("missing_PORT_OPERATION_API_URL");
   if (!registryExists) failures.push("ports_registry_csv_missing");
   if (registryExists && !registry.length) failures.push("ports_registry_csv_empty");
   if (!enabledRegistry.length) failures.push("enabled_ports_count_zero");
@@ -383,8 +383,9 @@ function buildCollectorPreflight() {
     preflight_failure_reason: failures.length ? preflightFailureReason : null,
     port_operation_collector_enabled: portOperationCollectorEnabled,
     port_operation_secret_present: Boolean(serviceKey),
-    port_operation_api_url_present: Boolean(apiUrl),
-    port_operation_api_url_effective: Boolean(apiUrl || DEFAULT_PORT_OPERATION_API_URL),
+    port_operation_api_url_present: Boolean(env("PORT_OPERATION_API_URL")),
+    port_operation_api_url_effective: Boolean(apiUrl),
+    port_operation_api_url_default_used: !env("PORT_OPERATION_API_URL"),
     ports_registry_path: PORTS_REGISTRY_PATH,
     ports_registry_loaded: registryExists && registry.length > 0,
     ports_registry_rows_count: registry.length,
@@ -555,7 +556,7 @@ function allSourceConfigs() {
   const sde = env("PORT_OPERATION_START_DATE") || addDaysCompact(-3);
   const ede = env("PORT_OPERATION_END_DATE") || addDaysCompact(7);
   const portOperationUrl = env("PORT_OPERATION_API_URL") || DEFAULT_PORT_OPERATION_API_URL;
-  const portOperationKey = envAny("PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY", "SERVICEKEY");
+  const portOperationKey = envAny("PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY", "SERVICEKEY", "YGPA_SERVICE_KEY");
   const portOperationDirections = (env("PORT_OPERATION_DEGB_VALUES") || "I,O")
     .split(/[,\s]+/)
     .map(value => value.trim())
@@ -592,6 +593,7 @@ function allSourceConfigs() {
     port_operation_collector_enabled: portOperationPorts.length > 0,
     port_operation_secret_present: Boolean(portOperationKey),
     port_operation_api_url_present: Boolean(env("PORT_OPERATION_API_URL")),
+    port_operation_api_url_default_used: !env("PORT_OPERATION_API_URL"),
     port_operation_api_url_effective: Boolean(portOperationUrl),
     enabled_ports_loaded_count: portRegistryRows().filter(row => truthyFlag(row.enabled) && truthyFlag(row.has_port_operation)).length,
     enabled_ports_passed_to_collector_count: portOperationPorts.length,

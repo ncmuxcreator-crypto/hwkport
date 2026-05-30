@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
+import { buildRuntimeConfigAudit, missingRequiredEnvNames } from "./lib/runtime-config-audit.js";
 
 const requiredFiles = [
   "package.json",
@@ -73,6 +74,7 @@ const targetVesselsPayload = readJson("dashboard/api/target-vessels.json", []);
 const dashboardSummaryPayload = readJson("dashboard/api/dashboard-summary.json", {});
 const candidatesPayload = readJson("dashboard/api/candidates.json", []);
 const candidateSummary = readJson("dashboard/api/candidate-summary.json", {});
+const runtimeConfigAudit = buildRuntimeConfigAudit();
 const vessels = rowsFromJson(vesselsPayload);
 const allCollectedVessels = rowsFromJson(allCollectedPayload);
 const targetVessels = rowsFromJson(targetVesselsPayload);
@@ -98,10 +100,7 @@ const dataMode = status.data_mode || "unknown";
 const dataStatus = filesHaveRows ? "ready" : "empty_dataset";
 const missingRequiredConfig = Array.isArray(status.missing_required_config)
   ? status.missing_required_config
-  : [
-      process.env.PORT_OPERATION_SERVICE_KEY ? null : "PORT_OPERATION_SERVICE_KEY",
-      process.env.PORT_OPERATION_API_URL ? null : "PORT_OPERATION_API_URL"
-    ].filter(Boolean);
+  : missingRequiredEnvNames();
 const collectorNotAttempted = Boolean(status.collector_not_attempted || status.collector_diagnostics?.collector_not_attempted);
 const collectorNotAttemptedReason = status.collector_not_attempted_reason ||
   status.collector_diagnostics?.collector_not_attempted_reason ||
@@ -162,6 +161,10 @@ const report = {
   data_status: dataStatus,
   validation_mode: status.validation_mode || process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local"),
   runtime_mode_diagnostics: status.runtime_mode_diagnostics || null,
+  runtime_config_audit: runtimeConfigAudit,
+  expected_env_names: runtimeConfigAudit.expected_env_names,
+  accepted_fallback_env_names: runtimeConfigAudit.accepted_fallback_env_names,
+  missing_required_env_names: runtimeConfigAudit.missing_required_env_names,
   missing_required_config: missingRequiredConfig,
   collector_not_attempted: collectorNotAttempted,
   collector_not_attempted_reason: collectorNotAttemptedReason,

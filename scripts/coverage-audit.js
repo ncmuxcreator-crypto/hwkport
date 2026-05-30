@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { portOperationApiUrlInfo, portOperationServiceKeyPresent } from "./lib/runtime-config-audit.js";
 
 const registryPath = "data/reference/ports_registry.csv";
 const statusPath = "dashboard/api/status.json";
@@ -87,8 +88,10 @@ const portOperationCollectorEnabled = enabledPorts.length > 0 && (
   portOperationSources.length > 0 ||
   !["source_disabled", "collector_disabled"].includes(String(status?.collector_diagnostics?.port_operation_status || "").toLowerCase())
 );
-const portOperationSecretPresent = Boolean(process.env.PORT_OPERATION_SERVICE_KEY || process.env.PORT_OPERATION_API_KEY || process.env.SERVICEKEY);
-const portOperationApiUrlPresent = Boolean(process.env.PORT_OPERATION_API_URL) ||
+const portOperationSecretPresent = portOperationServiceKeyPresent();
+const portOperationApiUrlInfoResult = portOperationApiUrlInfo();
+const portOperationApiUrlPresent = Boolean(process.env.PORT_OPERATION_API_URL);
+const portOperationApiUrlEffective = portOperationApiUrlInfoResult.effective_present ||
   portOperationSources.some(source => source.requested_url_without_service_key || source.requested_url || source.url);
 const validationMode = String(process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
 
@@ -125,11 +128,11 @@ const portsAttemptedCount = Object.values(byTier).reduce((sum, stats) => sum + s
 const portsSkippedReason = (() => {
   if (!enabledPorts.length) return "no_enabled_port_operation_ports_in_registry";
   if (!portOperationCollectorEnabled) return "port_operation_collector_disabled";
-  if (!portOperationSecretPresent && !portOperationApiUrlPresent) return "missing_PORT_OPERATION_SERVICE_KEY_and_API_URL";
+  if (!portOperationSecretPresent && !portOperationApiUrlEffective) return "missing_PORT_OPERATION_SERVICE_KEY_and_API_URL";
   if (!portOperationSecretPresent) return validationMode === "local"
     ? "validation_mode_local_missing_PORT_OPERATION_SERVICE_KEY"
     : "missing_PORT_OPERATION_SERVICE_KEY";
-  if (!portOperationApiUrlPresent) return "missing_PORT_OPERATION_API_URL";
+  if (!portOperationApiUrlEffective) return "missing_PORT_OPERATION_API_URL";
   if (!portsAttemptedCount) return portOperationSources.length
     ? "collector_reported_sources_but_no_enabled_registry_port_attempted"
     : "port_operation_collector_not_run_or_no_source_logs";
@@ -172,6 +175,8 @@ const report = {
   port_operation_collector_enabled: portOperationCollectorEnabled,
   port_operation_secret_present: portOperationSecretPresent,
   port_operation_api_url_present: portOperationApiUrlPresent,
+  port_operation_api_url_effective: portOperationApiUrlEffective,
+  port_operation_api_url_default_used: portOperationApiUrlInfoResult.default_used,
   ports_attempted_count: portsAttemptedCount,
   collector_not_attempted: portsAttemptedCount === 0,
   collector_not_attempted_reason: portsAttemptedCount === 0 ? normalizeSkipReason(portsSkippedReason) : null,

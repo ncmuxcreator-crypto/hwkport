@@ -6,6 +6,13 @@ import { detectSecrets } from "./lib/secrets.js";
 import { writeSnapshotOutputs, buildBackendOpsReport } from "./lib/snapshot-store.js";
 import { enrichWithReferenceDictionaries, loadReferenceDictionaries } from "./lib/reference-dictionaries.js";
 import { configDiagnostics, validateRequiredConfig } from "./lib/config.js";
+import {
+  buildRuntimeConfigAudit,
+  missingRequiredEnvNames,
+  portOperationApiUrlInfo,
+  portOperationServiceKeyPresent,
+  printRuntimeConfigAudit
+} from "./lib/runtime-config-audit.js";
 import { PIPELINE_STAGES, sourceOfTruthTables } from "./pipeline/index.js";
 
 const VERSION = "17.7.0";
@@ -36,17 +43,13 @@ function envPresent(name) {
 }
 
 function missingPortOperationRequiredConfig() {
-  const missing = [];
-  if (!envPresent("PORT_OPERATION_SERVICE_KEY")) missing.push("PORT_OPERATION_SERVICE_KEY");
-  if (!envPresent("PORT_OPERATION_API_URL")) missing.push("PORT_OPERATION_API_URL");
-  return missing;
+  return missingRequiredEnvNames().filter(name => ["PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_URL"].includes(name));
 }
 
 function portOperationCollectorNotAttemptedReason(diagnostics = {}) {
   const preflight = diagnostics.preflight || {};
   const plan = diagnostics.port_operation_collection_plan || {};
   const missing = missingPortOperationRequiredConfig();
-  if (missing.includes("PORT_OPERATION_SERVICE_KEY") && missing.includes("PORT_OPERATION_API_URL")) return "missing_service_key_and_api_url";
   if (missing.includes("PORT_OPERATION_SERVICE_KEY")) return "missing_service_key";
   if (missing.includes("PORT_OPERATION_API_URL")) return "missing_api_url";
   return diagnostics.preflight_failure_reason || preflight.preflight_failure_reason || plan.ports_skipped_reason || diagnostics.skip_reason || "unknown_error";
@@ -2143,6 +2146,7 @@ let collectedRows = [];
 let collectorDiagnosticsAfterCollection = {};
 let vesselMasterCacheDiagnostics = {};
 let startupConfigDiagnostics = configDiagnostics();
+let runtimeConfigAudit = buildRuntimeConfigAudit();
 
 function ensureDirs() {
   fs.mkdirSync("dashboard/api", { recursive: true });
@@ -4373,6 +4377,7 @@ function buildDeploymentReadiness(reportBase, records, apiSources = []) {
 
 try {
   startupConfigDiagnostics = validateRequiredConfig({ throwOnMissing: false });
+  runtimeConfigAudit = buildRuntimeConfigAudit();
   console.log("[HWK] config diagnostics", JSON.stringify({
     required_config_ok: startupConfigDiagnostics.required_config_ok,
     missing_required_config: startupConfigDiagnostics.missing_required_config,
@@ -4380,6 +4385,7 @@ try {
     enabled_ports_count: startupConfigDiagnostics.enabled_ports_count,
     active_runtime_limits: startupConfigDiagnostics.active_runtime_limits
   }));
+  printRuntimeConfigAudit(runtimeConfigAudit);
   const apiSources = detectSecrets();
   console.log(`[HWK] API groups enabled: ${apiSources.filter(s => s.enabled).map(s => s.key).join(", ") || "none"}`);
   const dictionaries = loadReferenceDictionaries();
@@ -4421,6 +4427,7 @@ try {
   const dataMode = dataModeDetail.mode;
   const isFallbackDataset = dataMode === "no_live_data" || dataMode === "degraded_sample_only" || vessels.length === 0;
   const portOperationMissingConfig = missingPortOperationRequiredConfig();
+  const portOperationApiUrl = portOperationApiUrlInfo();
   const portsAttemptedCount = Number(collectorDiagnostics.coverage?.ports_attempted_count || collectorDiagnostics.ports_attempted_count || 0);
   const collectorNotAttempted = portsAttemptedCount === 0;
   const collectorNotAttemptedReason = collectorNotAttempted ? portOperationCollectorNotAttemptedReason(collectorDiagnostics) : null;
@@ -4432,6 +4439,10 @@ try {
     serving_mode: process.env.SERVING_MODE || "static_json",
     is_github_actions: process.env.GITHUB_ACTIONS === "true",
     is_local_build: process.env.GITHUB_ACTIONS !== "true",
+    port_operation_service_key_present_effective: portOperationServiceKeyPresent(),
+    port_operation_api_url_present: Boolean(process.env.PORT_OPERATION_API_URL),
+    port_operation_api_url_effective: portOperationApiUrl.effective_present,
+    port_operation_api_url_default_used: portOperationApiUrl.default_used,
     collection_mode: collectorNotAttempted ? "collector_not_attempted" : isFallbackDataset ? "no_live_data" : "source_collection"
   };
   const baseReport = {
@@ -4448,6 +4459,10 @@ try {
     fallback_reason: isFallbackDataset ? "local_or_failed_run_without_live_source_rows" : null,
     validation_mode: VALIDATION_MODE,
     runtime_mode_diagnostics: runtimeModeDiagnostics,
+    runtime_config_audit: runtimeConfigAudit,
+    expected_env_names: runtimeConfigAudit.expected_env_names,
+    accepted_fallback_env_names: runtimeConfigAudit.accepted_fallback_env_names,
+    missing_required_env_names: runtimeConfigAudit.missing_required_env_names,
     missing_required_config: portOperationMissingConfig,
     collector_not_attempted: collectorNotAttempted,
     collector_not_attempted_reason: collectorNotAttemptedReason,
@@ -4513,7 +4528,8 @@ try {
       collector_not_attempted: collectorNotAttempted,
       collector_not_attempted_reason: collectorNotAttemptedReason,
       missing_required_config: portOperationMissingConfig,
-      runtime_mode_diagnostics: runtimeModeDiagnostics
+      runtime_mode_diagnostics: runtimeModeDiagnostics,
+      runtime_config_audit: runtimeConfigAudit
     },
     vessel_master_cache: vesselMasterCacheDiagnostics,
     data_quality: buildDataQuality(vessels, detectSecrets()),

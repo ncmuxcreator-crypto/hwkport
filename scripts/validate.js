@@ -389,10 +389,11 @@ if (!workflow.includes("MAX_CHILD_ENRICHMENT_ROWS") || !workflow.includes("MAX_S
 for (const marker of ["github.run_id", "github.ref", "runner.os", "github.workflow", "timestamp=$(date -u"]) {
   if (!workflow.includes(marker)) throw new Error(`Missing workflow start diagnostic: ${marker}`);
 }
-if (!workflow.includes("SOURCE_CSV_URL") || !workflow.includes("ULSAN_BERTH_DETAIL_API_KEY") || workflow.includes("YGPA_ARRIVAL_API_KEY") || workflow.includes("YGPA_SERVICE_KEY")) {
+if (!workflow.includes("SOURCE_CSV_URL") || !workflow.includes("ULSAN_BERTH_DETAIL_API_KEY") || !workflow.includes("PORT_OPERATION_API_KEY") || !workflow.includes("DATA_GO_KR_API_KEY") || !workflow.includes("YGPA_SERVICE_KEY") || workflow.includes("YGPA_ARRIVAL_API_KEY")) {
   throw new Error("Workflow public API secret coverage is incomplete");
 }
 const koreaCollector = fs.readFileSync("scripts/collectors/korea.js", "utf8");
+const runtimeConfigAuditLib = fs.readFileSync("scripts/lib/runtime-config-audit.js", "utf8");
 const sampleCollectorBlockers = [
   /MV HF ZHOUSHAN/.test(koreaCollector) ? "MV HF ZHOUSHAN marker in scripts/collectors/korea.js" : null,
   /MAERSK DEMO/.test(koreaCollector) ? "MAERSK DEMO marker in scripts/collectors/korea.js" : null,
@@ -404,13 +405,13 @@ const sampleCollectorBlockers = [
 if (sampleCollectorBlockers.length) {
   throw new Error(`Sample/demo collectors and fallback vessels must be removed: ${sampleCollectorBlockers.join("; ")}`);
 }
-if (!koreaCollector.includes("VsslEtrynd5/Info5") || !koreaCollector.includes("CargHarborUse2/Info")) {
+if (!(koreaCollector.includes("VsslEtrynd5/Info5") || runtimeConfigAuditLib.includes("VsslEtrynd5/Info5")) || !koreaCollector.includes("CargHarborUse2/Info")) {
   throw new Error("Collector must use VsslEtrynd5 parent records and CargHarborUse2 enrichment endpoint");
 }
 if (!koreaCollector.includes("PORT_OPERATION_API_URL") || !koreaCollector.includes("PORT_FACILITY_API_URL")) {
   throw new Error("Collector must allow env overrides for PORT_OPERATION_API_URL and PORT_FACILITY_API_URL");
 }
-for (const envMarker of ["PORT_OPERATION_API_KEY", "SERVICEKEY", "runtimeEnvDiagnostics", "COLLECTOR_DEBUG_ONLY"]) {
+for (const envMarker of ["PORT_OPERATION_API_KEY", "SERVICEKEY", "YGPA_SERVICE_KEY", "runtimeEnvDiagnostics", "COLLECTOR_DEBUG_ONLY"]) {
   if (!koreaCollector.includes(envMarker)) throw new Error(`Collector must debug env naming mismatch: ${envMarker}`);
 }
 if (/key:\s*["']port_facility["']/.test(koreaCollector)) {
@@ -444,8 +445,8 @@ if (!koreaCollector.includes("noTypeParam")) {
   throw new Error("PORT-MIS XML-capable APIs must not force _type=json");
 }
 const secretsFile = fs.readFileSync("scripts/lib/secrets.js", "utf8");
-if (!secretsFile.includes("SOURCE_CSV_URL") || /YGPA_|ygpa/.test(secretsFile)) {
-  throw new Error("Secret catalog must include SOURCE_CSV_URL and ignore YGPA-specific sources");
+if (!secretsFile.includes("SOURCE_CSV_URL") || !secretsFile.includes("YGPA_SERVICE_KEY")) {
+  throw new Error("Secret catalog must include SOURCE_CSV_URL and the explicitly supported Port Operation aliases");
 }
 if (/git push origin HEAD:main|git commit -m "auto: refresh/.test(workflow)) {
   throw new Error("Longterm workflow must not auto-commit generated files to main");

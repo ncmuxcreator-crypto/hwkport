@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { detectSecrets } from "./secrets.js";
+import { buildRuntimeConfigAudit, missingRequiredEnvNames } from "./runtime-config-audit.js";
 
 export const REQUIRED_ENV_VARS = [
   "PORT_OPERATION_SERVICE_KEY",
@@ -98,7 +99,8 @@ export function configDiagnostics() {
   const enrichmentSources = secrets
     .filter(source => source.enabled && ["pilotage", "berth", "port_master", "ulsan", "vts", "ais", "ais_master", "ais_stats", "vessel_master"].includes(source.type))
     .map(source => source.key);
-  const missingRequiredConfig = REQUIRED_ENV_VARS.filter(name => !present(name));
+  const runtimeConfigAudit = buildRuntimeConfigAudit();
+  const missingRequiredConfig = missingRequiredEnvNames();
   const validationMode = String(process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
   const servingMode = process.env.SERVING_MODE || (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY ? "worker_supabase" : "static_json_fallback");
   return {
@@ -114,9 +116,12 @@ export function configDiagnostics() {
       code_defaults: "safe fallback values only"
     },
     required_env_vars: REQUIRED_ENV_VARS,
+    expected_env_names: runtimeConfigAudit.expected_env_names,
+    accepted_fallback_env_names: runtimeConfigAudit.accepted_fallback_env_names,
     missing_required_config: missingRequiredConfig,
     required_config_ok: missingRequiredConfig.length === 0,
     secrets_present: Object.fromEntries(REQUIRED_ENV_VARS.map(name => [name, present(name)])),
+    runtime_config_audit: runtimeConfigAudit,
     enabled_sources: enabledSources,
     enabled_enrichment_sources: enrichmentSources,
     sources: secrets.map(source => ({

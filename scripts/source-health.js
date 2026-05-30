@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { buildRuntimeConfigAudit, portOperationApiUrlInfo, portOperationServiceKeyPresent } from "./lib/runtime-config-audit.js";
 
 const tracked = [
   "SUPABASE_URL",
@@ -10,6 +11,11 @@ const tracked = [
   "MOF_VTS_SERVICE_KEY",
   "VESSEL_SPEC_SERVICE_KEY",
   "PORT_OPERATION_SERVICE_KEY",
+  "PORT_OPERATION_API_KEY",
+  "DATA_GO_KR_API_KEY",
+  "SERVICE_KEY",
+  "SERVICEKEY",
+  "YGPA_SERVICE_KEY",
   "PORT_OPERATION_API_URL",
   "PORT_FACILITY_SERVICE_KEY",
   "PILOT_SOURCE_URLS",
@@ -57,8 +63,10 @@ const statusRunId = status.run_id || status.active_run_id || status.summary_run_
 const previousSourceHealthWasStale = Boolean(previousRuntime?.run_id && statusRunId && String(previousRuntime.run_id) !== String(statusRunId));
 const validationMode = String(process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
 const servingMode = String(process.env.SERVING_MODE || status.serving_mode || status.output_mode || (diagnosticsOnly ? "local_diagnostics" : "static_json")).toLowerCase();
-const missingPortOperationSecret = !process.env.PORT_OPERATION_SERVICE_KEY && !process.env.PORT_OPERATION_API_KEY && !process.env.DATA_GO_KR_API_KEY && !process.env.SERVICE_KEY && !process.env.SERVICEKEY;
-const missingPortOperationUrl = !process.env.PORT_OPERATION_API_URL;
+const runtimeConfigAudit = buildRuntimeConfigAudit();
+const portOperationApiUrl = portOperationApiUrlInfo();
+const missingPortOperationSecret = !portOperationServiceKeyPresent();
+const missingPortOperationUrl = !portOperationApiUrl.effective_present;
 const portOperationAttemptedCount = Number(diagnostics.coverage?.ports_attempted_count || diagnostics.ports_attempted_count || 0);
 const collectorNotAttemptedReason = portOperationAttemptedCount === 0
   ? missingPortOperationSecret && missingPortOperationUrl
@@ -87,6 +95,10 @@ const report = {
   tracked: tracked.length,
   configured: configured.length,
   secrets_present: Object.fromEntries(tracked.map(key => [key, Boolean(process.env[key])])),
+  runtime_config_audit: runtimeConfigAudit,
+  expected_env_names: runtimeConfigAudit.expected_env_names,
+  accepted_fallback_env_names: runtimeConfigAudit.accepted_fallback_env_names,
+  missing_required_env_names: runtimeConfigAudit.missing_required_env_names,
   missing: tracked.filter(key => !process.env[key]),
   enabled_collectors: enabledCollectors,
   attempted_collectors: attemptedCollectors,
@@ -97,9 +109,11 @@ const report = {
   }, {}),
   port_operation: {
     collector_enabled: Boolean(diagnostics.port_operation_collection_plan?.port_operation_collector_enabled),
-    secret_present: Boolean(process.env.PORT_OPERATION_SERVICE_KEY),
+    secret_present: portOperationServiceKeyPresent(),
+    canonical_service_key_present: Boolean(process.env.PORT_OPERATION_SERVICE_KEY),
     api_url_present: Boolean(process.env.PORT_OPERATION_API_URL),
-    api_url_effective: Boolean(diagnostics.port_operation_collection_plan?.port_operation_api_url_effective),
+    api_url_effective: portOperationApiUrl.effective_present || Boolean(diagnostics.port_operation_collection_plan?.port_operation_api_url_effective),
+    api_url_default_used: portOperationApiUrl.default_used,
     enabled_ports_loaded_count: Number(diagnostics.port_operation_collection_plan?.enabled_ports_loaded_count || 0),
     enabled_ports_passed_to_collector_count: Number(diagnostics.port_operation_collection_plan?.enabled_ports_passed_to_collector_count || 0),
     ports_attempted_count: Number(diagnostics.coverage?.ports_attempted_count || diagnostics.ports_attempted_count || 0),

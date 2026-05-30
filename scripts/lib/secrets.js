@@ -51,7 +51,7 @@ const SECRET_CATALOG = [
     key: "port_operation",
     label: "Port Operation API",
     type: "port_operation",
-    required: ["PORT_OPERATION_SERVICE_KEY"],
+    requiredAny: ["PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY", "SERVICEKEY", "YGPA_SERVICE_KEY"],
     optional: ["PORT_OPERATION_API_URL"],
     use: "Arrival/departure, port operation, and vessel movement enrichment."
   },

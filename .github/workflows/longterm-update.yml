@@ -73,8 +73,13 @@ jobs:
       BERTH_SOURCE_URLS: ${{ secrets.BERTH_SOURCE_URLS }}
       PORT_FACILITY_SERVICE_KEY: ${{ secrets.PORT_FACILITY_SERVICE_KEY }}
       PORT_FACILITY_API_URL: ${{ secrets.PORT_FACILITY_API_URL }}
-      PORT_OPERATION_SERVICE_KEY: ${{ secrets.PORT_OPERATION_SERVICE_KEY }}
-      PORT_OPERATION_API_URL: ${{ secrets.PORT_OPERATION_API_URL }}
+      PORT_OPERATION_SERVICE_KEY: ${{ secrets.PORT_OPERATION_SERVICE_KEY || secrets.PORT_OPERATION_API_KEY || secrets.DATA_GO_KR_API_KEY || secrets.SERVICE_KEY || secrets.SERVICEKEY || secrets.YGPA_SERVICE_KEY }}
+      PORT_OPERATION_API_KEY: ${{ secrets.PORT_OPERATION_API_KEY }}
+      DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+      SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
+      SERVICEKEY: ${{ secrets.SERVICEKEY }}
+      YGPA_SERVICE_KEY: ${{ secrets.YGPA_SERVICE_KEY }}
+      PORT_OPERATION_API_URL: ${{ vars.PORT_OPERATION_API_URL || secrets.PORT_OPERATION_API_URL }}
       ULSAN_API_URL: ${{ secrets.ULSAN_API_URL }}
       ULSAN_API_KEY: ${{ secrets.ULSAN_API_KEY }}
       ULSAN_BERTH_DETAIL_API_URL: ${{ secrets.ULSAN_BERTH_DETAIL_API_URL }}
@@ -114,11 +119,19 @@ jobs:
             PORT_OPERATION_API_URL: !!process.env.PORT_OPERATION_API_URL,
             PORT_OPERATION_SERVICE_KEY: !!process.env.PORT_OPERATION_SERVICE_KEY,
             PORT_OPERATION_API_KEY: !!process.env.PORT_OPERATION_API_KEY,
+            DATA_GO_KR_API_KEY: !!process.env.DATA_GO_KR_API_KEY,
+            SERVICE_KEY: !!process.env.SERVICE_KEY,
+            SERVICEKEY: !!process.env.SERVICEKEY,
+            YGPA_SERVICE_KEY: !!process.env.YGPA_SERVICE_KEY,
             PORT_FACILITY_API_URL: !!process.env.PORT_FACILITY_API_URL,
             PORT_FACILITY_SERVICE_KEY: !!process.env.PORT_FACILITY_SERVICE_KEY,
             PORT_FACILITY_API_KEY: !!process.env.PORT_FACILITY_API_KEY,
             SUPABASE_URL: !!process.env.SUPABASE_URL,
-            SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY
+            SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+            VALIDATION_MODE: process.env.VALIDATION_MODE,
+            UPDATE_MODE: process.env.UPDATE_MODE,
+            CI: process.env.CI,
+            GITHUB_ACTIONS: process.env.GITHUB_ACTIONS
           });
           NODE
 

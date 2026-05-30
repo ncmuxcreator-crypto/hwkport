@@ -4298,10 +4298,24 @@ function workerNumberEnv(env, name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+const DEFAULT_PORT_OPERATION_API_URL = "http://apis.data.go.kr/1192000/VsslEtrynd5/Info5";
+const PORT_OPERATION_SERVICE_KEY_ALIASES = ["PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_KEY", "DATA_GO_KR_API_KEY", "SERVICE_KEY", "SERVICEKEY", "YGPA_SERVICE_KEY"];
+
+function workerAnyEnvPresent(env, names = []) {
+  return names.some(name => workerEnvPresent(env, name));
+}
+
 function buildConfigStatus(env = {}) {
   const required = ["PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_URL", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
+  const portOperationApiUrlEffective = workerEnvPresent(env, "PORT_OPERATION_API_URL") || Boolean(DEFAULT_PORT_OPERATION_API_URL);
+  const missingRequired = [
+    workerAnyEnvPresent(env, PORT_OPERATION_SERVICE_KEY_ALIASES) ? null : "PORT_OPERATION_SERVICE_KEY",
+    portOperationApiUrlEffective ? null : "PORT_OPERATION_API_URL",
+    workerEnvPresent(env, "SUPABASE_URL") ? null : "SUPABASE_URL",
+    workerEnvPresent(env, "SUPABASE_SERVICE_ROLE_KEY") ? null : "SUPABASE_SERVICE_ROLE_KEY"
+  ].filter(Boolean);
   const sourceChecks = [
-    ["port_operation", ["PORT_OPERATION_SERVICE_KEY", "PORT_OPERATION_API_URL"]],
+    ["port_operation", [...PORT_OPERATION_SERVICE_KEY_ALIASES, "PORT_OPERATION_API_URL"]],
     ["port_facility", ["PORT_FACILITY_SERVICE_KEY", "PORT_FACILITY_API_URL"]],
     ["pilot_sources", ["PILOT_SOURCE_URLS"]],
     ["berth_sources", ["BERTH_SOURCE_URLS", "PNC_SOURCE_URLS"]],
@@ -4332,8 +4346,23 @@ function buildConfigStatus(env = {}) {
       code_defaults: PORT_REGISTRY_GENERATED_FROM_CSV ? "generated safe fallback cache" : "manual fallback"
     },
     required_env_vars: required,
-    missing_required_config: required.filter(name => !workerEnvPresent(env, name)),
+    expected_env_names: required,
+    accepted_fallback_env_names: {
+      PORT_OPERATION_SERVICE_KEY: PORT_OPERATION_SERVICE_KEY_ALIASES.filter(name => name !== "PORT_OPERATION_SERVICE_KEY"),
+      PORT_OPERATION_API_URL: ["default:PORT_OPERATION_API_URL=VsslEtrynd5/Info5"]
+    },
+    missing_required_config: missingRequired,
     secrets_present: Object.fromEntries(required.map(name => [name, workerEnvPresent(env, name)])),
+    fallback_env_present: {
+      PORT_OPERATION_SERVICE_KEY: Object.fromEntries(PORT_OPERATION_SERVICE_KEY_ALIASES.filter(name => name !== "PORT_OPERATION_SERVICE_KEY").map(name => [name, workerEnvPresent(env, name)]))
+    },
+    effective_config_present: {
+      PORT_OPERATION_SERVICE_KEY: workerAnyEnvPresent(env, PORT_OPERATION_SERVICE_KEY_ALIASES),
+      PORT_OPERATION_API_URL: portOperationApiUrlEffective,
+      SUPABASE_URL: workerEnvPresent(env, "SUPABASE_URL"),
+      SUPABASE_SERVICE_ROLE_KEY: workerEnvPresent(env, "SUPABASE_SERVICE_ROLE_KEY")
+    },
+    port_operation_api_url_default_used: !workerEnvPresent(env, "PORT_OPERATION_API_URL") && Boolean(DEFAULT_PORT_OPERATION_API_URL),
     enabled_sources: enabledSources,
     enabled_enrichment_sources: enrichmentSources,
     enabled_ports_count: PORT_REGISTRY.length,
