@@ -351,6 +351,27 @@ function candidateLabel(record = {}) {
   return "general";
 }
 
+function opportunityState(record = {}) {
+  const explicit = String(record.opportunity_state || record.lead_status || "").toLowerCase();
+  if (["won", "lost", "scheduled", "quoted", "contacted", "contact_ready", "qualified", "identified"].includes(explicit)) return explicit;
+  if (record.quote_status && !["not_started", "none", "unknown"].includes(String(record.quote_status).toLowerCase())) return "quoted";
+  if (record.last_contacted_at) return "contacted";
+  if (scoreNumber(record.contact_readiness_score) >= 60 || record.contact_path_available || ["contact_available", "high_confidence_contact"].includes(record.contact_path_status)) return "contact_ready";
+  if (commercialScore(record) >= 65 || scoreNumber(record.predicted_cleaning_opportunity_score) >= 60) return "qualified";
+  return "identified";
+}
+
+function opportunityTimestampFields(state, record = {}, now) {
+  return {
+    qualified_at: ["qualified", "contact_ready", "contacted", "quoted", "scheduled", "won", "lost"].includes(state) ? now : null,
+    contact_ready_at: ["contact_ready", "contacted", "quoted", "scheduled", "won", "lost"].includes(state) ? now : null,
+    contacted_at: ["contacted", "quoted", "scheduled", "won", "lost"].includes(state) ? (record.last_contacted_at || now) : null,
+    quoted_at: ["quoted", "scheduled", "won", "lost"].includes(state) ? now : null,
+    scheduled_at: ["scheduled", "won"].includes(state) ? now : null,
+    closed_at: ["won", "lost"].includes(state) ? now : null
+  };
+}
+
 function buildFoundationFeatureVector(record = {}) {
   return {
     gt: scoreNumber(record.gt || record.grtg || record.intrlGrtg),
@@ -1444,6 +1465,56 @@ export async function saveToSupabase(records, options = {}) {
   for (let index = 0; index < commercialLeadRows.length; index += batchSize) {
     const batch = commercialLeadRows.slice(index, index + batchSize);
     const { error } = await supabase.from("commercial_leads").upsert(batch, { onConflict: "lead_id" });
+    if (error) throw error;
+  }
+
+  const opportunityRows = uniqueBy(records
+    .filter(r =>
+      Number(r.commercial_value_score || r.total_sales_priority_score || 0) >= 50 ||
+      Number(r.predicted_cleaning_opportunity_score || 0) >= 60 ||
+      ["identified", "qualified", "contact_ready", "contacted", "quoted", "scheduled", "won", "lost"].includes(String(r.lead_status || r.opportunity_state || "").toLowerCase())
+    )
+    .map(r => {
+      const state = opportunityState(r);
+      const portCallId = buildPortCallId(r);
+      return {
+        opportunity_id: stableEntityId("OPPTY", `${portCallId}-${r.hybrid_entity_key || r.vessel_id || r.vessel_name || ""}`),
+        run_id: runId,
+        master_vessel_id: fallbackMasterId(r),
+        hybrid_entity_key: r.hybrid_entity_key || r.vessel_id || null,
+        port_call_id: portCallId,
+        port_call_identity: r.port_call_identity || r.port_call_key || null,
+        vessel_name: r.vessel_name || null,
+        port_code: r.port_code || null,
+        port_name: r.port_name || r.port || null,
+        operator_name: r.operator_name || r.operator || null,
+        operator_normalized: r.operator_normalized || normalizeCompanyName(r.operator_name || r.operator) || null,
+        agent_name: r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm || null,
+        agent_normalized: r.agent_normalized || normalizeCompanyName(r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm) || null,
+        opportunity_state: state,
+        lead_status: r.lead_status || (state === "identified" ? "new_lead" : state),
+        commercial_value_score: Number(r.commercial_value_score || r.total_sales_priority_score || 0),
+        lead_priority_score: Number(r.lead_priority_score || r.commercial_value_score || r.total_sales_priority_score || 0),
+        work_feasibility_score: Number(r.work_feasibility_score || 0),
+        contact_readiness_score: Number(r.contact_readiness_score || 0),
+        predicted_cleaning_opportunity_score: Number(r.predicted_cleaning_opportunity_score || 0),
+        why_now: r.why_now || null,
+        recommended_action: r.recommended_action || r.recommended_next_action || null,
+        recommended_contact_path: r.recommended_contact_path || r.contact_path_label_ko || null,
+        ...opportunityTimestampFields(state, r, now),
+        last_seen: now,
+        payload: storagePayload({
+          ...r,
+          opportunity_lifecycle_role: "port_call_commercial_opportunity",
+          opportunity_state: state,
+          port_call_id: portCallId
+        })
+      };
+    }), row => row.opportunity_id);
+
+  for (let index = 0; index < opportunityRows.length; index += batchSize) {
+    const batch = opportunityRows.slice(index, index + batchSize);
+    const { error } = await supabase.from("opportunity_master").upsert(batch, { onConflict: "opportunity_id" });
     if (error) throw error;
   }
 

@@ -717,6 +717,48 @@ create table if not exists commercial_leads (
   updated_at timestamptz default now()
 );
 
+create table if not exists opportunity_master (
+  opportunity_id text primary key,
+  run_id text,
+  master_vessel_id text,
+  hybrid_entity_key text,
+  port_call_id text,
+  port_call_identity text,
+  vessel_name text,
+  port_code text,
+  port_name text,
+  operator_name text,
+  operator_normalized text,
+  agent_name text,
+  agent_normalized text,
+  opportunity_state text default 'identified',
+  lead_status text default 'new_lead',
+  commercial_value_score int default 0,
+  lead_priority_score int default 0,
+  work_feasibility_score int default 0,
+  contact_readiness_score int default 0,
+  predicted_cleaning_opportunity_score int default 0,
+  why_now text,
+  recommended_action text,
+  recommended_contact_path text,
+  identified_at timestamptz default now(),
+  qualified_at timestamptz,
+  contact_ready_at timestamptz,
+  contacted_at timestamptz,
+  quoted_at timestamptz,
+  scheduled_at timestamptz,
+  closed_at timestamptz,
+  last_seen timestamptz default now(),
+  payload jsonb default '{}'::jsonb
+);
+
+create index if not exists idx_opportunity_master_port_call on opportunity_master(port_call_id);
+create index if not exists idx_opportunity_master_state on opportunity_master(opportunity_state);
+create index if not exists idx_opportunity_master_score on opportunity_master(commercial_value_score desc);
+create index if not exists idx_opportunity_master_operator on opportunity_master(operator_normalized);
+alter table opportunity_master drop constraint if exists opportunity_master_state_check;
+alter table opportunity_master add constraint opportunity_master_state_check check (opportunity_state in ('identified', 'qualified', 'contact_ready', 'contacted', 'quoted', 'scheduled', 'won', 'lost'));
+
 create table if not exists berth_aliases (
   alias_id bigserial primary key,
   port_code text,
