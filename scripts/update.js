@@ -23,6 +23,9 @@ const REVIEW_TARGET_THRESHOLD = Number(process.env.REVIEW_TARGET_THRESHOLD || 35
 const SALES_CANDIDATE_THRESHOLD = Number(process.env.SALES_CANDIDATE_THRESHOLD || 65);
 const IMMEDIATE_TARGET_THRESHOLD = Number(process.env.IMMEDIATE_TARGET_THRESHOLD || 75);
 const CRITICAL_TARGET_THRESHOLD = Number(process.env.CRITICAL_TARGET_THRESHOLD || 90);
+const COMMERCIAL_RULE_VERSION = process.env.COMMERCIAL_RULE_VERSION || "commercial_rules_v2026_05_31";
+const CANDIDATE_RULE_VERSION = process.env.CANDIDATE_RULE_VERSION || "candidate_hybrid_percentile_v2026_05_31";
+const EXPLAINABILITY_RULE_VERSION = process.env.EXPLAINABILITY_RULE_VERSION || "explainability_ko_v2026_05_31";
 const MAX_TARGET_VESSELS = Number(process.env.MAX_TARGET_VESSELS || 5000);
 const MAX_CANDIDATES = Number(process.env.MAX_CANDIDATES || 1000);
 const VALIDATION_MODE = String(process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
@@ -4386,6 +4389,17 @@ try {
     api_sources: detectSecrets(),
     config_diagnostics: startupConfigDiagnostics,
     api_registry_version: "korea-port-secret-registry-v12-backend-stability",
+    rule_versioning: {
+      commercial_rule_version: COMMERCIAL_RULE_VERSION,
+      candidate_rule_version: CANDIDATE_RULE_VERSION,
+      explainability_rule_version: EXPLAINABILITY_RULE_VERSION,
+      candidate_thresholds: {
+        watchlist_min_score: 50,
+        sales_candidate_threshold: SALES_CANDIDATE_THRESHOLD,
+        immediate_target_threshold: IMMEDIATE_TARGET_THRESHOLD,
+        critical_target_threshold: CRITICAL_TARGET_THRESHOLD
+      }
+    },
     data_strategy: buildDataStrategy(detectSecrets()),
     collector_diagnostics: { ...collectorDiagnostics, actionable_row_count: collectorDiagnostics.actionable_row_count ?? actionableRows },
     vessel_master_cache: vesselMasterCacheDiagnostics,

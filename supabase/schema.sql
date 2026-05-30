@@ -1529,6 +1529,7 @@ create table if not exists rule_evaluations (
   run_id text,
   collected_at timestamptz default now(),
   rule_id text,
+  rule_version text default 'commercial_rules_v2026_05_31',
   rule_group text,
   entity_type text,
   entity_id text,
@@ -1563,6 +1564,7 @@ create table if not exists explainability_snapshots (
   score_reasons jsonb default '[]'::jsonb,
   reason_codes jsonb default '[]'::jsonb,
   rule_hits jsonb default '[]'::jsonb,
+  rule_versions jsonb default '[]'::jsonb,
   feature_contributions jsonb default '{}'::jsonb,
   payload jsonb default '{}'::jsonb
 );
@@ -1631,12 +1633,16 @@ create index if not exists idx_feature_snapshots_snapshot_time on feature_snapsh
 comment on table feature_snapshots is 'Columnar model-ready normalized features per port call and run. No raw payloads.';
 create index if not exists idx_rule_evaluations_run on rule_evaluations(run_id);
 create index if not exists idx_rule_evaluations_rule on rule_evaluations(rule_id);
+alter table rule_evaluations add column if not exists rule_version text default 'commercial_rules_v2026_05_31';
+create index if not exists idx_rule_evaluations_version on rule_evaluations(rule_version);
 create index if not exists idx_rule_evaluations_passed on rule_evaluations(passed);
 create index if not exists idx_explainability_snapshots_run on explainability_snapshots(run_id);
 create index if not exists idx_explainability_snapshots_score on explainability_snapshots(commercial_value_score desc);
 alter table explainability_snapshots add column if not exists why_scored_high text;
 alter table explainability_snapshots add column if not exists score_components jsonb default '{}'::jsonb;
 alter table explainability_snapshots add column if not exists score_reasons jsonb default '[]'::jsonb;
+alter table explainability_snapshots add column if not exists rule_versions jsonb default '[]'::jsonb;
+alter table rule_evaluations add column if not exists rule_version text default 'commercial_rules_v2026_05_31';
 create index if not exists idx_route_graph_edges_route on route_graph_edges(from_port, to_port);
 create index if not exists idx_route_graph_edges_confidence on route_graph_edges(route_confidence desc);
 create index if not exists idx_operator_graph_edges_operator on operator_graph_edges(operator_normalized);

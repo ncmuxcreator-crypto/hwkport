@@ -2,6 +2,10 @@
 import ws from "ws";
 import { randomUUID } from "node:crypto";
 
+const COMMERCIAL_RULE_VERSION = process.env.COMMERCIAL_RULE_VERSION || "commercial_rules_v2026_05_31";
+const CANDIDATE_RULE_VERSION = process.env.CANDIDATE_RULE_VERSION || "candidate_hybrid_percentile_v2026_05_31";
+const EXPLAINABILITY_RULE_VERSION = process.env.EXPLAINABILITY_RULE_VERSION || "explainability_ko_v2026_05_31";
+
 export function getSupabase() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -1016,6 +1020,7 @@ function evaluateFoundationRules(record = {}) {
   return [
     {
       rule_id: "HIGH_COMMERCIAL_VALUE",
+      rule_version: COMMERCIAL_RULE_VERSION,
       rule_group: "candidate",
       passed: score >= 75,
       severity: score >= 90 ? "critical" : "high",
@@ -1024,6 +1029,7 @@ function evaluateFoundationRules(record = {}) {
     },
     {
       rule_id: "SALES_TARGET_SCORE",
+      rule_version: CANDIDATE_RULE_VERSION,
       rule_group: "candidate",
       passed: score >= 65,
       severity: "medium",
@@ -1032,6 +1038,7 @@ function evaluateFoundationRules(record = {}) {
     },
     {
       rule_id: "MISSING_IMO_HIGH_VALUE",
+      rule_version: COMMERCIAL_RULE_VERSION,
       rule_group: "identity",
       passed: !record.imo && (score >= 65 || gt >= 30000),
       severity: "medium",
@@ -1040,6 +1047,7 @@ function evaluateFoundationRules(record = {}) {
     },
     {
       rule_id: "OPEN_WORK_WINDOW",
+      rule_version: COMMERCIAL_RULE_VERSION,
       rule_group: "port_call",
       passed: workScore >= 50 || (!record.atd && (record.ata || stayHours > 0)),
       severity: "high",
@@ -1048,6 +1056,7 @@ function evaluateFoundationRules(record = {}) {
     },
     {
       rule_id: "LONG_STAY_OR_ANCHORAGE",
+      rule_version: COMMERCIAL_RULE_VERSION,
       rule_group: "event",
       passed: stayHours >= 72 || anchorageHours >= 72,
       severity: "medium",
@@ -1056,6 +1065,7 @@ function evaluateFoundationRules(record = {}) {
     },
     {
       rule_id: "CONTACT_PATH_READY",
+      rule_version: COMMERCIAL_RULE_VERSION,
       rule_group: "operator",
       passed: contactScore >= 60 || record.contact_path_status === "contact_available",
       severity: "medium",
@@ -1802,6 +1812,11 @@ export async function saveToSupabase(records, options = {}) {
     status: runStatus,
     source_summary: {
       ...diagnostics,
+      rule_versioning: {
+        commercial_rule_version: COMMERCIAL_RULE_VERSION,
+        candidate_rule_version: CANDIDATE_RULE_VERSION,
+        explainability_rule_version: EXPLAINABILITY_RULE_VERSION
+      },
       imo_recovery: imoRecoveryDiagnostics,
       db_storage_mode: storageMode,
       db_analytics_scope: analyticsScope(),
@@ -3066,6 +3081,7 @@ export async function saveToSupabase(records, options = {}) {
       run_id: runId,
       collected_at: now,
       rule_id: rule.rule_id,
+      rule_version: rule.rule_version || COMMERCIAL_RULE_VERSION,
       rule_group: rule.rule_group,
       entity_type: "vessel_port_call",
       entity_id: entityKey,
@@ -3110,6 +3126,7 @@ export async function saveToSupabase(records, options = {}) {
       score_reasons: buildScoreReasons(r),
       reason_codes: r.reason_codes || [],
       rule_hits: rules.map(rule => rule.rule_id),
+      rule_versions: [...new Set(rules.map(rule => rule.rule_version || COMMERCIAL_RULE_VERSION))],
       feature_contributions: buildFoundationFeatureVector(r),
       payload: storagePayload({
         ...r,
