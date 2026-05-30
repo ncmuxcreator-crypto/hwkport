@@ -739,15 +739,17 @@ async function fetchTextOnce(source, extraParams = {}) {
     const url = buildUrl(source, extraParams);
     const started = Date.now();
     const res = await fetch(url, { signal: controller.signal, headers: { accept: "application/json, text/csv, text/xml, */*" } });
+    const contentType = res.headers.get("content-type") || "";
     const buffer = await res.arrayBuffer();
-    const text = decodeResponse(buffer, res.headers.get("content-type") || "");
+    const text = decodeResponse(buffer, contentType);
     if (!res.ok) {
       const error = new Error(`HTTP ${res.status}`);
       error.http_status = res.status;
+      error.response_content_type = contentType;
       error.response_text = text.slice(0, 500);
       throw error;
     }
-    return { text, url, http_status: res.status, latency_ms: Date.now() - started, result_meta: resultMeta(text) };
+    return { text, url, http_status: res.status, response_content_type: contentType, latency_ms: Date.now() - started, result_meta: resultMeta(text) };
   } finally {
     clearTimeout(timer);
   }
@@ -1001,9 +1003,11 @@ async function runPortOperationSmokeTest(sources = []) {
   try {
     const response = await fetchText(source, { pageNo: "1", numOfRows: "1" });
     let rows = [];
+    let parseErrorMessage = null;
     try {
       rows = parseRows(response.text, 1);
     } catch (parseError) {
+      parseErrorMessage = parseError?.message || String(parseError);
       parseError.failure_reason = "smoke_parse_failed";
       throw parseError;
     }
@@ -1042,12 +1046,21 @@ async function runPortOperationSmokeTest(sources = []) {
       port_name: source.portName || null,
       deGb: source.defaultParams?.deGb || null,
       http_status: response.http_status,
+      response_content_type: response.response_content_type || null,
       latency_ms: response.latency_ms,
       item_count: rows.length,
       total_count: Number.isFinite(totalCount) ? totalCount : null,
       valid_empty_response: validEmptyResponse,
       result_meta: response.result_meta || {},
       requested_url_without_service_key: maskServiceKey(response.url),
+      redacted_response_sample: {
+        request_url_without_service_key: maskServiceKey(response.url),
+        response_status: response.http_status,
+        response_content_type: response.response_content_type || null,
+        first_500_chars: String(response.text || "").slice(0, 500),
+        parsed_item_count: rows.length,
+        parse_error: parseErrorMessage
+      },
       service_key_variant: response.service_key_variant || null,
       retry_count: response.retry_count || 0
     };
@@ -1067,7 +1080,15 @@ async function runPortOperationSmokeTest(sources = []) {
       port_name: source.portName || null,
       deGb: source.defaultParams?.deGb || null,
       http_status: error?.http_status || null,
-      response_preview: error?.response_text || null
+      response_preview: error?.response_text || null,
+      redacted_response_sample: {
+        request_url_without_service_key: source?.url ? maskServiceKey(buildUrl(source, { pageNo: "1", numOfRows: "1" })) : null,
+        response_status: error?.http_status || null,
+        response_content_type: error?.response_content_type || null,
+        first_500_chars: error?.response_text || null,
+        parsed_item_count: 0,
+        parse_error: error?.failure_reason === "smoke_parse_failed" ? (error?.message || String(error)) : null
+      }
     };
   }
 }

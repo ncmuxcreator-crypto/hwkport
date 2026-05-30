@@ -4730,6 +4730,26 @@ try {
   fs.writeFileSync("data/pipeline-report.json", JSON.stringify(report, null, 2));
   fs.writeFileSync(`data/reports/${today}.json`, JSON.stringify(report, null, 2));
   fs.copyFileSync("dashboard/index.html", "public/index.html");
+  const collectionSummary = {
+    validation_mode: VALIDATION_MODE,
+    serving_mode: report.output_mode || (lastSuccessfulDatasetLocked ? "debug_diagnostics_only" : "production_api"),
+    required_secrets_present: Object.entries(startupConfigDiagnostics.secrets_present || {})
+      .filter(([, present]) => present)
+      .map(([key]) => key),
+    required_secrets_missing: startupConfigDiagnostics.missing_required_config || [],
+    enabled_ports_count: report.dataset_generation_audit?.enabled_ports_count || collectorDiagnosticsAfterCollection.port_operation_collection_plan?.enabled_ports_count || 0,
+    ports_attempted_count: report.dataset_generation_audit?.ports_attempted_count || collectorDiagnosticsAfterCollection.coverage?.ports_attempted_count || 0,
+    source_rows_collected: report.dataset_generation_audit?.source_rows_collected || 0,
+    normalized_rows: report.dataset_generation_audit?.normalized_rows || 0,
+    all_vessels_count: report.all_collected_vessel_count || report.dataset_generation_audit?.all_vessels_generated || 0,
+    target_vessels_count: report.target_vessel_count || report.dataset_generation_audit?.target_vessels_generated || 0,
+    failed_stage: report.dataset_generation_audit?.failed_stage || null,
+    root_cause: report.dataset_generation_audit?.root_cause || null
+  };
+  console.log("=== Collection Summary ===");
+  for (const [key, value] of Object.entries(collectionSummary)) {
+    console.log(`${key}=${Array.isArray(value) ? value.join(",") : value}`);
+  }
   if (VALIDATION_MODE === "production" && report.data_mode === "no_live_data") {
     process.exitCode = 1;
   }

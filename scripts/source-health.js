@@ -28,8 +28,19 @@ function readJson(path, fallback = {}) {
   }
 }
 
-const status = readJson("dashboard/api/status.json", {});
-const previousRuntime = readJson("dashboard/api/source-health-runtime.json", null);
+function pickCurrentStatus() {
+  const debug = readJson("dashboard/api/debug/status.json", null);
+  const main = readJson("dashboard/api/status.json", {});
+  if (debug?.run_id && (!main?.run_id || String(debug.run_id) !== String(main.run_id))) {
+    return { status: debug, status_path: "dashboard/api/debug/status.json", diagnostics_only: true };
+  }
+  return { status: main, status_path: "dashboard/api/status.json", diagnostics_only: false };
+}
+
+const { status, status_path: statusPath, diagnostics_only: diagnosticsOnly } = pickCurrentStatus();
+const runtimePath = diagnosticsOnly ? "dashboard/api/debug/source-health-runtime.json" : "dashboard/api/source-health-runtime.json";
+const registryPath = diagnosticsOnly ? "dashboard/api/debug/source-health.json" : "dashboard/api/source-health.json";
+const previousRuntime = readJson(runtimePath, null);
 const diagnostics = status.collector_diagnostics || {};
 const sources = Array.isArray(diagnostics.sources) ? diagnostics.sources : [];
 const configured = tracked.filter(key => Boolean(process.env[key]));
@@ -40,13 +51,15 @@ const skippedCollectors = sources.filter(source => source.skipped).map(source =>
   reason: source.skip_reason || source.reason || source.error_message || source.status || "unknown_error",
   raw_reason: source.raw_skip_reason || source.reason || source.error_message || source.status || null
 }));
-const statusRunId = status.run_id || status.active_run_id || status.summary_run_id || null;
+const statusRunId = status.run_id || status.active_run_id || status.summary_run_id || "unknown_current_run";
 const previousSourceHealthWasStale = Boolean(previousRuntime?.run_id && statusRunId && String(previousRuntime.run_id) !== String(statusRunId));
 
 const report = {
   version: "17.7.0",
   run_id: statusRunId,
   status_run_id: statusRunId,
+  status_source_path: statusPath,
+  diagnostics_only: diagnosticsOnly,
   generated_at: new Date().toISOString(),
   status_generated_at: status.completed_at || status.generated_at || null,
   stale_source_health: false,
@@ -85,6 +98,7 @@ const report = {
 };
 
 fs.mkdirSync("dashboard/api", { recursive: true });
+if (diagnosticsOnly) fs.mkdirSync("dashboard/api/debug", { recursive: true });
 fs.mkdirSync("data", { recursive: true });
 const registryReport = {
   version: "17.7.0",
@@ -97,7 +111,7 @@ const registryReport = {
   secret_names_tracked: tracked,
   paid_ais_policy: "MarineTraffic and VesselFinder are not required for the current public-data-first backend."
 };
-fs.writeFileSync("dashboard/api/source-health-runtime.json", JSON.stringify(report, null, 2));
-fs.writeFileSync("dashboard/api/source-health.json", JSON.stringify(registryReport, null, 2));
+fs.writeFileSync(runtimePath, JSON.stringify(report, null, 2));
+fs.writeFileSync(registryPath, JSON.stringify(registryReport, null, 2));
 fs.writeFileSync("data/source-health.json", JSON.stringify(registryReport, null, 2));
 console.log("Source health generated");

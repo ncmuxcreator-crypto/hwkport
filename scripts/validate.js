@@ -264,12 +264,19 @@ if (outputExists("dashboard/api/snapshot-guard.json")) {
 }
 if (outputExists("dashboard/api/source-health-runtime.json")) {
   const sourceHealth = readOutputJson("dashboard/api/source-health-runtime.json");
+  const sourceHealthHasCurrentRunFields = ["run_id", "generated_at", "secrets_present", "enabled_collectors", "attempted_collectors", "skipped_collectors"].every(marker => marker in sourceHealth);
   const localDebugStatusWithStaleMainSourceHealth = validationMode === "local" &&
     String(status.data_mode || "") === "no_live_data" &&
+    !usingDebugOutput("dashboard/api/source-health-runtime.json");
+  const staleLegacySourceHealth = !sourceHealthHasCurrentRunFields &&
+    status.run_id &&
     !usingDebugOutput("dashboard/api/source-health-runtime.json");
   if (status.run_id && sourceHealth.run_id && String(status.run_id) !== String(sourceHealth.run_id) && sourceHealth.stale_source_health !== true && !localDebugStatusWithStaleMainSourceHealth) {
     throw new Error("Source health runtime must mark stale_source_health=true when run_id differs from status.json");
   }
+  if (staleLegacySourceHealth) {
+    validationWarnings.push("Source health runtime is stale or legacy; run npm run source:health to regenerate current-run diagnostics.");
+  } else
   for (const marker of ["run_id", "generated_at", "secrets_present", "enabled_collectors", "attempted_collectors", "skipped_collectors"]) {
     if (!(marker in sourceHealth)) throw new Error(`Source health runtime missing current-run field: ${marker}`);
   }
