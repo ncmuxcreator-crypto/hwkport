@@ -165,6 +165,8 @@ create table if not exists port_call_master (
   departure timestamptz,
   eta timestamptz,
   etd timestamptz,
+  pilot_inbound timestamptz,
+  pilot_outbound timestamptz,
   berth text,
   berth_name text,
   terminal text,
@@ -177,6 +179,8 @@ create table if not exists port_call_master (
   agent_name text,
   agent_normalized text,
   status_bucket text,
+  stay_hours numeric default 0,
+  anchorage_hours numeric default 0,
   commercial_value_score int default 0,
   candidate_band text,
   work_feasibility_score int default 0,
@@ -194,6 +198,14 @@ create index if not exists idx_port_call_master_score on port_call_master(commer
 create index if not exists idx_port_calls_collected_at on port_calls(collected_at desc);
 create index if not exists idx_port_calls_port on port_calls(port);
 create index if not exists idx_port_calls_risk_score on port_calls(risk_score desc);
+
+alter table port_call_master add column if not exists pilot_inbound timestamptz;
+alter table port_call_master add column if not exists pilot_outbound timestamptz;
+alter table port_call_master add column if not exists stay_hours numeric default 0;
+alter table port_call_master add column if not exists anchorage_hours numeric default 0;
+create index if not exists idx_port_call_master_candidate_band on port_call_master(candidate_band);
+create index if not exists idx_port_call_master_arrival on port_call_master(arrival desc);
+create index if not exists idx_port_call_master_departure on port_call_master(departure desc);
 
 alter table vessel_snapshots add column if not exists snapshot_date date default current_date;
 alter table vessel_snapshots alter column snapshot_date set default current_date;
