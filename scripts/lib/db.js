@@ -1218,6 +1218,175 @@ function buildPortCallId(record = {}) {
   return stableEntityId("PCALL", `${portCode}-${vesselIdentity}-${arrivalKey}`);
 }
 
+function sourceGroupName(sourceName = "") {
+  const key = String(sourceName || "").toLowerCase();
+  if (key.startsWith("port_operation_")) return "Port Operation";
+  if (key.includes("pilot")) return "Pilot";
+  if (key.includes("pnc")) return "PNC";
+  if (key.includes("ulsan")) return "Ulsan";
+  if (key.includes("ais") || key.includes("vts")) return "AIS/VTS";
+  if (key.includes("facility") || key.includes("berth")) return "Port Facility";
+  if (key.includes("csv") || key.includes("dictionary")) return "CSV dictionaries";
+  return "Other";
+}
+
+function buildSourceBreakdown(diagnostics = {}) {
+  const grouped = new Map();
+  for (const source of diagnostics.sources || []) {
+    const group = sourceGroupName(source.key || source.source_name || source.label);
+    const row = grouped.get(group) || {
+      source_name: group,
+      source_count: 0,
+      rows_collected: 0,
+      rows_normalized: 0,
+      rows_discarded: 0,
+      rows_failed: 0,
+      rows_matched_to_port_operation: 0,
+      match_rate: 0,
+      error_summary: []
+    };
+    const collected = scoreNumber(source.rows_collected || source.row_count);
+    const normalized = scoreNumber(source.rows_normalized || source.normalized_count);
+    const matched = scoreNumber(source.rows_matched || source.actionable_count);
+    row.source_count += 1;
+    row.rows_collected += collected;
+    row.rows_normalized += normalized;
+    row.rows_discarded += Math.max(0, collected - normalized);
+    row.rows_failed += source.status === "failed" || source.error ? collected || 1 : 0;
+    row.rows_matched_to_port_operation += matched;
+    if (source.error_message || source.error || source.reason) {
+      row.error_summary.push(String(source.error_message || source.error || source.reason).slice(0, 240));
+    }
+    grouped.set(group, row);
+  }
+  return [...grouped.values()].map(row => ({
+    ...row,
+    match_rate: row.rows_collected ? Math.round((row.rows_matched_to_port_operation / row.rows_collected) * 1000) / 10 : 0,
+    error_summary: [...new Set(row.error_summary)].slice(0, 10)
+  }));
+}
+
+function buildDedupeAudit(records = [], diagnostics = {}) {
+  const rawRows = scoreNumber(diagnostics.count_funnel?.raw_api_rows || diagnostics.raw_api_rows || diagnostics.real_row_count || records.length);
+  const normalizedRows = records.length;
+  const portCallKeys = records.map(record => buildPortCallId(record)).filter(Boolean);
+  const vesselKeys = records.map(record => record.master_vessel_id || record.vessel_identity || record.hybrid_entity_key || record.imo || record.mmsi || record.call_sign || `${normalizeVesselName(record.vessel_name)}|${record.gt || 0}|${record.vessel_type_group || record.vessel_type || ""}`).filter(Boolean);
+  const duplicateRowsRemoved = Math.max(0, rawRows - normalizedRows);
+  return {
+    raw_rows: rawRows,
+    normalized_rows: normalizedRows,
+    duplicate_rows_removed: duplicateRowsRemoved,
+    duplicate_rate: rawRows ? Math.round((duplicateRowsRemoved / rawRows) * 1000) / 10 : 0,
+    unique_port_calls: new Set(portCallKeys).size,
+    unique_vessels: new Set(vesselKeys).size,
+    duplicate_cause_estimates: {
+      io_double_count_candidates: records.filter(record => record.deGb || record.de_gb || record.direction).length,
+      repeated_detail_rows: records.filter(record => record.detail_rows_flattened || scoreNumber(record.detail_row_count) > 1).length,
+      enrichment_only_rows: records.filter(record => /pilot|pnc|ulsan|berth|facility/i.test(String(record.source || record.source_name || "")) && !String(record.source || record.source_name || "").startsWith("port_operation_")).length,
+      same_vessel_multiple_port_calls: Math.max(0, portCallKeys.length - new Set(vesselKeys).size)
+    },
+    dedupe_rule: "port_call_id first, then IMO/MMSI/call_sign/name+GT+type for vessel identity; never vessel_name alone"
+  };
+}
+
+function buildCandidatePromotionAudit(records = []) {
+  const scores = records.map(commercialScore);
+  const scoreRangeCount = (min, max = Infinity) => scores.filter(score => score >= min && score <= max).length;
+  const candidateRows = records.filter(record => commercialScore(record) >= 50 && !isDepartedRecord(record) && !isHardCandidateExcluded(record));
+  const promotedRows = records.filter(record => isSalesTargetRecord(record) || isImmediateTargetRecord(record));
+  const excludedHighValue = candidateRows
+    .filter(record => commercialScore(record) >= 65 && !isSalesTargetRecord(record) && !isImmediateTargetRecord(record))
+    .map((record, index) => ({
+      port_call_id: buildPortCallId(record),
+      vessel_name: record.vessel_name || "",
+      commercial_value_score: commercialScore(record),
+      candidate_band: record.candidate_band || record.sales_priority_band || null,
+      exclusion_reason: record.exclusion_reason || (isDepartedRecord(record) ? "departed" : isHardCandidateExcluded(record) ? "hard_excluded" : "percentile_or_work_feasibility_guard"),
+      candidate_id: record.snapshot_id || record.port_call_id || record.port_call_identity || record.hybrid_entity_key || `excluded-${index}`
+    }));
+  const exclusionReasonCounts = excludedHighValue.reduce((acc, row) => {
+    acc[row.exclusion_reason] = (acc[row.exclusion_reason] || 0) + 1;
+    return acc;
+  }, {});
+  return {
+    commercial_score_distribution: {
+      score_90_plus_count: scoreRangeCount(90),
+      score_80_89_count: scoreRangeCount(80, 89),
+      score_70_79_count: scoreRangeCount(70, 79),
+      score_60_69_count: scoreRangeCount(60, 69),
+      score_50_59_count: scoreRangeCount(50, 59),
+      score_40_49_count: scoreRangeCount(40, 49),
+      score_0_39_count: scores.filter(score => score < 40).length
+    },
+    candidate_generation_count: candidateRows.length,
+    candidate_promotion_count: promotedRows.length,
+    high_score_not_promoted_count: excludedHighValue.length,
+    excluded_high_value_count: excludedHighValue.length,
+    exclusion_reason_counts: exclusionReasonCounts,
+    excluded_high_value_samples: excludedHighValue.slice(0, 50),
+    classification_logic: {
+      watchlist: "commercial_value_score 50-64 or rank watchlist",
+      sales_target: "commercial_value_score >= 65 plus percentile qualification",
+      immediate_target: "commercial_value_score >= 75 plus current/near-term work feasibility"
+    }
+  };
+}
+
+function buildVesselUniverseAuditRow(records = [], diagnostics = {}, runId, generatedAt = new Date().toISOString()) {
+  const dedupeAudit = buildDedupeAudit(records, diagnostics);
+  const candidateAudit = buildCandidatePromotionAudit(records);
+  const sourceBreakdown = buildSourceBreakdown(diagnostics);
+  const watchlistCount = records.filter(isWatchlistRecord).length;
+  const salesTargetCount = records.filter(isSalesTargetRecord).length;
+  const immediateTargetCount = records.filter(isImmediateTargetRecord).length;
+  const targetRatio = records.length ? Math.round((salesTargetCount / records.length) * 1000) / 10 : 0;
+  const portCallCoverage = records.length ? Math.round((records.filter(record => buildPortCallId(record)).length / records.length) * 1000) / 10 : 0;
+  const suspected = [];
+  if (dedupeAudit.duplicate_rate > 35) suspected.push("Duplicate rate is high; review I/O merge and detail-row flattening.");
+  if (targetRatio > 30) suspected.push("영업대상 기준이 너무 넓습니다.");
+  if (records.length > 0 && salesTargetCount === 0) suspected.push("영업대상 후보가 생성되지 않았습니다. 후보 생성 로직을 확인하세요.");
+  if (portCallCoverage < 80) suspected.push("port_call_id coverage is below 80%.");
+  if (candidateAudit.high_score_not_promoted_count > 0) suspected.push("High-score vessels exist that were not promoted; inspect exclusion reasons.");
+  const recommendations = [
+    "Use all_vessels as the full valid port-call universe.",
+    "Use sales_candidates + immediate_targets for 영업대상선박.",
+    "Treat Pilot/PNC/Ulsan rows as enrichment unless high-confidence unmatched arrivals.",
+    "Review /api/quality/source-counts.json and /api/quality/dedupe-audit.json after every major collector change."
+  ];
+  return {
+    audit_id: stableEntityId("VUAUD", runId || generatedAt),
+    run_id: runId,
+    generated_at: generatedAt,
+    raw_rows_total: dedupeAudit.raw_rows,
+    normalized_rows_total: dedupeAudit.normalized_rows,
+    duplicate_rows_removed: dedupeAudit.duplicate_rows_removed,
+    duplicate_rate: dedupeAudit.duplicate_rate,
+    unique_port_calls_count: dedupeAudit.unique_port_calls,
+    unique_vessels_count: dedupeAudit.unique_vessels,
+    all_vessels_count: records.length,
+    watchlist_count: watchlistCount,
+    sales_target_count: salesTargetCount,
+    immediate_target_count: immediateTargetCount,
+    target_ratio: targetRatio,
+    candidate_generation_status: candidateAudit.candidate_generation_count > 0 ? "completed" : records.length ? "completed_no_candidates" : "no_vessels",
+    source_breakdown: sourceBreakdown,
+    dedupe_audit: dedupeAudit,
+    candidate_promotion_audit: candidateAudit,
+    dashboard_dataset_audit: {
+      all_vessels_api_source: "all_vessels",
+      target_vessels_api_source: "sales_candidates + immediate_targets",
+      immediate_targets_api_source: "immediate_targets top 5",
+      all_vessels_api_count: records.length,
+      target_vessels_api_count: salesTargetCount + immediateTargetCount,
+      immediate_targets_api_count: immediateTargetCount,
+      port_call_id_coverage_percent: portCallCoverage
+    },
+    suspected_counting_issues: suspected,
+    recommendations,
+    created_at: generatedAt
+  };
+}
+
 function eventTimeBucket(value, fallback = new Date()) {
   const date = new Date(value || fallback);
   if (Number.isNaN(date.getTime())) return kstSnapshotDate(fallback);
@@ -1637,6 +1806,13 @@ export async function saveToSupabase(records, options = {}) {
       const { error } = await supabase.from("source_collection_logs").upsert(batch, { onConflict: "source_log_id" });
       if (error) throw error;
     }
+  }
+  const vesselUniverseAudit = buildVesselUniverseAuditRow(records, diagnostics, runId, now);
+  {
+    const { error } = await supabase
+      .from("vessel_universe_audit")
+      .upsert(vesselUniverseAudit, { onConflict: "run_id" });
+    if (error) throw error;
   }
 
   const rows = records.map(r => ({

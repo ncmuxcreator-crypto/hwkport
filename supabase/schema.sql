@@ -1344,6 +1344,35 @@ alter table enrichment_match_candidates add column if not exists confidence text
 alter table enrichment_match_candidates add column if not exists matched_fields jsonb default '{}'::jsonb;
 alter table enrichment_match_candidates add column if not exists raw_source_payload jsonb default '{}'::jsonb;
 alter table enrichment_match_candidates add column if not exists created_at timestamptz default now();
+
+create table if not exists vessel_universe_audit (
+  audit_id text primary key,
+  run_id text unique,
+  generated_at timestamptz default now(),
+  raw_rows_total int default 0,
+  normalized_rows_total int default 0,
+  duplicate_rows_removed int default 0,
+  duplicate_rate numeric default 0,
+  unique_port_calls_count int default 0,
+  unique_vessels_count int default 0,
+  all_vessels_count int default 0,
+  watchlist_count int default 0,
+  sales_target_count int default 0,
+  immediate_target_count int default 0,
+  target_ratio numeric default 0,
+  candidate_generation_status text,
+  source_breakdown jsonb default '[]'::jsonb,
+  dedupe_audit jsonb default '{}'::jsonb,
+  candidate_promotion_audit jsonb default '{}'::jsonb,
+  dashboard_dataset_audit jsonb default '{}'::jsonb,
+  suspected_counting_issues jsonb default '[]'::jsonb,
+  recommendations jsonb default '[]'::jsonb,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_vessel_universe_audit_run_id on vessel_universe_audit(run_id);
+create index if not exists idx_vessel_universe_audit_generated_at on vessel_universe_audit(generated_at desc);
+create index if not exists idx_vessel_universe_audit_target_ratio on vessel_universe_audit(target_ratio);
 create index if not exists idx_enrichment_match_candidates_run_id on enrichment_match_candidates(run_id);
 create index if not exists idx_enrichment_match_candidates_score on enrichment_match_candidates(match_score desc);
 create index if not exists idx_enrichment_match_candidates_source_name on enrichment_match_candidates(source_name);
