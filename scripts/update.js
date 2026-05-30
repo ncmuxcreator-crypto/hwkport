@@ -4369,3 +4369,10 @@ try {
 }
 
 console.log(`[HWK] v${VERSION} ${BUILD_NAME} dashboard data generated`);
+
+// Supabase's realtime/websocket transport can keep the Node event loop open in CI
+// even after all synchronous snapshot writes are complete. End the scheduled run
+// explicitly so GitHub Actions does not cancel a successful refresh at timeout.
+if (process.env.CI === "true") {
+  process.exit(0);
+}
