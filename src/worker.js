@@ -62,6 +62,18 @@ function representativeRegistryForCode(portCode) {
     .sort((a, b) => Number(a.tier || 99) - Number(b.tier || 99) || Number(a.sort || 999) - Number(b.sort || 999));
   return candidates.find(port => Number(port.tier || 99) === 1) || candidates[0] || null;
 }
+function parseJsonField(value, fallback) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return value;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
 const BASIC_INFO_FIELDS = [
   "vessel_name", "normalized_vessel_name", "call_sign", "imo", "mmsi", "vessel_type", "vessel_type_group",
   "gt", "dwt", "loa", "beam", "flag", "operator", "operator_normalized", "agent", "agent_normalized",
@@ -2873,8 +2885,10 @@ function buildStatusFromSummarySnapshot(snapshot = {}, source = {}, reason = "la
 
 function buildDashboardSummaryFromSnapshot(snapshot = {}, source = {}, reason = "latest_successful_summary_snapshot") {
   const status = buildStatusFromSummarySnapshot(snapshot, source, reason);
-  const candidateSummary = snapshot.candidate_summary || {};
-  const congestionSummary = snapshot.congestion_summary || {};
+  const candidateSummary = parseJsonField(snapshot.candidate_summary, {}) || {};
+  const congestionSummary = parseJsonField(snapshot.congestion_summary, {}) || {};
+  const portSummary = parseJsonField(snapshot.port_summary, []);
+  const ports = Array.isArray(portSummary) ? portSummary : [];
   return {
     active_run_id: status.active_run_id,
     summary_run_id: snapshot.run_id || null,
@@ -2891,14 +2905,14 @@ function buildDashboardSummaryFromSnapshot(snapshot = {}, source = {}, reason = 
     opportunity_count: status.opportunity_count,
     watchlist_count: status.watchlist_count,
     status,
-    ports: Array.isArray(snapshot.port_summary) ? snapshot.port_summary : [],
-    port_units: flattenSummaryPortUnits(Array.isArray(snapshot.port_summary) ? snapshot.port_summary : []),
+    ports,
+    port_units: flattenSummaryPortUnits(ports),
     immediate_targets: Array.isArray(candidateSummary.immediate_targets) ? candidateSummary.immediate_targets : [],
     opportunities: Array.isArray(candidateSummary.opportunities) ? candidateSummary.opportunities : [],
     predicted_arrivals: [],
     arrival_pipeline: [],
     predicted_cleaning_opportunities: [],
-    port_opportunities: Array.isArray(snapshot.port_summary) ? snapshot.port_summary.slice(0, 5) : [],
+    port_opportunities: ports.slice(0, 5),
     congestion_summary: Array.isArray(congestionSummary.ports) ? congestionSummary.ports : [],
     candidate_counts: {
       target_vessels: status.target_vessel_count,
@@ -2959,6 +2973,40 @@ function inferSubPortName(record = {}) {
   if (/감천|gamcheon/.test(text)) return "감천항";
   if (/신감만|감만|gamman/.test(text)) return "감만·신감만";
   return String(record.sub_port || "").trim();
+}
+
+function hasSubPortBreakdown(portCode) {
+  const code = normalizePortCode(portCode);
+  if (["020", "030", "031", "120", "620", "621", "622", "820"].includes(code)) return true;
+  return PORT_REGISTRY.filter(port => normalizePortCode(port.port_code) === code && port.sub_port).length > 0;
+}
+
+function subPortRegistryForRecord(record = {}) {
+  const portCode = normalizePortCode(record.port_code || portCodeFromName(record.port_name || record.port));
+  const inferred = inferSubPortName(record);
+  if (inferred) {
+    const candidate = PORT_REGISTRY.find(port =>
+      normalizePortCode(port.port_code) === portCode &&
+      String(port.sub_port || port.port_name_ko || "").toLowerCase() === inferred.toLowerCase()
+    );
+    return candidate || {
+      port_code: portCode,
+      port_name_ko: inferred,
+      sub_port: inferred,
+      tier: 3,
+      sort: 900
+    };
+  }
+  if (hasSubPortBreakdown(portCode)) {
+    return {
+      port_code: portCode,
+      port_name_ko: "기타/확인 필요",
+      sub_port: "기타/확인 필요",
+      tier: 3,
+      sort: 999
+    };
+  }
+  return registryForRecord(record);
 }
 
 function registryForRecord(record = {}) {
@@ -3047,7 +3095,7 @@ function buildPortUnitRows(records) {
     const portName = v.port_name || v.port || "Unknown";
     const portCode = normalizePortCode(v.port_code || portCodeFromName(portName));
     if (portCode === "unknown") continue;
-    const registry = registryForRecord(v);
+    const registry = subPortRegistryForRecord(v);
     const key = portRegistryKey(registry);
     const representativeName = registry.sub_port || registry.port_name_ko || representativePortName(portCode, portName);
     const p = map.get(key) || {
@@ -3184,12 +3232,16 @@ function buildPorts(records) {
     }
     if (row.total_vessels > 0 && row.sub_port) {
       current.child_units.push({
+        port_code: row.port_code,
         port_name: row.port_name,
         sub_port: row.sub_port,
         total_vessels: row.total_vessels,
         target_vessels: row.target_vessels,
         sales_candidates: row.sales_candidates,
-        anchorage_vessels: row.anchorage_vessels
+        immediate_targets: row.immediate_targets,
+        watchlist_count: row.watchlist_count || 0,
+        anchorage_vessels: row.anchorage_vessels,
+        long_stay_vessels: row.long_stay_vessels
       });
     }
     grouped.set(key, current);
@@ -3207,6 +3259,7 @@ function buildPorts(records) {
     return {
       ...p,
       child_units: p.child_units.sort((a, b) => Number(b.total_vessels || 0) - Number(a.total_vessels || 0)).slice(0, 5),
+      sub_ports: p.child_units.sort((a, b) => Number(b.total_vessels || 0) - Number(a.total_vessels || 0)),
       work_window_hours: avgWorkWindow,
       average_work_window_hours: avgWorkWindow,
       operator_quality: operatorQuality,
@@ -3230,8 +3283,33 @@ function buildPortUnits(records) {
     }));
 }
 
+function buildSubPortConsistencyDiagnostics(ports = []) {
+  const mismatches = [];
+  for (const port of ports) {
+    const children = Array.isArray(port.sub_ports) ? port.sub_ports : (Array.isArray(port.child_units) ? port.child_units : []);
+    if (!children.length) continue;
+    const parentTotal = Number(port.total_vessels || 0);
+    const subPortSum = children.reduce((sum, child) => sum + Number(child.total_vessels || 0), 0);
+    if (parentTotal !== subPortSum) {
+      mismatches.push({
+        parent_port_code: port.port_code || null,
+        parent_port_name: port.port_name || port.port_group || null,
+        parent_total: parentTotal,
+        sub_port_sum: subPortSum,
+        difference: parentTotal - subPortSum,
+        warning: "서브항 합계와 모항 합계가 일치하지 않습니다."
+      });
+    }
+  }
+  return {
+    checked_parent_ports: ports.filter(port => Array.isArray(port.sub_ports || port.child_units) && (port.sub_ports || port.child_units).length).length,
+    mismatch_count: mismatches.length,
+    mismatches
+  };
+}
+
 function flattenSummaryPortUnits(ports = []) {
-  return ports.flatMap(port => (Array.isArray(port.child_units) ? port.child_units : []).map(unit => ({
+  return ports.flatMap(port => (Array.isArray(port.sub_ports) ? port.sub_ports : (Array.isArray(port.child_units) ? port.child_units : [])).map(unit => ({
     port_code: port.port_code || unit.port_code || null,
     port_name: unit.port_name || unit.sub_port || port.port_name,
     port_name_ko: unit.port_name || unit.sub_port || port.port_name,
@@ -3410,7 +3488,11 @@ function buildVesselUniverseAudit(records = [], sourceCounts = []) {
   const immediateTargetCount = buckets.immediate_targets.length;
   const targetRatio = records.length ? Math.round((salesTargetCount / records.length) * 1000) / 10 : 0;
   const portCallCoverage = records.length ? Math.round((records.filter((record, index) => recordKey(record, `ROW-${index}`)).length / records.length) * 1000) / 10 : 0;
+  const allVesselsApiCount = vesselGroupRows(records, "all").length;
+  const targetVesselsApiCount = vesselGroupRows(records, "target").length;
   const suspected = [];
+  if (dedupe.raw_rows > 0 && records.length === 0) suspected.push("전체선박 생성 실패: 정규화 후 all_vessels가 비어 있습니다.");
+  if (records.length > 0 && allVesselsApiCount === 0) suspected.push("전체선박 UI/API 바인딩 실패.");
   if (dedupe.duplicate_rate > 35) suspected.push("Duplicate rate is high; review I/O merge and detail-row flattening.");
   if (targetRatio > 30) suspected.push("영업대상 기준이 너무 넓습니다.");
   if (records.length > 0 && salesTargetCount === 0) suspected.push("영업대상 후보가 생성되지 않았습니다. 후보 생성 로직을 확인하세요.");
@@ -3434,15 +3516,26 @@ function buildVesselUniverseAudit(records = [], sourceCounts = []) {
     source_breakdown: sourceCounts,
     dedupe_audit: dedupe,
     candidate_promotion_audit: candidateAudit,
+    regression_diagnostics: {
+      raw_rows_total: dedupe.raw_rows,
+      normalized_rows_total: dedupe.normalized_rows,
+      all_vessels_count: records.length,
+      all_vessels_api_count: allVesselsApiCount,
+      all_vessels_rendered_count: allVesselsApiCount,
+      target_vessels_count: targetVesselsApiCount,
+      sales_target_count: salesTargetCount,
+      immediate_target_count: immediateTargetCount,
+      watchlist_count: watchlistCount
+    },
     dashboard_dataset_audit: {
       all_vessels_api_source: "all_vessels",
       target_vessels_api_source: "sales_candidates + immediate_targets",
       immediate_targets_api_source: "immediate_targets top 5",
-      all_vessels_api_count: records.length,
-      target_vessels_api_count: salesTargetCount + immediateTargetCount,
+      all_vessels_api_count: allVesselsApiCount,
+      target_vessels_api_count: targetVesselsApiCount,
       immediate_targets_api_count: immediateTargetCount,
-      dashboard_all_vessels_rendered_count: records.length,
-      dashboard_target_vessels_rendered_count: salesTargetCount + immediateTargetCount,
+      dashboard_all_vessels_rendered_count: allVesselsApiCount,
+      dashboard_target_vessels_rendered_count: targetVesselsApiCount,
       port_call_id_coverage_percent: portCallCoverage
     },
     suspected_counting_issues: suspected,
@@ -4097,6 +4190,7 @@ async function apiResponse(url, env) {
       if (pathname.endsWith("/ports.json")) {
         const portUnits = summary.port_units || flattenSummaryPortUnits(summary.ports || []);
         const data = searchParams.get("scope") === "units" ? portUnits : summary.ports;
+        const subPortConsistency = buildSubPortConsistencyDiagnostics(summary.ports || []);
         return json({
         active_run_id: summary.active_run_id,
         summary_run_id: summary.summary_run_id,
@@ -4109,14 +4203,17 @@ async function apiResponse(url, env) {
         immediate_target_count: summary.immediate_target_count,
         opportunity_count: summary.opportunity_count,
         data,
-        port_units: portUnits
+        port_units: portUnits,
+        sub_port_consistency: subPortConsistency
         }, { headers: corsHeaders() });
       }
       if (pathname.endsWith("/changes.json")) {
         const previousVersion = searchParams.get("since") || null;
         const previousSnapshot = previousVersion ? await fetchSummarySnapshotByRun(env, previousVersion) : null;
-        const previousPorts = new Set((previousSnapshot?.port_summary || []).map(port => port.port_unit_key || port.port_code || port.port_name).filter(Boolean));
-        const currentPorts = new Set((latestSummarySnapshot?.port_summary || []).map(port => port.port_unit_key || port.port_code || port.port_name).filter(Boolean));
+        const previousPortSummary = parseJsonField(previousSnapshot?.port_summary, []);
+        const currentPortSummary = parseJsonField(latestSummarySnapshot?.port_summary, []);
+        const previousPorts = new Set((Array.isArray(previousPortSummary) ? previousPortSummary : []).map(port => port.port_unit_key || port.port_code || port.port_name).filter(Boolean));
+        const currentPorts = new Set((Array.isArray(currentPortSummary) ? currentPortSummary : []).map(port => port.port_unit_key || port.port_code || port.port_name).filter(Boolean));
         return json({
           dataset_version: latestSummarySnapshot.run_id,
           previous_dataset_version: previousVersion,
@@ -4176,8 +4273,10 @@ async function apiResponse(url, env) {
       port_summary: buildPorts(allRecords),
       candidate_summary: { sales_target_count: status.sales_candidate_count, immediate_target_count: status.immediate_target_count }
     };
-    const previousPorts = new Set((previousSnapshot?.port_summary || []).map(port => port.port_code || port.port_name).filter(Boolean));
-    const currentPorts = new Set((currentSnapshot?.port_summary || []).map(port => port.port_code || port.port_name).filter(Boolean));
+    const previousPortSummary = parseJsonField(previousSnapshot?.port_summary, []);
+    const currentPortSummary = parseJsonField(currentSnapshot?.port_summary, []);
+    const previousPorts = new Set((Array.isArray(previousPortSummary) ? previousPortSummary : []).map(port => port.port_code || port.port_name).filter(Boolean));
+    const currentPorts = new Set((Array.isArray(currentPortSummary) ? currentPortSummary : []).map(port => port.port_code || port.port_name).filter(Boolean));
     const changedPorts = [...currentPorts].filter(port => !previousPorts.has(port));
     return json({
       dataset_version: currentSnapshot?.run_id || status.summary_run_id || status.active_run_id,
@@ -4277,21 +4376,33 @@ async function apiResponse(url, env) {
   if (pathname === "/api/vessels" || pathname.endsWith("/vessels.json")) {
     const group = String(searchParams.get("group") || "target").toLowerCase();
     const sourceRows = vesselGroupRows(allRecords, group);
+    const paged = pageRows(sourceRows, searchParams);
     const groupCounts = {
       target: vesselGroupRows(allRecords, "target").length,
       all: vesselGroupRows(allRecords, "all").length
     };
     const status = buildStatus(allRecords, source);
+    const regressionWarnings = [];
+    if (status.record_count > 0 && groupCounts.all === 0) regressionWarnings.push("전체선박 생성 실패: 정규화 후 all_vessels가 비어 있습니다.");
+    if (group === "all" && groupCounts.all > 0 && !paged.data.length) regressionWarnings.push("전체선박 UI/API 바인딩 실패.");
     return json({
       active_run_id: status.active_run_id,
       generated_at: status.generated_at,
       data_freshness: status.data_freshness,
       record_count: status.record_count,
+      all_vessels_count: groupCounts.all,
       target_count: status.target_count,
       immediate_target_count: status.immediate_target_count,
       opportunity_count: status.opportunity_count,
-      ...pageRows(sourceRows, searchParams),
-      groupCounts
+      ...paged,
+      vessels: paged.data,
+      groupCounts,
+      all_vessels_api_count: groupCounts.all,
+      target_vessels_api_count: groupCounts.target,
+      all_vessels_rendered_count: group === "all" ? sourceRows.length : groupCounts.all,
+      target_vessels_rendered_count: group === "target" ? sourceRows.length : groupCounts.target,
+      dataset_relationship: "all_vessels contains watchlist, sales_targets, and immediate_targets",
+      regression_warnings: regressionWarnings
     }, { headers: corsHeaders() });
   }
   const vesselMatch = pathname.match(new RegExp("^/api/vessels/([^/]+)$"));
@@ -4362,6 +4473,8 @@ async function apiResponse(url, env) {
       }, { headers: corsHeaders() });
     }
     const status = buildStatus(allRecords, source);
+    const ports = buildPorts(allRecords);
+    const portUnits = buildPortUnits(allRecords);
     return json({
       active_run_id: status.active_run_id,
       generated_at: status.generated_at,
@@ -4370,8 +4483,9 @@ async function apiResponse(url, env) {
       target_count: status.target_count,
       immediate_target_count: status.immediate_target_count,
       opportunity_count: status.opportunity_count,
-      data: searchParams.get("scope") === "units" ? buildPortUnits(allRecords) : buildPorts(allRecords),
-      port_units: buildPortUnits(allRecords)
+      data: searchParams.get("scope") === "units" ? portUnits : ports,
+      port_units: portUnits,
+      sub_port_consistency: buildSubPortConsistencyDiagnostics(ports)
     }, { headers: corsHeaders() });
   }
   if (pathname.endsWith("/port-opportunities.json")) return json(buildPortOpportunityRanking(records), { headers: corsHeaders() });
