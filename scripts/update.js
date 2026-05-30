@@ -26,6 +26,12 @@ const CRITICAL_TARGET_THRESHOLD = Number(process.env.CRITICAL_TARGET_THRESHOLD |
 const MAX_TARGET_VESSELS = Number(process.env.MAX_TARGET_VESSELS || 5000);
 const MAX_CANDIDATES = Number(process.env.MAX_CANDIDATES || 1000);
 
+// Canonical output fields for new pipeline logic:
+// score -> commercial_value_score
+// location -> port_code, port_name, berth_name, terminal_name, source_name
+// Legacy aliases such as risk_score, total_sales_priority_score, port, berth,
+// and source remain as read/write compatibility fields until consumers migrate.
+
 function parseScheduleTime(value) {
   if (!value) return null;
   const raw = String(value).trim();

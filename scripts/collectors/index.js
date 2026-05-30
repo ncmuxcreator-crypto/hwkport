@@ -1,9 +1,8 @@
-import * as sample from './sample.js';
-
-export const collectors = [
-  { name: 'sample', run: sample.collect }
-  // Add later:
-  // { name: 'busan', run: busan.collect },
-  // { name: 'yeosu', run: yeosu.collect },
-  // { name: 'ulsan', run: ulsan.collect }
-];
+/**
+ * Deprecated collector registry.
+ *
+ * Production collection is driven by scripts/collectors/korea.js through
+ * scripts/update.js. This module is intentionally left empty so legacy imports
+ * cannot re-enable sample/demo collectors.
+ */
+export const collectors = [];

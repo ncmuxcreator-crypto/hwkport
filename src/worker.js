@@ -4,6 +4,8 @@ const IMMEDIATE_TARGET_THRESHOLD = 75;
 const CRITICAL_TARGET_THRESHOLD = 90;
 const PORT_REGISTRY_SOURCE = "data/reference/ports_registry.csv";
 const PORT_REGISTRY_GENERATED_FROM_CSV = true;
+// Compatibility cache generated from data/reference/ports_registry.csv.
+// Update the CSV source first, then regenerate this Worker constant.
 const PORT_REGISTRY = [
   { port_code: "020", port_name_ko: "부산항", tier: 1, sort: 10 },
   { port_code: "820", port_name_ko: "울산항", tier: 1, sort: 20 },
