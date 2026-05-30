@@ -422,24 +422,41 @@ function candidateLabel(record = {}) {
 }
 
 function opportunityState(record = {}) {
-  const explicit = String(record.opportunity_state || record.lead_status || "").toLowerCase();
-  if (["won", "lost", "scheduled", "quoted", "contacted", "contact_ready", "qualified", "identified"].includes(explicit)) return explicit;
+  const explicit = String(record.opportunity_status || record.opportunity_state || record.lead_status || "").toLowerCase();
+  if (["won", "lost", "closed", "scheduled", "quoted", "contacted", "contact_ready", "qualified", "identified", "monitor"].includes(explicit)) return explicit;
   if (record.quote_status && !["not_started", "none", "unknown"].includes(String(record.quote_status).toLowerCase())) return "quoted";
   if (record.last_contacted_at) return "contacted";
   if (scoreNumber(record.contact_readiness_score) >= 60 || record.contact_path_available || ["contact_available", "high_confidence_contact"].includes(record.contact_path_status)) return "contact_ready";
   if (commercialScore(record) >= 65 || scoreNumber(record.predicted_cleaning_opportunity_score) >= 60) return "qualified";
+  if (commercialScore(record) >= 50 || scoreNumber(record.predicted_cleaning_opportunity_score) >= 40) return "monitor";
   return "identified";
 }
 
 function opportunityTimestampFields(state, record = {}, now) {
   return {
-    qualified_at: ["qualified", "contact_ready", "contacted", "quoted", "scheduled", "won", "lost"].includes(state) ? now : null,
-    contact_ready_at: ["contact_ready", "contacted", "quoted", "scheduled", "won", "lost"].includes(state) ? now : null,
-    contacted_at: ["contacted", "quoted", "scheduled", "won", "lost"].includes(state) ? (record.last_contacted_at || now) : null,
-    quoted_at: ["quoted", "scheduled", "won", "lost"].includes(state) ? now : null,
+    qualified_at: ["qualified", "contact_ready", "contacted", "quoted", "scheduled", "won", "lost", "closed"].includes(state) ? now : null,
+    contact_ready_at: ["contact_ready", "contacted", "quoted", "scheduled", "won", "lost", "closed"].includes(state) ? now : null,
+    contacted_at: ["contacted", "quoted", "scheduled", "won", "lost", "closed"].includes(state) ? (record.last_contacted_at || now) : null,
+    quoted_at: ["quoted", "scheduled", "won", "lost", "closed"].includes(state) ? now : null,
     scheduled_at: ["scheduled", "won"].includes(state) ? now : null,
-    closed_at: ["won", "lost"].includes(state) ? now : null
+    closed_at: ["won", "lost", "closed"].includes(state) ? now : null
   };
+}
+
+function opportunityType(record = {}) {
+  const explicit = String(record.opportunity_type || "").trim();
+  if (explicit) return explicit;
+  if (scoreNumber(record.predicted_cleaning_opportunity_score) >= 60) return "predicted_hull_cleaning";
+  return "hull_cleaning";
+}
+
+function isOpportunityEligible(record = {}) {
+  const band = candidateLabel(record);
+  const state = opportunityState(record);
+  return ["immediate_target", "sales_target"].includes(band) ||
+    commercialScore(record) >= 65 ||
+    scoreNumber(record.predicted_cleaning_opportunity_score) >= 60 ||
+    ["identified", "qualified", "contact_ready", "contacted", "quoted", "scheduled", "won", "lost", "monitor", "closed"].includes(state);
 }
 
 function buildFoundationFeatureVector(record = {}) {
@@ -1964,16 +1981,14 @@ export async function saveToSupabase(records, options = {}) {
   }
 
   const opportunityRows = uniqueBy(records
-    .filter(r =>
-      Number(r.commercial_value_score || r.total_sales_priority_score || 0) >= 50 ||
-      Number(r.predicted_cleaning_opportunity_score || 0) >= 60 ||
-      ["identified", "qualified", "contact_ready", "contacted", "quoted", "scheduled", "won", "lost"].includes(String(r.lead_status || r.opportunity_state || "").toLowerCase())
-    )
+    .filter(isOpportunityEligible)
     .map(r => {
       const state = opportunityState(r);
       const portCallId = buildPortCallId(r);
+      const type = opportunityType(r);
+      const closedAt = ["won", "lost", "closed"].includes(state) ? (r.closed_at || now) : null;
       return {
-        opportunity_id: stableEntityId("OPPTY", `${portCallId}-${r.hybrid_entity_key || r.vessel_id || r.vessel_name || ""}`),
+        opportunity_id: stableEntityId("OPPTY", `${portCallId}-${type}`),
         run_id: runId,
         master_vessel_id: fallbackMasterId(r),
         hybrid_entity_key: r.hybrid_entity_key || r.vessel_id || null,
@@ -1986,6 +2001,8 @@ export async function saveToSupabase(records, options = {}) {
         operator_normalized: r.operator_normalized || normalizeCompanyName(r.operator_name || r.operator) || null,
         agent_name: r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm || null,
         agent_normalized: r.agent_normalized || normalizeCompanyName(r.agent_name || r.agent || r.satmntEntrpsNm || r.entrpsCdNm) || null,
+        opportunity_type: type,
+        opportunity_status: state,
         opportunity_state: state,
         lead_status: r.lead_status || (state === "identified" ? "new_lead" : state),
         commercial_value_score: Number(r.commercial_value_score || r.total_sales_priority_score || 0),
@@ -1997,15 +2014,23 @@ export async function saveToSupabase(records, options = {}) {
         recommended_action: buildRecommendedActionKo(r),
         recommended_contact_path: r.recommended_contact_path || r.contact_path_label_ko || null,
         ...opportunityTimestampFields(state, r, now),
+        first_detected_at: r.first_detected_at || r.identified_at || now,
+        last_seen_at: now,
         last_seen: now,
+        closed_at: closedAt,
+        close_reason: r.close_reason || (state === "closed" ? "closed_by_status" : state === "won" ? "won" : state === "lost" ? "lost" : null),
+        created_at: r.created_at || now,
+        updated_at: now,
         payload: storagePayload({
           ...r,
           opportunity_lifecycle_role: "port_call_commercial_opportunity",
+          opportunity_type: type,
+          opportunity_status: state,
           opportunity_state: state,
           port_call_id: portCallId
         })
       };
-    }), row => row.opportunity_id);
+    }), row => `${row.port_call_id}|${row.opportunity_type}`);
 
   for (let index = 0; index < opportunityRows.length; index += batchSize) {
     const batch = opportunityRows.slice(index, index + batchSize);

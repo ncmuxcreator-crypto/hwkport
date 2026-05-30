@@ -798,6 +798,8 @@ create table if not exists opportunity_master (
   operator_normalized text,
   agent_name text,
   agent_normalized text,
+  opportunity_type text default 'hull_cleaning',
+  opportunity_status text default 'identified',
   opportunity_state text default 'identified',
   lead_status text default 'new_lead',
   commercial_value_score int default 0,
@@ -808,6 +810,8 @@ create table if not exists opportunity_master (
   why_now text,
   recommended_action text,
   recommended_contact_path text,
+  first_detected_at timestamptz default now(),
+  last_seen_at timestamptz default now(),
   identified_at timestamptz default now(),
   qualified_at timestamptz,
   contact_ready_at timestamptz,
@@ -815,16 +819,31 @@ create table if not exists opportunity_master (
   quoted_at timestamptz,
   scheduled_at timestamptz,
   closed_at timestamptz,
+  close_reason text,
   last_seen timestamptz default now(),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
   payload jsonb default '{}'::jsonb
 );
 
 create index if not exists idx_opportunity_master_port_call on opportunity_master(port_call_id);
 create index if not exists idx_opportunity_master_state on opportunity_master(opportunity_state);
+create index if not exists idx_opportunity_master_status on opportunity_master(opportunity_status);
+create index if not exists idx_opportunity_master_type on opportunity_master(opportunity_type);
 create index if not exists idx_opportunity_master_score on opportunity_master(commercial_value_score desc);
 create index if not exists idx_opportunity_master_operator on opportunity_master(operator_normalized);
+create unique index if not exists ux_opportunity_master_port_call_type on opportunity_master(port_call_id, opportunity_type) where port_call_id is not null and opportunity_type is not null;
 alter table opportunity_master drop constraint if exists opportunity_master_state_check;
-alter table opportunity_master add constraint opportunity_master_state_check check (opportunity_state in ('identified', 'qualified', 'contact_ready', 'contacted', 'quoted', 'scheduled', 'won', 'lost'));
+alter table opportunity_master add constraint opportunity_master_state_check check (opportunity_state in ('identified', 'qualified', 'contact_ready', 'contacted', 'quoted', 'scheduled', 'won', 'lost', 'monitor', 'closed'));
+alter table opportunity_master drop constraint if exists opportunity_master_status_check;
+alter table opportunity_master add constraint opportunity_master_status_check check (opportunity_status in ('identified', 'qualified', 'contact_ready', 'contacted', 'quoted', 'scheduled', 'won', 'lost', 'monitor', 'closed'));
+alter table opportunity_master add column if not exists opportunity_type text default 'hull_cleaning';
+alter table opportunity_master add column if not exists opportunity_status text default 'identified';
+alter table opportunity_master add column if not exists first_detected_at timestamptz default now();
+alter table opportunity_master add column if not exists last_seen_at timestamptz default now();
+alter table opportunity_master add column if not exists close_reason text;
+alter table opportunity_master add column if not exists created_at timestamptz default now();
+alter table opportunity_master add column if not exists updated_at timestamptz default now();
 
 create table if not exists vessel_snapshot_daily (
   snapshot_date date not null,
