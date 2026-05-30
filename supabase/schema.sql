@@ -1112,7 +1112,10 @@ create table if not exists explainability_snapshots (
   commercial_value_score int default 0,
   candidate_band text,
   why_now text,
+  why_scored_high text,
   recommended_action text,
+  score_components jsonb default '{}'::jsonb,
+  score_reasons jsonb default '[]'::jsonb,
   reason_codes jsonb default '[]'::jsonb,
   rule_hits jsonb default '[]'::jsonb,
   feature_contributions jsonb default '{}'::jsonb,
@@ -1179,6 +1182,9 @@ create index if not exists idx_rule_evaluations_rule on rule_evaluations(rule_id
 create index if not exists idx_rule_evaluations_passed on rule_evaluations(passed);
 create index if not exists idx_explainability_snapshots_run on explainability_snapshots(run_id);
 create index if not exists idx_explainability_snapshots_score on explainability_snapshots(commercial_value_score desc);
+alter table explainability_snapshots add column if not exists why_scored_high text;
+alter table explainability_snapshots add column if not exists score_components jsonb default '{}'::jsonb;
+alter table explainability_snapshots add column if not exists score_reasons jsonb default '[]'::jsonb;
 create index if not exists idx_route_graph_edges_route on route_graph_edges(from_port, to_port);
 create index if not exists idx_route_graph_edges_confidence on route_graph_edges(route_confidence desc);
 create index if not exists idx_operator_graph_edges_operator on operator_graph_edges(operator_normalized);

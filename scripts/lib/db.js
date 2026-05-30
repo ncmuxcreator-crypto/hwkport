@@ -423,6 +423,61 @@ function buildFoundationLabels(record = {}) {
   };
 }
 
+function buildScoreComponents(record = {}) {
+  return {
+    commercial_value_score: commercialScore(record),
+    vessel_value_score: scoreNumber(record.vessel_value_score || record.commercial_fit_score),
+    work_feasibility_score: scoreNumber(record.work_feasibility_score || record.cleaning_window_score),
+    congestion_score: scoreNumber(record.congestion_score || record.port_congestion_score || record.congestion_exposure_score),
+    biofouling_exposure_score: scoreNumber(record.biofouling_exposure_score || record.biofouling_risk_score || record.biofouling_score),
+    performance_proxy_score: scoreNumber(record.performance_proxy_score),
+    compliance_pressure_score: scoreNumber(record.compliance_pressure_score),
+    contact_readiness_score: scoreNumber(record.contact_readiness_score || record.sales_accessibility_score),
+    data_confidence_score: scoreNumber(record.data_confidence_score || record.data_quality_score),
+    repeat_caller_score: scoreNumber(record.repeat_caller_score),
+    operator_score: Math.min(100, Math.max(
+      scoreNumber(record.operator_score),
+      scoreNumber(record.operator_confidence),
+      scoreNumber(record.contact_readiness_score),
+      record.operator_name || record.operator ? 45 : 0
+    )),
+    predicted_cleaning_opportunity_score: scoreNumber(record.predicted_cleaning_opportunity_score)
+  };
+}
+
+function buildScoreReasons(record = {}) {
+  const reasons = [];
+  const gt = scoreNumber(record.gt || record.grtg || record.intrlGrtg);
+  const type = String(record.vessel_type_group || record.vessel_type || "").replace(/_/g, " ");
+  const anchorageDays = scoreNumber(record.anchorage_hours) / 24;
+  const stayDays = scoreNumber(record.stay_hours) / 24;
+
+  if (gt >= 5000) reasons.push(`GT ${Math.round(gt).toLocaleString("en-US")}`);
+  if (type) reasons.push(type);
+  if (anchorageDays >= 1) reasons.push(`Anchorage ${Math.round(anchorageDays * 10) / 10} days`);
+  if (stayDays >= 2) reasons.push(`Stay ${Math.round(stayDays * 10) / 10} days`);
+  if (record.pilot_outbound_missing || record.no_outbound_pilot || record.work_window_status === "open_or_ongoing") reasons.push("No outbound pilot / open work window");
+  if (scoreNumber(record.work_feasibility_score) >= 60) reasons.push("High work feasibility");
+  if (scoreNumber(record.congestion_score || record.port_congestion_score) >= 50) reasons.push("Congestion exposed");
+  if (scoreNumber(record.biofouling_exposure_score || record.biofouling_risk_score) >= 50) reasons.push("Biofouling exposure elevated");
+  if (record.operator_name || record.operator) reasons.push("Operator identified");
+  if (record.agent_name || record.agent || record.satmntEntrpsNm || record.entrpsCdNm) reasons.push("Agent identified");
+  if (record.route_region) reasons.push(`${record.route_region} route signal`);
+  for (const code of record.reason_codes || []) reasons.push(String(code).replace(/_/g, " "));
+
+  return [...new Set(reasons)].slice(0, 12);
+}
+
+function buildWhyScoredHigh(record = {}) {
+  const score = commercialScore(record);
+  const reasons = buildScoreReasons(record).slice(0, 4);
+  if (!score && !reasons.length) return null;
+  const vessel = record.vessel_name || "This vessel";
+  const port = record.port_name || record.port || record.port_code || "current port";
+  const prefix = `Commercial Value ${score}: ${vessel} at ${port}`;
+  return reasons.length ? `${prefix} scored high because of ${reasons.join(", ")}.` : `${prefix} has commercially relevant signals.`;
+}
+
 function evaluateFoundationRules(record = {}) {
   const score = commercialScore(record);
   const gt = scoreNumber(record.gt || record.grtg || record.intrlGrtg);
@@ -1961,7 +2016,10 @@ export async function saveToSupabase(records, options = {}) {
       commercial_value_score: commercialScore(r),
       candidate_band: candidateLabel(r),
       why_now: r.why_now || r.candidate_summary_ko || null,
+      why_scored_high: r.why_scored_high || buildWhyScoredHigh(r),
       recommended_action: r.recommended_action || r.recommended_next_action || null,
+      score_components: buildScoreComponents(r),
+      score_reasons: buildScoreReasons(r),
       reason_codes: r.reason_codes || [],
       rule_hits: rules.map(rule => rule.rule_id),
       feature_contributions: buildFoundationFeatureVector(r),
