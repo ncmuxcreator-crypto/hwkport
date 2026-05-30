@@ -3077,8 +3077,10 @@ function buildPorts(records) {
     };
     p.vessel_count += 1;
     p.total_vessels += 1;
-    p.target_vessels += 1;
-    p.target_vessel_count += 1;
+    if (isMainCommercialVessel(v)) {
+      p.target_vessels += 1;
+      p.target_vessel_count += 1;
+    }
     if (typeof v.total_sales_priority_score === "number") p.scored_count += 1;
     if (isSalesCandidate(v)) {
       p.candidate_count += 1;
