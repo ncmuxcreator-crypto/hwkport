@@ -2892,6 +2892,7 @@ function buildDashboardSummaryFromSnapshot(snapshot = {}, source = {}, reason = 
     watchlist_count: status.watchlist_count,
     status,
     ports: Array.isArray(snapshot.port_summary) ? snapshot.port_summary : [],
+    port_units: flattenSummaryPortUnits(Array.isArray(snapshot.port_summary) ? snapshot.port_summary : []),
     immediate_targets: Array.isArray(candidateSummary.immediate_targets) ? candidateSummary.immediate_targets : [],
     opportunities: Array.isArray(candidateSummary.opportunities) ? candidateSummary.opportunities : [],
     predicted_arrivals: [],
@@ -3217,6 +3218,38 @@ function buildPorts(records) {
     Number(b.total_vessels || 0) - Number(a.total_vessels || 0) ||
     b.port_opportunity_score - a.port_opportunity_score
   );
+}
+
+function buildPortUnits(records) {
+  return buildPortUnitRows(records)
+    .filter(row => row.sub_port && Number(row.total_vessels || 0) > 0)
+    .map(row => ({
+      ...row,
+      parent_port_name: row.port_group || representativePortName(row.port_code, row.port_name),
+      unit_label: row.sub_port || row.port_name
+    }));
+}
+
+function flattenSummaryPortUnits(ports = []) {
+  return ports.flatMap(port => (Array.isArray(port.child_units) ? port.child_units : []).map(unit => ({
+    port_code: port.port_code || unit.port_code || null,
+    port_name: unit.port_name || unit.sub_port || port.port_name,
+    port_name_ko: unit.port_name || unit.sub_port || port.port_name,
+    port_group: port.port_name || port.port_group || "",
+    parent_port_name: port.port_name || port.port_group || "",
+    sub_port: unit.sub_port || unit.port_name || "",
+    unit_label: unit.sub_port || unit.port_name || "",
+    display_scope: "sub_port",
+    total_vessels: Number(unit.total_vessels || 0),
+    target_vessels: Number(unit.target_vessels || 0),
+    target_vessel_count: Number(unit.target_vessels || 0),
+    sales_candidates: Number(unit.sales_candidates || unit.sales_targets || 0),
+    sales_targets: Number(unit.sales_targets || unit.sales_candidates || 0),
+    anchorage_vessels: Number(unit.anchorage_vessels || 0),
+    anchorage_waiting: Number(unit.anchorage_vessels || 0),
+    immediate_targets: Number(unit.immediate_targets || 0),
+    immediate_target_count: Number(unit.immediate_targets || 0)
+  })));
 }
 
 function recordsForPort(records, portCode) {
@@ -3625,6 +3658,7 @@ function buildStatus(records, source) {
     },
     commercial_command_center: buildCommandCenter(buckets.target_vessels),
     port_intelligence: buildPorts(records),
+    port_intelligence_units: buildPortUnits(records),
     port_congestion_heatmap: buildPortHeatmap(buckets.target_vessels),
     all_port_congestion_heatmap: buildPortHeatmap(records),
     biofouling_timeline: buildBioTimeline(buckets.target_vessels)
@@ -3758,6 +3792,51 @@ function buildConfigStatus(env = {}) {
   };
 }
 
+function buildCollectionLimitDiagnostics(logRows = [], activeRunId = null) {
+  const scopedRows = activeRunId ? logRows.filter(row => String(row.run_id || "") === String(activeRunId)) : logRows;
+  const portRows = scopedRows.filter(row => String(row.source_name || row.payload?.key || "").startsWith("port_operation_"));
+  const sourceRows = portRows.map(row => {
+    const payload = row.payload || {};
+    const totalCount = Number(payload.pagination_total_count || payload.totalCount || 0);
+    const rowsCollected = Number(row.rows_collected || payload.rows_collected || payload.row_count || 0);
+    const maxRows = Number(payload.max_rows || 0);
+    const truncated = Boolean(payload.truncated || payload.pagination_truncated || (totalCount > 0 && rowsCollected < totalCount) || (maxRows > 0 && rowsCollected >= maxRows));
+    return {
+      source_name: row.source_name,
+      port_code: payload.portCode || payload.prtAgCd || null,
+      prtAgCd: payload.prtAgCd || null,
+      deGb: payload.deGb || payload.defaultParams?.deGb || String(row.source_name || "").split("_").pop()?.toUpperCase() || null,
+      sde: payload.sde || null,
+      ede: payload.ede || null,
+      totalCount,
+      totalPages_expected: Number(payload.totalPages_expected || payload.pagination_total_pages_expected || 0),
+      pages_collected: Number(payload.pages_collected || payload.pagination_pages_collected || 0),
+      rows_collected: rowsCollected,
+      max_rows: maxRows || null,
+      truncated,
+      cap_name: truncated ? (payload.cap_name || (maxRows > 0 && rowsCollected >= maxRows ? "MAX_SOURCE_ROWS" : "PORT_OPERATION_MAX_PAGES")) : null,
+      cap_value: truncated ? (payload.cap_value || maxRows || Number(payload.totalPages_expected || 0)) : null
+    };
+  });
+  const rowsByPort = {};
+  for (const row of sourceRows) {
+    const key = row.prtAgCd || row.port_code || "unknown";
+    rowsByPort[key] ||= { port_code: key, rows_collected: 0, totalCount: 0, truncated: false, sources: 0 };
+    rowsByPort[key].rows_collected += row.rows_collected;
+    rowsByPort[key].totalCount += row.totalCount;
+    rowsByPort[key].truncated = rowsByPort[key].truncated || row.truncated;
+    rowsByPort[key].sources += 1;
+  }
+  return {
+    active_run_id: activeRunId,
+    port_operation_sources_checked: sourceRows.length,
+    truncated_source_count: sourceRows.filter(row => row.truncated).length,
+    capped_by_limit: sourceRows.some(row => row.truncated),
+    source_rows: sourceRows,
+    rows_by_port: Object.values(rowsByPort).sort((a, b) => Number(b.rows_collected || 0) - Number(a.rows_collected || 0))
+  };
+}
+
 async function buildPipelineHealth(env) {
   const pointer = await fetchActivePointer(env);
   const runs = await supabaseGet(env, "/rest/v1/data_collection_runs?select=*&order=started_at.desc&limit=20");
@@ -3784,6 +3863,7 @@ async function buildPipelineHealth(env) {
   const targetRatio = Number(latestRun.target_ratio || latestRun.source_summary?.scoring_diagnostics?.target_ratio || 0);
   const imoRecovery = latestRun.source_summary?.imo_recovery || {};
   const enrichmentMatchRate = ratePercent(matchedRows, collectedRows);
+  const collectionLimitDiagnostics = buildCollectionLimitDiagnostics(logRows, pointer.active_run_id || latestRun.run_id || null);
   const activeCollectedAt = pointer.active_collected_at || pointer.promoted_at || lastSuccessfulRun?.finished_at || null;
   const dataAgeMinutes = activeCollectedAt ? Math.round((Date.now() - new Date(activeCollectedAt).getTime()) / 60000) : null;
   const warnings = {
@@ -3815,6 +3895,7 @@ async function buildPipelineHealth(env) {
       enrichment_rows_matched: matchedRows,
       enrichment_match_rate: enrichmentMatchRate
     },
+    collection_limit_diagnostics: collectionLimitDiagnostics,
     warning_flags: warnings,
     alert_ready_diagnostics: warnings,
     query_status: {
@@ -3831,6 +3912,16 @@ async function apiResponse(url, env) {
   const searchParams = typeof url === "string" ? new URLSearchParams() : url.searchParams;
   if (pathname === "/api/config-status.json" || pathname.endsWith("/config-status.json")) return json(buildConfigStatus(env), { headers: corsHeaders() });
   if (pathname === "/api/health/pipeline.json" || pathname.endsWith("/health/pipeline.json")) return json(await buildPipelineHealth(env), { headers: corsHeaders() });
+  if (pathname === "/api/quality/collection-limits.json" || pathname.endsWith("/quality/collection-limits.json")) {
+    const pointer = await fetchActivePointer(env);
+    const logs = await supabaseGet(env, "/rest/v1/source_collection_logs?select=*&order=started_at.desc&limit=300");
+    return json({
+      generated_at: new Date().toISOString(),
+      active_run_id: pointer.active_run_id || null,
+      query_status: { ok: logs.ok, error: logs.error || null },
+      ...buildCollectionLimitDiagnostics(logs.rows || [], pointer.active_run_id || null)
+    }, { headers: corsHeaders() });
+  }
   if (pathname.startsWith("/api/history/")) {
     const historical = await historyApiResponse(pathname, searchParams, env);
     if (historical) return historical;
@@ -3862,7 +3953,10 @@ async function apiResponse(url, env) {
         immediate_targets: summary.immediate_targets,
         opportunities: summary.opportunities
       }, { headers: corsHeaders() });
-      if (pathname.endsWith("/ports.json")) return json({
+      if (pathname.endsWith("/ports.json")) {
+        const portUnits = summary.port_units || flattenSummaryPortUnits(summary.ports || []);
+        const data = searchParams.get("scope") === "units" ? portUnits : summary.ports;
+        return json({
         active_run_id: summary.active_run_id,
         summary_run_id: summary.summary_run_id,
         is_fallback: summary.is_fallback,
@@ -3873,8 +3967,10 @@ async function apiResponse(url, env) {
         target_count: summary.target_count,
         immediate_target_count: summary.immediate_target_count,
         opportunity_count: summary.opportunity_count,
-        data: summary.ports
-      }, { headers: corsHeaders() });
+        data,
+        port_units: portUnits
+        }, { headers: corsHeaders() });
+      }
       if (pathname.endsWith("/changes.json")) {
         const previousVersion = searchParams.get("since") || null;
         const previousSnapshot = previousVersion ? await fetchSummarySnapshotByRun(env, previousVersion) : null;
@@ -4088,7 +4184,8 @@ async function apiResponse(url, env) {
         target_count: summary.target_count,
         immediate_target_count: summary.immediate_target_count,
         opportunity_count: summary.opportunity_count,
-        data: summary.ports
+      data: searchParams.get("scope") === "units" ? (summary.port_units || flattenSummaryPortUnits(summary.ports || [])) : summary.ports,
+      port_units: summary.port_units || flattenSummaryPortUnits(summary.ports || [])
       }, { headers: corsHeaders() });
     }
     const status = buildStatus(allRecords, source);
@@ -4100,7 +4197,8 @@ async function apiResponse(url, env) {
       target_count: status.target_count,
       immediate_target_count: status.immediate_target_count,
       opportunity_count: status.opportunity_count,
-      data: buildPorts(allRecords)
+      data: searchParams.get("scope") === "units" ? buildPortUnits(allRecords) : buildPorts(allRecords),
+      port_units: buildPortUnits(allRecords)
     }, { headers: corsHeaders() });
   }
   if (pathname.endsWith("/port-opportunities.json")) return json(buildPortOpportunityRanking(records), { headers: corsHeaders() });
