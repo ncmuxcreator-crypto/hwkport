@@ -7,6 +7,7 @@
     "reprocess": "node scripts/reprocess.js",
     "daily:enrich": "node scripts/daily-enrichment.js",
     "validate": "node scripts/validate.js",
+    "test:regression": "node tests/regression-tests.js",
     "build": "npm run update && npm run validate",
     "deploy:cloudflare": "npx wrangler deploy",
     "secret:cloudflare:supabase-url": "npx wrangler secret put SUPABASE_URL",

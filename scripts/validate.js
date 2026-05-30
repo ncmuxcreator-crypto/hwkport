@@ -514,9 +514,37 @@ for (const marker of ["data_collection_runs", "active_dataset_pointer", "dashboa
 for (const file of ["data/reference/ports.csv", "data/reference/berths.csv", "data/reference/berth_aliases.csv", "data/reference/terminal_aliases.csv", "data/reference/anchorages.csv", "data/reference/vessel_types.csv", "data/reference/operators.csv", "data/reference/agents.csv", "data/reference/agent_operator_mapping.csv", "data/reference/vessel_master_seed.csv"]) {
   if (!fs.existsSync(file)) throw new Error(`Missing CSV reference dictionary: ${file}`);
 }
+for (const file of [
+  "docs/data-contract.md",
+  "docs/runbook.md",
+  "migrations/README.md",
+  "migrations/20260531_001_foundation_safeguards.sql",
+  "tests/regression-tests.js",
+  "tests/fixtures/port-operation-sample.json",
+  "tests/fixtures/pilot-schedule-sample.json",
+  "tests/fixtures/pnc-berth-sample.html",
+  "tests/fixtures/ulsan-berth-cargo-sample.json"
+]) {
+  if (!fs.existsSync(file)) throw new Error(`Missing foundation safeguard file: ${file}`);
+}
+const dataContract = fs.readFileSync("docs/data-contract.md", "utf8");
+for (const marker of ["run_id", "generated_at", "data_source_used", "port_call_id", "master_vessel_id", "port_code", "candidate_band", "commercial_value_score"]) {
+  if (!dataContract.includes(marker)) throw new Error(`Data contract missing required field marker: ${marker}`);
+}
+const migrationFiles = fs.readdirSync("migrations").filter(file => /\.sql$/i.test(file));
+if (migrationFiles.length < 1) {
+  throw new Error("Schema migration discipline requires at least one versioned SQL file in migrations/.");
+}
+const regressionScript = fs.readFileSync("tests/regression-tests.js", "utf8");
+for (const marker of ["all_vessels_count must be > 0", "Duplicate port_call_id", "target_ratio > 30%", "no_live_data must not be treated as production-ready"]) {
+  if (!regressionScript.includes(marker)) throw new Error(`Regression test missing marker: ${marker}`);
+}
 const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
 if (packageJson.scripts?.reprocess !== "node scripts/reprocess.js" || !fs.existsSync("scripts/reprocess.js")) {
   throw new Error("Replay/reprocess mode must be available as npm run reprocess");
+}
+if (packageJson.scripts?.["test:regression"] !== "node tests/regression-tests.js") {
+  throw new Error("Regression tests must be available as npm run test:regression");
 }
 if (packageJson.scripts?.["gdrive:check"] && !fs.existsSync("scripts/gdrive-check.js")) {
   throw new Error("Google Drive check script is registered but scripts/gdrive-check.js is missing");

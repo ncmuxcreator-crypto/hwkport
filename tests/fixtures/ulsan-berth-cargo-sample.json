@@ -1,0 +1,14 @@
+{
+  "source": "ulsan_berth_cargo",
+  "items": [
+    {
+      "vesselName": "ORIENTAL SUNSTONE",
+      "callSign": "D7AB",
+      "terminalName": "온산",
+      "berthName": "S-OIL 2",
+      "cargoStatus": "active",
+      "atb": "2026-05-30T04:00:00+09:00",
+      "etd": "2026-06-01T08:00:00+09:00"
+    }
+  ]
+}

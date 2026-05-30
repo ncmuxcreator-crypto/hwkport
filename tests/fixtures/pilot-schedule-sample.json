@@ -1,0 +1,14 @@
+{
+  "source": "pilot_schedule",
+  "items": [
+    {
+      "vessel_name": "GLOBAL PROSPERITY",
+      "call_sign": "3FXA5",
+      "port_code": "020",
+      "pilot_time": "2026-05-30T03:00:00+09:00",
+      "pilot_direction": "INBOUND",
+      "pilot_station": "GWANGYANG OUTER",
+      "berth_name": "광양 외항"
+    }
+  ]
+}
