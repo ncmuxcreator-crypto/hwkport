@@ -4564,6 +4564,15 @@ try {
 } catch (error) {
   status = "failed";
   errorMessage = error?.message || String(error);
+  if (supabaseWrite?.status === "syncing") {
+    supabaseWrite = {
+      status: "failed",
+      error: errorMessage,
+      failed_stage: "supabase_write",
+      note: "Supabase write started but did not complete successfully."
+    };
+    supabaseStatus = "failed";
+  }
   collectorDiagnosticsAfterCollection = getCollectorDiagnostics();
 } finally {
   ensureDirs();
@@ -5119,8 +5128,12 @@ try {
     normalized_rows: report.dataset_generation_audit?.normalized_rows || 0,
     all_vessels_count: report.all_collected_vessel_count || report.dataset_generation_audit?.all_vessels_generated || 0,
     target_vessels_count: report.target_vessel_count || report.dataset_generation_audit?.target_vessels_generated || 0,
+    supabase_write_status: report.supabase_write?.status || report.storage_status?.supabase?.status || "unknown",
+    supabase_promoted: report.supabase_write?.promoted ?? report.storage_status?.supabase?.promoted ?? null,
+    supabase_promotion_blockers: report.supabase_write?.promotion?.promotion_blockers || report.storage_status?.supabase?.promotion?.promotion_blockers || [],
     failed_stage: report.dataset_generation_audit?.failed_stage || null,
-    root_cause: report.dataset_generation_audit?.root_cause || null
+    root_cause: report.dataset_generation_audit?.root_cause || null,
+    error: report.error || report.supabase_write?.error || null
   };
   console.log("=== Collection Summary ===");
   for (const [key, value] of Object.entries(collectionSummary)) {
@@ -5131,6 +5144,14 @@ try {
     process.exitCode = 1;
   }
   if (VALIDATION_MODE === "production" && report.data_mode === "no_live_data") {
+    process.exitCode = 1;
+  }
+  if (VALIDATION_MODE === "production" && report.status === "failed") {
+    console.error(`[HWK] Production update failed: ${report.error || "unknown_error"}`);
+    process.exitCode = 1;
+  }
+  if (VALIDATION_MODE === "production" && ["failed", "syncing"].includes(String(report.supabase_write?.status || ""))) {
+    console.error(`[HWK] Production Supabase write did not complete: ${report.supabase_write?.status}`);
     process.exitCode = 1;
   }
 }

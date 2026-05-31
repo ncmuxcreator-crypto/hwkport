@@ -183,8 +183,12 @@ jobs:
           const status = JSON.parse(fs.readFileSync(path, "utf8"));
           const diag = status.collector_diagnostics || {};
           console.log("=== HWK Collector Diagnostics ===");
+          console.log(`status=${status.status || "unknown"}`);
+          if (status.error) console.log(`error=${status.error}`);
           console.log(`data_mode=${status.data_mode}`);
           console.log(`records=${status.record_count}`);
+          console.log(`all_vessels=${status.all_collected_vessel_count || status.all_vessels_count || 0}`);
+          console.log(`target_vessels=${status.target_vessel_count || status.target_vessels_count || 0}`);
           console.log(`attempted=${diag.attempted_count || 0}`);
           console.log(`success=${diag.success_count || 0}`);
           console.log(`failed=${diag.failed_count || 0}`);
@@ -202,6 +206,9 @@ jobs:
             if (source.child_enrichment) console.log(`  child_enrichment=${JSON.stringify(source.child_enrichment)}`);
           }
           console.log("storage.supabase=", status.storage_status?.supabase?.status || status.supabase_write?.status || "unknown");
+          console.log("storage.supabase.promoted=", status.storage_status?.supabase?.promoted ?? status.supabase_write?.promoted ?? "unknown");
+          console.log("storage.supabase.error=", status.storage_status?.supabase?.error || status.supabase_write?.error || "");
+          console.log("storage.supabase.promotion_blockers=", JSON.stringify(status.storage_status?.supabase?.promotion?.promotion_blockers || status.supabase_write?.promotion?.promotion_blockers || []));
           console.log("storage.gdrive=", status.storage_status?.gdrive?.status || status.gdrive_archive?.status || "unknown");
           NODE
 
