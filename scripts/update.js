@@ -4957,10 +4957,24 @@ try {
     gdrive: gdriveArchive,
     raw_archive_index: rawArchiveIndex
   };
+  const summaryStatusRunId = report?.status_run_id || report?.run_id || runId;
+  const summaryRunId = report?.summary_run_id || report?.run_id || runId;
+  const summaryActiveRunId = report?.active_run_id || report?.source_runtime?.active_run_id || summaryStatusRunId;
+  const latestSuccessfulRunId = report?.supabase_write?.latest_successful_summary_run_id ||
+    report?.storage_status?.supabase?.latest_successful_summary_run_id ||
+    (report?.data_mode !== "no_live_data" && Number(report?.record_count || 0) > 0 ? summaryRunId : null);
+  const summaryRunMismatch = Boolean(summaryStatusRunId && summaryRunId && String(summaryStatusRunId) !== String(summaryRunId));
+  const summaryRunWarnings = summaryRunMismatch ? ["status_run_id !== summary_run_id"] : [];
   const dashboardSummary = {
     run_id: report?.run_id || runId,
-    active_run_id: report?.source_runtime?.active_run_id || report?.run_id || runId,
-    summary_run_id: report?.run_id || runId,
+    status_run_id: summaryStatusRunId,
+    summary_run_id: summaryRunId,
+    active_run_id: summaryActiveRunId,
+    latest_successful_run_id: latestSuccessfulRunId,
+    latest_successful_summary_run_id: latestSuccessfulRunId,
+    run_context_mismatch: summaryRunMismatch,
+    run_context_warning: summaryRunMismatch ? "status_run_id !== summary_run_id" : null,
+    warnings: summaryRunWarnings,
     generated_at: completedAt,
     data_freshness: {
       active_collected_at: report?.completed_at || completedAt,
@@ -4992,7 +5006,14 @@ try {
     watchlist_count: report?.scoring_diagnostics?.watchlist_count || 0,
     port_count: portIntelligence.length,
     status: {
-      active_run_id: report?.source_runtime?.active_run_id || report?.run_id || runId,
+      run_id: summaryStatusRunId,
+      status_run_id: summaryStatusRunId,
+      summary_run_id: summaryRunId,
+      active_run_id: summaryActiveRunId,
+      latest_successful_run_id: latestSuccessfulRunId,
+      latest_successful_summary_run_id: latestSuccessfulRunId,
+      run_context_mismatch: summaryRunMismatch,
+      run_context_warning: summaryRunMismatch ? "status_run_id !== summary_run_id" : null,
       generated_at: completedAt,
       data_mode: report?.data_mode,
       record_count: report?.record_count || 0,

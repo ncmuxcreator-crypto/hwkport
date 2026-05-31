@@ -2954,6 +2954,28 @@ function findVesselById(records = [], vesselId = "") {
   ].some(value => String(value || "") === decoded));
 }
 
+function runContextFields({ statusRunId, summaryRunId, activeRunId, latestSuccessfulRunId, warnings = [] } = {}) {
+  const normalizedStatusRunId = statusRunId || activeRunId || summaryRunId || null;
+  const normalizedSummaryRunId = summaryRunId || normalizedStatusRunId || null;
+  const normalizedActiveRunId = activeRunId || normalizedStatusRunId || normalizedSummaryRunId || null;
+  const normalizedLatestSuccessfulRunId = latestSuccessfulRunId || normalizedSummaryRunId || normalizedActiveRunId || null;
+  const mismatch = Boolean(normalizedStatusRunId && normalizedSummaryRunId && String(normalizedStatusRunId) !== String(normalizedSummaryRunId));
+  const mergedWarnings = Array.isArray(warnings) ? [...warnings] : [];
+  if (mismatch && !mergedWarnings.includes("status_run_id !== summary_run_id")) {
+    mergedWarnings.push("status_run_id !== summary_run_id");
+  }
+  return {
+    status_run_id: normalizedStatusRunId,
+    summary_run_id: normalizedSummaryRunId,
+    active_run_id: normalizedActiveRunId,
+    latest_successful_run_id: normalizedLatestSuccessfulRunId,
+    latest_successful_summary_run_id: normalizedLatestSuccessfulRunId,
+    run_context_mismatch: mismatch,
+    run_context_warning: mismatch ? "status_run_id !== summary_run_id" : null,
+    warnings: mergedWarnings
+  };
+}
+
 function buildDashboardSummary(allRecords = [], source = {}) {
   const activeRecords = activeRecordsOnly(allRecords);
   const buckets = buildVisibilityBuckets(activeRecords);
@@ -2963,9 +2985,15 @@ function buildDashboardSummary(allRecords = [], source = {}) {
   const predictedArrivals = buildPredictedArrivals(activeRecords).slice(0, 10);
   const predictedCleaningOpportunities = buildPredictedCleaningOpportunities(activeRecords).slice(0, 10);
   const status = buildStatus(activeRecords, source);
+  const context = runContextFields({
+    statusRunId: status.status_run_id || status.run_id || status.active_run_id,
+    summaryRunId: status.summary_run_id || status.run_id || status.active_run_id,
+    activeRunId: status.active_run_id,
+    latestSuccessfulRunId: status.latest_successful_run_id || status.latest_successful_summary_run_id
+  });
   return {
     run_id: status.active_run_id,
-    active_run_id: status.active_run_id,
+    ...context,
     data_source_used: status.data_source_used,
     fallback_used: status.fallback_used,
     fallback_reason: status.fallback_reason,
@@ -3016,10 +3044,15 @@ function buildStatusFromSummarySnapshot(snapshot = {}, source = {}, reason = "la
   const anchorageCount = Array.isArray(portSummary)
     ? portSummary.reduce((sum, port) => sum + Number(port.anchorage_vessels || port.anchorage_waiting || 0), 0)
     : 0;
+  const context = runContextFields({
+    statusRunId: source.pointer?.active_run_id || snapshot.run_id || null,
+    summaryRunId: snapshot.run_id || null,
+    activeRunId: source.pointer?.active_run_id || snapshot.run_id || null,
+    latestSuccessfulRunId: snapshot.run_id || null
+  });
   return {
-    run_id: source.pointer?.active_run_id || snapshot.run_id || null,
-    active_run_id: source.pointer?.active_run_id || null,
-    summary_run_id: snapshot.run_id || null,
+    run_id: context.status_run_id,
+    ...context,
     data_source_used: "latest_successful_summary_snapshot",
     generated_at: new Date().toISOString(),
     data_freshness: freshness,
@@ -3089,10 +3122,15 @@ function buildDashboardSummaryFromSnapshot(snapshot = {}, source = {}, reason = 
   const congestionSummary = parseJsonField(snapshot.congestion_summary, {}) || {};
   const portSummary = parseJsonField(snapshot.port_summary, []);
   const ports = Array.isArray(portSummary) ? portSummary : [];
+  const context = runContextFields({
+    statusRunId: status.status_run_id || status.run_id,
+    summaryRunId: status.summary_run_id || snapshot.run_id,
+    activeRunId: status.active_run_id,
+    latestSuccessfulRunId: status.latest_successful_run_id || snapshot.run_id
+  });
   return {
-    run_id: status.active_run_id || snapshot.run_id || null,
-    active_run_id: status.active_run_id,
-    summary_run_id: snapshot.run_id || null,
+    run_id: context.status_run_id,
+    ...context,
     data_source_used: status.data_source_used,
     is_fallback: true,
     fallback_used: true,
@@ -4113,12 +4151,18 @@ function buildStatus(records, source) {
   const fallbackUsed = Boolean(source.fallback_used || usingSnapshotFallback || dataSourceUsed !== "supabase_active_dataset");
   const fallbackReason = source.fallback_reason || (fallbackUsed ? source.pointer?.pointer_source || source.error || dataSourceUsed : null);
   const activeRunId = source.pointer?.active_run_id || null;
+  const context = runContextFields({
+    statusRunId: activeRunId,
+    summaryRunId: activeRunId,
+    activeRunId,
+    latestSuccessfulRunId: source.latest_successful_run_id || activeRunId
+  });
   const activeCollectedAt = source.pointer?.active_collected_at || source.pointer?.promoted_at || null;
   const dataAgeMinutes = activeCollectedAt ? Math.round((Date.now() - new Date(activeCollectedAt).getTime()) / 60000) : null;
   const dataIsStale = dataAgeMinutes === null ? Boolean(source.pointer?.is_stale) : dataAgeMinutes > AUTO_UPDATE_INTERVAL_HOURS * 60;
   return {
     run_id: activeRunId,
-    active_run_id: activeRunId,
+    ...context,
     data_source_used: dataSourceUsed,
     fallback_used: fallbackUsed,
     fallback_reason: fallbackReason,
@@ -4620,7 +4664,20 @@ async function apiResponse(url, env) {
     if (shouldUseSummaryFallback) return json(buildDashboardSummaryFromSnapshot(latestSummarySnapshot, source, source.error || "active_dataset_missing_or_empty"), { headers: corsHeaders() });
     const summary = buildDashboardSummary(allRecords, source);
     summary.is_fallback = false;
-    summary.summary_run_id = summary.active_run_id;
+    Object.assign(summary, runContextFields({
+      statusRunId: summary.status_run_id || summary.run_id || summary.active_run_id,
+      summaryRunId: summary.active_run_id,
+      activeRunId: summary.active_run_id,
+      latestSuccessfulRunId: latestSummarySnapshot?.run_id || summary.latest_successful_run_id
+    }));
+    if (summary.status) {
+      Object.assign(summary.status, runContextFields({
+        statusRunId: summary.status.status_run_id || summary.status.run_id || summary.active_run_id,
+        summaryRunId: summary.summary_run_id,
+        activeRunId: summary.active_run_id,
+        latestSuccessfulRunId: summary.latest_successful_run_id
+      }));
+    }
     summary.fallback_used = Boolean(summary.fallback_used);
     if (!summary.fallback_used) summary.fallback_reason = null;
     return json(summary, { headers: corsHeaders() });
@@ -4629,7 +4686,12 @@ async function apiResponse(url, env) {
     if (shouldUseSummaryFallback) return json(buildStatusFromSummarySnapshot(latestSummarySnapshot, source, source.error || "active_dataset_missing_or_empty"), { headers: corsHeaders() });
     const status = buildStatus(allRecords, source);
     status.is_fallback = false;
-    status.summary_run_id = status.active_run_id;
+    Object.assign(status, runContextFields({
+      statusRunId: status.status_run_id || status.run_id || status.active_run_id,
+      summaryRunId: status.active_run_id,
+      activeRunId: status.active_run_id,
+      latestSuccessfulRunId: latestSummarySnapshot?.run_id || status.latest_successful_run_id
+    }));
     status.fallback_used = Boolean(status.fallback_used);
     if (!status.fallback_used) status.fallback_reason = null;
     return json(status, { headers: corsHeaders() });

@@ -263,6 +263,20 @@ function validateVesselRowContract(name, rows) {
 }
 validateApiContract("dashboard-summary.json", dashboardSummary);
 validateApiContract("status.json", status);
+for (const field of ["status_run_id", "summary_run_id", "latest_successful_run_id"]) {
+  if (!(field in dashboardSummary)) contractIssue(`dashboard-summary.json missing run-context field: ${field}`);
+}
+if (
+  dashboardSummary.status_run_id &&
+  dashboardSummary.summary_run_id &&
+  String(dashboardSummary.status_run_id) !== String(dashboardSummary.summary_run_id)
+) {
+  const warnings = Array.isArray(dashboardSummary.warnings) ? dashboardSummary.warnings : [];
+  const hasWarning = dashboardSummary.run_context_mismatch === true ||
+    dashboardSummary.run_context_warning === "status_run_id !== summary_run_id" ||
+    warnings.includes("status_run_id !== summary_run_id");
+  if (!hasWarning) contractIssue("dashboard-summary.json must warn when status_run_id !== summary_run_id");
+}
 validateRunOrigin("status.json", status);
 validateVesselRowContract("all-collected-vessels.json", jsonRows(allCollectedVessels));
 validateVesselRowContract("target-vessels.json", jsonRows(targetVessels));
