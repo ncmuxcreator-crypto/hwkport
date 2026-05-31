@@ -267,6 +267,62 @@ function dedupeForUpsert(values = [], keyFn, tableName, audit = {}) {
   return deduped;
 }
 
+function dedupeRowsByConflictSpec(rows, onConflict, tableName, audit = {}) {
+  if (!Array.isArray(rows) || !rows.length || !onConflict) return rows;
+  const conflictKeys = String(onConflict)
+    .split(",")
+    .map(key => key.trim())
+    .filter(Boolean);
+  if (!conflictKeys.length) return rows;
+
+  const passthroughRows = [];
+  const keyedRows = new Map();
+  for (const row of rows) {
+    const values = conflictKeys.map(key => row?.[key]);
+    if (values.some(value => value === null || value === undefined)) {
+      passthroughRows.push(row);
+      continue;
+    }
+    keyedRows.set(values.map(value => String(value)).join("\u001f"), row);
+  }
+
+  const deduped = [...passthroughRows, ...keyedRows.values()];
+  const removed = rows.length - deduped.length;
+  if (removed > 0 && tableName) {
+    const auditKey = `${tableName}:${conflictKeys.join(",")}`;
+    audit[auditKey] = {
+      before: rows.length,
+      after: deduped.length,
+      removed,
+      conflict_keys: conflictKeys
+    };
+  }
+  return deduped;
+}
+
+function withDedupedUpserts(supabase, audit = {}) {
+  return new Proxy(supabase, {
+    get(target, property, receiver) {
+      if (property !== "from") return Reflect.get(target, property, receiver);
+      return tableName => {
+        const builder = target.from(tableName);
+        return new Proxy(builder, {
+          get(query, queryProperty, queryReceiver) {
+            if (queryProperty !== "upsert") {
+              const value = Reflect.get(query, queryProperty, queryReceiver);
+              return typeof value === "function" ? value.bind(query) : value;
+            }
+            return (rows, options = {}) => query.upsert(
+              dedupeRowsByConflictSpec(rows, options?.onConflict, tableName, audit),
+              options
+            );
+          }
+        });
+      };
+    }
+  });
+}
+
 function pickStaticFields(record = {}) {
   return {
     imo: record.imo || null,
@@ -2034,7 +2090,8 @@ export async function recordRawArchiveIndex({ runId, archive = {}, counts = {}, 
 }
 
 export async function saveToSupabase(records, options = {}) {
-  const supabase = getSupabase();
+  const upsertDedupeAudit = {};
+  const supabase = withDedupedUpserts(getSupabase(), upsertDedupeAudit);
   const now = new Date().toISOString();
   const runId = options.runId || createRunId();
   const diagnostics = options.diagnostics || {};
@@ -2051,7 +2108,6 @@ export async function saveToSupabase(records, options = {}) {
         : "no_live_data";
   const storageMode = leanStorageEnabled() ? "lean" : "full";
   const batchSize = Number(process.env.SUPABASE_BATCH_SIZE || 100);
-  const upsertDedupeAudit = {};
   const schemaCompatibility = {
     vessel_snapshots: {
       status: "native_schema",
