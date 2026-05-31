@@ -14,6 +14,7 @@ import {
   portOperationServiceKeyPresent,
   printRuntimeConfigAudit
 } from "./lib/runtime-config-audit.js";
+import { latestSuccessfulFallbackState } from "./lib/dataset-state.js";
 import { PIPELINE_STAGES, sourceOfTruthTables } from "./pipeline/index.js";
 
 const VERSION = "17.7.0";
@@ -5096,6 +5097,7 @@ try {
   const currentRunStoredSuccessfully = isSupabaseWriteCompleted(supabaseWrite?.status) &&
     supabaseWrite?.post_write_verification?.status === "completed" &&
     supabaseWrite?.promoted === true;
+  const latestSuccessfulFallback = latestSuccessfulFallbackState();
   if (VALIDATION_MODE === "production" && !currentRunStoredSuccessfully) {
     report.status = "failed";
     report.data_status = "storage_failed";
@@ -5105,6 +5107,7 @@ try {
     report.error = report.error || "Supabase write did not finalize.";
     report.user_message = "최신 수집은 완료됐지만 DB 저장이 완료되지 않아 마지막 정상 데이터를 표시 중입니다.";
   }
+  report.latest_successful_fallback = latestSuccessfulFallback;
   const summaryStatusRunId = report?.status_run_id || report?.run_id || runId;
   const summaryRunId = report?.summary_run_id || report?.run_id || runId;
   const summaryActiveRunId = report?.active_run_id || report?.source_runtime?.active_run_id || summaryStatusRunId;
@@ -5142,11 +5145,8 @@ try {
       ? "운영 데이터가 수집되지 않았습니다. Port Operation API 설정 또는 GitHub Secrets를 확인하세요."
       : "운영 데이터가 정상 수집되었습니다."),
     missing_required_config: portOperationMissingConfig,
-    latest_successful_snapshot_available: [
-      "dashboard/api/dashboard-summary.json",
-      "dashboard/api/all-collected-vessels.json",
-      "dashboard/api/vessels.json"
-    ].some(path => countJsonRows(readJsonFile(path, [])) > 0),
+    latest_successful_snapshot_available: latestSuccessfulFallback.latest_successful_snapshot_available,
+    latest_successful_fallback: latestSuccessfulFallback,
     collector_not_attempted: collectorNotAttempted,
     collector_not_attempted_reason: collectorNotAttemptedReason,
     runtime_mode_diagnostics: runtimeModeDiagnostics,

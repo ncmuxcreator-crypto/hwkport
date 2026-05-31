@@ -39,13 +39,13 @@ const previousStale = stalePreviousReports.length > 0;
 const dataMode = String(status.data_mode || status.data_mode_detail?.mode || "").toLowerCase();
 const total = vessels.length;
 const recordCount = Number(status.record_count || 0);
-const emptyDataset = total === 0 || recordCount === 0;
+const emptyDataset = datasetState.base_dataset_empty || total === 0 || recordCount === 0;
 const noLiveData = dataMode === "no_live_data";
 const productionReady = !staleReadinessGate && !emptyDataset && !noLiveData;
 const runOrigin = buildRunOrigin({
   runId: statusRunId,
   validationMode,
-  servingMode: dataMode === "no_live_data" ? "local_diagnostics" : "static_json"
+  servingMode: emptyDataset ? "local_diagnostics" : "static_json"
 });
 
 const report = {
@@ -58,6 +58,14 @@ const report = {
   stale_diagnostic: staleReadinessGate,
   placeholder: false,
   ...baseDatasetFields(datasetState),
+  serving_mode: emptyDataset ? "local_diagnostics" : "static_json",
+  data_source_used: emptyDataset ? "diagnostics_or_last_successful_fallback" : "static_json",
+  fallback_used: Boolean(emptyDataset && datasetState.latest_successful_snapshot_available),
+  fallback_reason: emptyDataset
+    ? datasetState.latest_successful_snapshot_available
+      ? "base_dataset_empty_using_latest_successful_fallback"
+      : "base_dataset_empty_no_successful_fallback"
+    : null,
   previous_readiness_run_id: previousReports[0]?.run_id || null,
   previous_readiness_run_ids: [...new Set(previousReports.map(previous => previous.run_id).filter(Boolean))],
   generated_at: new Date().toISOString(),
@@ -71,7 +79,8 @@ const report = {
   empty_dataset_reasons: [
     total === 0 ? "total_is_zero" : null,
     recordCount === 0 ? "record_count_is_zero" : null,
-    noLiveData ? "no_live_data" : null
+    noLiveData ? "no_live_data" : null,
+    ...(datasetState.base_dataset_empty_reasons || [])
   ].filter(Boolean),
   data_mode: status.data_mode || null,
   record_count: recordCount,
@@ -88,8 +97,12 @@ const report = {
 };
 
 fs.mkdirSync("dashboard/api", { recursive: true });
+fs.mkdirSync("dashboard/api/debug", { recursive: true });
 for (const outputPath of outputPaths) {
   fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
+  if (outputPath.startsWith("dashboard/api/")) {
+    fs.writeFileSync(`dashboard/api/debug/${outputPath.slice("dashboard/api/".length)}`, JSON.stringify(report, null, 2));
+  }
 }
 
 if (report.stale_readiness_gate || (validationMode === "production" && !report.ok)) {

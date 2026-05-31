@@ -70,7 +70,7 @@ const vesselsRows = Number(fileRows["dashboard/api/vessels.json"] || 0);
 const allCollectedRows = Number(fileRows["dashboard/api/all-collected-vessels.json"] || 0);
 const targetVesselsRows = Number(fileRows["dashboard/api/target-vessels.json"] || 0);
 const dashboardSummaryRecordCount = Number(dashboardSummary.record_count || 0);
-const emptyDataset = recordCount === 0 || vesselsRows === 0 || allCollectedRows === 0 || dashboardSummaryRecordCount === 0;
+const emptyDataset = datasetState.base_dataset_empty || recordCount === 0 || vesselsRows === 0 || allCollectedRows === 0 || dashboardSummaryRecordCount === 0;
 const localNoLiveData = validationMode === "local" && dataMode === "no_live_data";
 const ok = missing.length === 0 && !emptyDataset;
 const guardSeverity = emptyDataset
@@ -95,6 +95,14 @@ const report = {
   placeholder: false,
   ...baseDatasetFields(datasetState),
   validation_mode: validationMode,
+  serving_mode: emptyDataset ? "local_diagnostics" : "static_json",
+  data_source_used: emptyDataset ? "diagnostics_or_last_successful_fallback" : "static_json",
+  fallback_used: Boolean(emptyDataset && datasetState.latest_successful_snapshot_available),
+  fallback_reason: emptyDataset
+    ? datasetState.latest_successful_snapshot_available
+      ? "base_dataset_empty_using_latest_successful_fallback"
+      : "base_dataset_empty_no_successful_fallback"
+    : null,
   data_mode: dataMode || "unknown",
   record_count: recordCount,
   dashboard_summary_record_count: dashboardSummaryRecordCount,
@@ -124,6 +132,7 @@ const report = {
       ok: dashboardSummaryRecordCount > 0
     }
   },
+  row_count_validation_passed: vesselsRows > 0 && allCollectedRows > 0 && dashboardSummaryRecordCount > 0,
   status: emptyDataset ? "empty_dataset" : "ready",
   guard_severity: guardSeverity,
   ok: ok && !staleDiagnostic,
@@ -139,7 +148,9 @@ const report = {
 };
 
 fs.mkdirSync("dashboard/api", { recursive: true });
+fs.mkdirSync("dashboard/api/debug", { recursive: true });
 fs.writeFileSync("dashboard/api/snapshot-guard.json", JSON.stringify(report, null, 2));
+fs.writeFileSync("dashboard/api/debug/snapshot-guard.json", JSON.stringify(report, null, 2));
 
 if (!report.ok && validationMode === "production") {
   console.error("Snapshot guard failed", report);

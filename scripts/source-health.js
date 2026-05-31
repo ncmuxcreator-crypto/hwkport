@@ -180,10 +180,8 @@ const registryReport = {
 };
 fs.writeFileSync(runtimePath, JSON.stringify(report, null, 2));
 fs.writeFileSync(registryPath, JSON.stringify(registryReport, null, 2));
-if (diagnosticsOnly) {
-  fs.mkdirSync("dashboard/api/debug", { recursive: true });
-  fs.writeFileSync(debugRuntimePath, JSON.stringify(report, null, 2));
-  fs.writeFileSync(debugRegistryPath, JSON.stringify(registryReport, null, 2));
-}
+fs.mkdirSync("dashboard/api/debug", { recursive: true });
+fs.writeFileSync(debugRuntimePath, JSON.stringify(report, null, 2));
+fs.writeFileSync(debugRegistryPath, JSON.stringify(registryReport, null, 2));
 fs.writeFileSync("data/source-health.json", JSON.stringify(registryReport, null, 2));
 console.log("Source health generated");

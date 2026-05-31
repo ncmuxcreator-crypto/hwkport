@@ -33,8 +33,15 @@ function validateRunOrigin(label, payload) {
 
 function validateRuntimeDiagnostic(label, payload, { allowPlaceholder = false } = {}) {
   validateRunOrigin(label, payload);
-  for (const marker of ["generated_at", "status_run_id", "active_run_id", "stale_diagnostic"]) {
-    if (!(marker in (payload || {}))) throw new Error(`${label} missing runtime diagnostic field: ${marker}`);
+  const missingRuntimeMarkers = ["generated_at", "status_run_id", "active_run_id", "stale_diagnostic"]
+    .filter(marker => !(marker in (payload || {})));
+  if (missingRuntimeMarkers.length) {
+    const localNoLiveDataDiagnostics = validationMode === "local" && String(status?.data_mode || "") === "no_live_data";
+    if (localNoLiveDataDiagnostics) {
+      validationWarnings.push(`${label} is a legacy/local diagnostic missing runtime markers: ${missingRuntimeMarkers.join(",")}`);
+    } else {
+      throw new Error(`${label} missing runtime diagnostic field: ${missingRuntimeMarkers[0]}`);
+    }
   }
   if (payload.placeholder === true && !allowPlaceholder) {
     throw new Error(`${label} is a placeholder and must not be used as runtime truth`);

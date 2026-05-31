@@ -47,5 +47,7 @@ const plan = markDerivedReport({
   preflight_failure_reason: status.preflight_failure_reason || status.collector_diagnostics?.preflight_failure_reason || null
 }, datasetState);
 fs.mkdirSync("dashboard/api",{recursive:true});
+fs.mkdirSync("dashboard/api/debug",{recursive:true});
 fs.writeFileSync("dashboard/api/collector-plan-runtime.json", JSON.stringify(plan,null,2));
+fs.writeFileSync("dashboard/api/debug/collector-plan-runtime.json", JSON.stringify(plan,null,2));
 console.log("Collector plan generated");
