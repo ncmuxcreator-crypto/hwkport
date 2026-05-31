@@ -112,10 +112,17 @@ assert(
   "Dashboard KPI cards must resolve missing numeric fields without infinite skeleton loading."
 );
 assert(
+  dashboardSource.includes("function getHotCandidates") &&
+    dashboardSource.includes("hotIdentityKey") &&
+    dashboardSource.includes("compareHotRows"),
+  "HOT candidate cards must dedupe repeated vessel identities and use fixed score sorting."
+);
+assert(
   publicDashboardSource.includes("function getLastUpdatedAt(payload)") &&
     publicDashboardSource.includes("최근 갱신 시간 확인 불가") &&
     publicDashboardSource.includes("AbortController") &&
-    publicDashboardSource.includes("function resolveKpiValue"),
+    publicDashboardSource.includes("function resolveKpiValue") &&
+    publicDashboardSource.includes("function getHotCandidates"),
   "Deployed public dashboard must include the same last-updated fallback logic as dashboard/index.html."
 );
 assert(
