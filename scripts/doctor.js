@@ -100,6 +100,10 @@ const staticFilesMissingActual = staticDatasetFiles.filter(file => !fs.existsSyn
 const staticFilesMissingFromPackage = staticDatasetFiles.filter(file => !isTrackedFile(file));
 const dataMode = status.data_mode || "unknown";
 const dataStatus = filesHaveRows ? "ready" : "empty_dataset";
+const storageSupabase = status.storage?.supabase || status.storage_status?.supabase || status.supabase_write || {};
+const storageSupabaseStatus = String(storageSupabase.status || "unknown").toLowerCase();
+const storageCompleted = storageSupabaseStatus === "completed";
+const postWriteVerification = storageSupabase.post_write_verification || {};
 const missingRequiredConfig = Array.isArray(status.missing_required_config)
   ? status.missing_required_config
   : missingRequiredEnvNames();
@@ -132,7 +136,8 @@ const staticOutputsValid = staticFilesMissingActual.length === 0 &&
 const productionReady = filesExist &&
   filesHaveRows &&
   recordCount > 0 &&
-  !["no_live_data", "degraded_sample_only", "sample_only"].includes(dataMode);
+  !["no_live_data", "degraded_sample_only", "sample_only"].includes(dataMode) &&
+  (status.validation_mode === "production" ? storageCompleted && postWriteVerification.status === "completed" : true);
 
 const report = {
   ...buildRunOrigin({
@@ -166,6 +171,14 @@ const report = {
   dashboard_summary_exists_actual: dashboardSummaryExists,
   dashboard_summary_in_package: isTrackedFile("dashboard/api/dashboard-summary.json"),
   dashboard_summary_record_count: Number(dashboardSummaryPayload.record_count || dashboardSummaryPayload.all_vessels_count || 0),
+  collection: status.collection || null,
+  storage: status.storage || status.storage_status || null,
+  storage_supabase_status: storageSupabaseStatus,
+  rows_written_by_table: status.rows_written_by_table || storageSupabase.db_rows_written_by_table || {},
+  active_run_id: status.active_run_id || null,
+  latest_successful_run_id: status.latest_successful_run_id || storageSupabase.latest_successful_run_id || storageSupabase.latest_successful_summary_run_id || null,
+  promotion_status: status.promotion_status || postWriteVerification.promotion_status || null,
+  post_write_verification: postWriteVerification,
   vessels_json_count: vessels.length,
   record_count: recordCount,
   vessel_rows: vessels.length,
@@ -197,6 +210,8 @@ const report = {
     !filesExist ? "required_files_missing" : null,
     !filesHaveRows ? "empty_dataset" : null,
     recordCount === 0 ? "status_record_count_zero" : null,
+    status.validation_mode === "production" && !storageCompleted ? `supabase_storage_${storageSupabaseStatus}` : null,
+    status.validation_mode === "production" && postWriteVerification.status && postWriteVerification.status !== "completed" ? `post_write_verification_${postWriteVerification.status}` : null,
     ["no_live_data", "degraded_sample_only", "sample_only"].includes(dataMode) ? `data_mode_${dataMode}` : null,
     staticFilesMissingActual.length ? `static_files_missing_actual:${staticFilesMissingActual.join(",")}` : null,
     staticFilesMissingFromPackage.length ? `static_files_missing_from_package:${staticFilesMissingFromPackage.join(",")}` : null

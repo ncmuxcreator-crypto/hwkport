@@ -319,6 +319,25 @@ if (
   if (!hasWarning) contractIssue("dashboard-summary.json must warn when status_run_id !== summary_run_id");
 }
 validateRunOrigin("status.json", status);
+const statusSupabaseStorage = status.storage?.supabase || status.storage_status?.supabase || status.supabase_write || {};
+const statusSupabaseStorageStatus = String(statusSupabaseStorage.status || "").toLowerCase();
+if (validationMode === "production" && ["syncing", "pending", "unknown", "not_configured", ""].includes(statusSupabaseStorageStatus)) {
+  throw new Error(`Production status must not treat non-final Supabase storage status as success: ${statusSupabaseStorageStatus}`);
+}
+if (
+  validationMode === "production" &&
+  Number(status.record_count || 0) > 0 &&
+  statusSupabaseStorageStatus !== "completed"
+) {
+  throw new Error(`Production status with vessel rows requires Supabase storage completed, got: ${statusSupabaseStorageStatus || "missing"}`);
+}
+if (
+  validationMode === "production" &&
+  Number(status.record_count || 0) > 0 &&
+  statusSupabaseStorage.post_write_verification?.status !== "completed"
+) {
+  throw new Error("Production status with vessel rows requires completed post_write_verification");
+}
 validateVesselRowContract("all-collected-vessels.json", jsonRows(allCollectedVessels));
 validateVesselRowContract("target-vessels.json", jsonRows(targetVessels));
 validateVesselRowContract("vessels.json", jsonRows(vessels));

@@ -2161,10 +2161,14 @@ function shouldWriteDebugApiOutputs(report = {}) {
   const dataMode = String(report?.data_mode || report?.data_mode_detail?.mode || "").toLowerCase();
   const recordCount = Number(report?.record_count || 0);
   const allVesselsCount = Number(report?.all_collected_vessel_count || report?.all_vessels_count || 0);
+  const supabaseStorageStatus = String(report?.storage_status?.supabase?.status || report?.supabase_write?.status || "").toLowerCase();
+  const productionStorageNotCompleted = VALIDATION_MODE === "production" &&
+    ["failed", "syncing", "pending", "unknown", "not_configured", ""].includes(supabaseStorageStatus);
   return dataMode === "no_live_data" ||
     dataMode === "degraded_sample_only" ||
     recordCount <= 0 ||
-    allVesselsCount <= 0;
+    allVesselsCount <= 0 ||
+    productionStorageNotCompleted;
 }
 
 function routeApiOutputPath(filePath, report = {}) {
@@ -3468,6 +3472,14 @@ function normalizeServingMode(mode, fallback = "static_json") {
   return fallback;
 }
 
+function isSupabaseWriteCompleted(status) {
+  return ["completed", "synced"].includes(String(status || "").toLowerCase());
+}
+
+function isSupabaseWriteFinal(status) {
+  return ["completed", "failed"].includes(String(status || "").toLowerCase());
+}
+
 function baseDatasetEmptyFields({ dataMode = "", recordCount = 0, allCollectedCount = 0, vesselCount = 0 } = {}) {
   const mode = String(dataMode || "").toLowerCase();
   const baseRows = Math.max(Number(recordCount || 0), Number(allCollectedCount || 0), Number(vesselCount || 0));
@@ -3845,7 +3857,7 @@ function buildDatasetGenerationAudit({
     normalization_gate: sourceRowsCollected > 0 ? (normalizedRows > 0 ? "pass" : "blocked") : "not_reached",
     all_vessels_gate: normalizedRows > 0 ? "pass" : "blocked",
     candidate_generation_gate: normalizedRows > 0 ? "pass" : "not_reached",
-    supabase_promotion_gate: supabaseWrite?.status === "synced" ? "pass" : "not_promoted",
+    supabase_promotion_gate: isSupabaseWriteCompleted(supabaseWrite?.status) ? "pass" : "not_promoted",
     static_export_gate: vesselsJsonRows > 0 || report?.data_mode === "no_live_data" ? "completed" : "empty_export"
   };
   let failedStage = null;
@@ -3874,7 +3886,7 @@ function buildDatasetGenerationAudit({
   if (report?.data_mode === "no_live_data") gateBlockReasons.push("data_mode is no_live_data, so generated JSON intentionally contains zero vessels/candidates.");
   if (report?.supabase_status === "not_configured") gateBlockReasons.push("Supabase is not configured for this run; production must use Worker/Supabase active_dataset_pointer instead of static fallback JSON.");
   if (collectorDiagnostics?.fallback_used) gateBlockReasons.push("Collector fallback/no-live-data guard was used.");
-  if (supabaseWrite?.status && supabaseWrite.status !== "synced") gateBlockReasons.push(`Supabase write status: ${supabaseWrite.status}.`);
+  if (supabaseWrite?.status && !isSupabaseWriteCompleted(supabaseWrite.status)) gateBlockReasons.push(`Supabase write status: ${supabaseWrite.status}.`);
   return {
     generated_at: new Date().toISOString(),
     audit_type: "dataset_generation",
@@ -3949,7 +3961,9 @@ function buildDatasetGenerationAudit({
       "dashboard/api/candidates.json": candidatesJsonRows,
       "dashboard/api/dashboard-summary.json": report?.record_count || 0
     },
-    production_promotion_blocked: report?.data_mode === "no_live_data" || Boolean(supabaseWrite?.promotion?.no_live_data_not_promotable) || (supabaseWrite?.status && supabaseWrite.status !== "synced"),
+    production_promotion_blocked: report?.data_mode === "no_live_data" ||
+      Boolean(supabaseWrite?.promotion?.no_live_data_not_promotable) ||
+      Boolean(supabaseWrite?.status && !isSupabaseWriteCompleted(supabaseWrite.status)),
     previous_successful_dataset_available: previousSuccessfulDatasetAvailable,
     gate_audit: gateAudit,
     gate_block_reasons: gateBlockReasons,
@@ -4164,7 +4178,7 @@ function buildDataMode(records, apiSources = [], supabaseStatus = "not_configure
   const apiReadyRows = records.filter(v => Array.isArray(v.api_ready) && v.api_ready.length > 0).length;
   const mode = !records.length ? "no_live_data" : fallbackUsed ? "degraded_sample_only" : apiReadyRows > 0 ? "api_ready_snapshot" : "static_snapshot";
   const label = mode === "no_live_data" ? "NO LIVE DATA" : mode === "degraded_sample_only" ? "DEGRADED SAMPLE ONLY" : mode === "api_ready_snapshot" ? "API READY SNAPSHOT" : "STATIC SNAPSHOT";
-  const liveReady = !fallbackUsed && enabledSources.length > 0 && sampleRows < records.length && supabaseStatus === "synced";
+  const liveReady = !fallbackUsed && enabledSources.length > 0 && sampleRows < records.length && isSupabaseWriteCompleted(supabaseStatus);
   const commercialUseStatus = !records.length ? "not_ready" : actionableRows > 0 ? "review_required" : "not_ready";
   return {
     mode,
@@ -4696,8 +4710,23 @@ try {
       diagnostics: getCollectorDiagnostics(),
       status
     });
-    supabaseWrite = { status: "synced", ...result };
-    supabaseStatus = "synced";
+    const finalized = result?.post_write_verification?.status === "completed";
+    supabaseWrite = {
+      status: finalized ? "completed" : "failed",
+      legacy_status: finalized ? "synced" : null,
+      storage_finalization_status: result?.post_write_verification?.status || "unknown",
+      ...result,
+      post_write_verification: result?.post_write_verification || {
+        status: "failed",
+        errors: ["missing_post_write_verification"]
+      },
+      failure_behavior: finalized ? null : {
+        fail_production_run: true,
+        preserve_previous_successful_static_outputs: true,
+        dashboard_banner: "최신 수집은 완료됐지만 DB 저장이 완료되지 않아 마지막 정상 데이터를 표시 중입니다."
+      }
+    };
+    supabaseStatus = supabaseWrite.status;
   }
 } catch (error) {
   status = "failed";
@@ -4707,6 +4736,15 @@ try {
       status: "failed",
       error: errorMessage,
       failed_stage: "supabase_write",
+      post_write_verification: error?.postWriteVerification || {
+        status: "failed",
+        errors: ["supabase_write_threw_before_finalization"]
+      },
+      failure_behavior: {
+        fail_production_run: true,
+        preserve_previous_successful_static_outputs: true,
+        dashboard_banner: "최신 수집은 완료됐지만 DB 저장이 완료되지 않아 마지막 정상 데이터를 표시 중입니다."
+      },
       note: "Supabase write started but did not complete successfully."
     };
     supabaseStatus = "failed";
@@ -4811,6 +4849,13 @@ try {
     },
     data_mode: dataMode,
     data_mode_detail: dataModeDetail,
+    collection: {
+      real_rows: dataModeDetail.real_rows,
+      actionable_rows: actionableRows,
+      source_rows_collected: Number(collectorDiagnostics.raw_row_count || collectedRows.length || 0),
+      normalized_rows: vessels.length,
+      ports_attempted_count: portsAttemptedCount
+    },
     api_sources: detectSecrets(),
     config_diagnostics: startupConfigDiagnostics,
     api_registry_version: "korea-port-secret-registry-v12-backend-stability",
@@ -5026,7 +5071,7 @@ try {
     gdriveArchive = { status: "failed", error: archiveError?.message || String(archiveError) };
     rawArchiveIndex = { status: "skipped", reason: "archive_failed" };
   }
-  if (supabaseWrite?.status === "synced") {
+  if (isSupabaseWriteCompleted(supabaseWrite?.status)) {
     supabaseWrite = {
       ...supabaseWrite,
       raw_payload_archive_status: gdriveArchive.status,
@@ -5043,12 +5088,35 @@ try {
     gdrive: gdriveArchive,
     raw_archive_index: rawArchiveIndex
   };
+  report.storage = report.storage_status;
+  report.rows_written_by_table = supabaseWrite?.db_rows_written_by_table || {};
+  report.active_run_id = supabaseWrite?.active_run_id || report.active_run_id || runId;
+  report.latest_successful_run_id = supabaseWrite?.latest_successful_run_id || supabaseWrite?.latest_successful_summary_run_id || null;
+  report.promotion_status = supabaseWrite?.post_write_verification?.promotion_status || (supabaseWrite?.promoted ? "promoted" : "not_promoted");
+  const currentRunStoredSuccessfully = isSupabaseWriteCompleted(supabaseWrite?.status) &&
+    supabaseWrite?.post_write_verification?.status === "completed" &&
+    supabaseWrite?.promoted === true;
+  if (VALIDATION_MODE === "production" && !currentRunStoredSuccessfully) {
+    report.status = "failed";
+    report.data_status = "storage_failed";
+    report.data_source_used = "last_successful_snapshot_fallback";
+    report.fallback_used = true;
+    report.fallback_reason = "supabase_write_did_not_finalize";
+    report.error = report.error || "Supabase write did not finalize.";
+    report.user_message = "최신 수집은 완료됐지만 DB 저장이 완료되지 않아 마지막 정상 데이터를 표시 중입니다.";
+  }
   const summaryStatusRunId = report?.status_run_id || report?.run_id || runId;
   const summaryRunId = report?.summary_run_id || report?.run_id || runId;
   const summaryActiveRunId = report?.active_run_id || report?.source_runtime?.active_run_id || summaryStatusRunId;
-  const latestSuccessfulRunId = report?.supabase_write?.latest_successful_summary_run_id ||
-    report?.storage_status?.supabase?.latest_successful_summary_run_id ||
-    (report?.data_mode !== "no_live_data" && Number(report?.record_count || 0) > 0 ? summaryRunId : null);
+  const latestSuccessfulRunId = currentRunStoredSuccessfully
+    ? (report?.supabase_write?.latest_successful_run_id ||
+      report?.supabase_write?.latest_successful_summary_run_id ||
+      report?.storage_status?.supabase?.latest_successful_run_id ||
+      report?.storage_status?.supabase?.latest_successful_summary_run_id ||
+      summaryRunId)
+    : (report?.supabase_write?.latest_successful_run_id ||
+      report?.storage_status?.supabase?.latest_successful_run_id ||
+      null);
   const summaryRunMismatch = Boolean(summaryStatusRunId && summaryRunId && String(summaryStatusRunId) !== String(summaryRunId));
   const summaryRunWarnings = summaryRunMismatch ? ["status_run_id !== summary_run_id"] : [];
   const dashboardSummary = {
@@ -5066,13 +5134,13 @@ try {
       active_collected_at: report?.completed_at || completedAt,
       update_interval_label_ko: "4시간마다 자동 업데이트"
     },
-    data_source_used: report?.data_mode === "no_live_data" ? "diagnostics_only_no_live_data" : "static_json_snapshot",
-    fallback_used: report?.data_mode === "no_live_data",
-    fallback_reason: report?.data_mode === "no_live_data" ? "local_or_failed_run_without_live_source_rows" : null,
-    data_status: report?.data_mode === "no_live_data" ? "diagnostics_only" : "ready",
-    user_message: report?.data_mode === "no_live_data"
+    data_source_used: report?.data_source_used || (report?.data_mode === "no_live_data" ? "diagnostics_only_no_live_data" : "static_json_snapshot"),
+    fallback_used: Boolean(report?.fallback_used || report?.data_mode === "no_live_data"),
+    fallback_reason: report?.fallback_reason || (report?.data_mode === "no_live_data" ? "local_or_failed_run_without_live_source_rows" : null),
+    data_status: report?.data_status || (report?.data_mode === "no_live_data" ? "diagnostics_only" : "ready"),
+    user_message: report?.user_message || (report?.data_mode === "no_live_data"
       ? "운영 데이터가 수집되지 않았습니다. Port Operation API 설정 또는 GitHub Secrets를 확인하세요."
-      : "운영 데이터가 정상 수집되었습니다.",
+      : "운영 데이터가 정상 수집되었습니다."),
     missing_required_config: portOperationMissingConfig,
     latest_successful_snapshot_available: [
       "dashboard/api/dashboard-summary.json",
@@ -5082,8 +5150,12 @@ try {
     collector_not_attempted: collectorNotAttempted,
     collector_not_attempted_reason: collectorNotAttemptedReason,
     runtime_mode_diagnostics: runtimeModeDiagnostics,
-    production_ready: report?.data_mode !== "no_live_data" && Number(report?.record_count || 0) > 0,
+    production_ready: currentRunStoredSuccessfully,
     record_count: report?.record_count || 0,
+    storage: report.storage_status,
+    storage_status: report.storage_status,
+    rows_written_by_table: report.rows_written_by_table,
+    promotion_status: report.promotion_status,
     all_vessels_count: report?.all_collected_vessel_count || allCollectedVessels.length,
     target_vessels_count: report?.target_vessel_count || targetVessels.length,
     sales_target_count: report?.sales_candidate_count || salesCandidates.length,
@@ -5103,10 +5175,14 @@ try {
       generated_at: completedAt,
       data_mode: report?.data_mode,
       record_count: report?.record_count || 0,
-      data_status: report?.data_mode === "no_live_data" ? "diagnostics_only" : "ready",
-      user_message: report?.data_mode === "no_live_data"
+      storage: report.storage_status,
+      storage_status: report.storage_status,
+      rows_written_by_table: report.rows_written_by_table,
+      promotion_status: report.promotion_status,
+      data_status: report?.data_status || (report?.data_mode === "no_live_data" ? "diagnostics_only" : "ready"),
+      user_message: report?.user_message || (report?.data_mode === "no_live_data"
         ? "운영 데이터가 수집되지 않았습니다. Port Operation API 설정 또는 GitHub Secrets를 확인하세요."
-        : "운영 데이터가 정상 수집되었습니다.",
+        : "운영 데이터가 정상 수집되었습니다."),
       missing_required_config: portOperationMissingConfig,
       collector_not_attempted: collectorNotAttempted,
       collector_not_attempted_reason: collectorNotAttemptedReason,
@@ -5127,7 +5203,9 @@ try {
   report.last_successful_dataset_lock = {
     locked: lastSuccessfulDatasetLocked,
     reason: lastSuccessfulDatasetLocked
-      ? String(report.data_mode || report.data_mode_detail?.mode || "").toLowerCase() === "degraded_sample_only"
+      ? report.fallback_reason === "supabase_write_did_not_finalize"
+        ? "supabase_write_did_not_finalize"
+        : String(report.data_mode || report.data_mode_detail?.mode || "").toLowerCase() === "degraded_sample_only"
         ? "degraded_sample_only"
         : Number(report.record_count || 0) <= 0 || Number(report.all_collected_vessel_count || 0) <= 0
           ? "empty_dataset"
@@ -5290,6 +5368,10 @@ try {
     supabase_write_status: report.supabase_write?.status || report.storage_status?.supabase?.status || "unknown",
     supabase_promoted: report.supabase_write?.promoted ?? report.storage_status?.supabase?.promoted ?? null,
     supabase_promotion_blockers: report.supabase_write?.promotion?.promotion_blockers || report.storage_status?.supabase?.promotion?.promotion_blockers || [],
+    post_write_verification: report.supabase_write?.post_write_verification?.status || "unknown",
+    active_run_id: report.active_run_id || null,
+    latest_successful_run_id: report.latest_successful_run_id || null,
+    promotion_status: report.promotion_status || null,
     failed_stage: report.dataset_generation_audit?.failed_stage || null,
     root_cause: report.dataset_generation_audit?.root_cause || null,
     error: report.error || report.supabase_write?.error || null
@@ -5309,8 +5391,16 @@ try {
     console.error(`[HWK] Production update failed: ${report.error || "unknown_error"}`);
     process.exitCode = 1;
   }
-  if (VALIDATION_MODE === "production" && ["failed", "syncing"].includes(String(report.supabase_write?.status || ""))) {
-    console.error(`[HWK] Production Supabase write did not complete: ${report.supabase_write?.status}`);
+  if (VALIDATION_MODE === "production" && !isSupabaseWriteFinal(report.supabase_write?.status)) {
+    console.error("[HWK] Supabase write did not finalize.");
+    process.exitCode = 1;
+  }
+  if (VALIDATION_MODE === "production" && report.supabase_write?.status !== "completed") {
+    console.error(`[HWK] Production Supabase write did not complete: ${report.supabase_write?.status || "unknown"}`);
+    process.exitCode = 1;
+  }
+  if (VALIDATION_MODE === "production" && report.supabase_write?.post_write_verification?.status !== "completed") {
+    console.error(`[HWK] Production post-write verification failed: ${(report.supabase_write?.post_write_verification?.errors || []).join(",") || "unknown"}`);
     process.exitCode = 1;
   }
 }

@@ -1474,6 +1474,88 @@ async function upsertOptionalDiagnosticsRow(supabase, table, row, options = {}) 
   return result;
 }
 
+async function verifySupabaseWriteFinalization(supabase, context = {}) {
+  const {
+    runId,
+    promoted,
+    promotion,
+    recordsSaved = 0,
+    portCallMasterRowsWritten = 0,
+    dashboardSummarySnapshotResult = {},
+    dbRowsWrittenByTable = {}
+  } = context;
+  const verification = {
+    status: "pending",
+    run_id: runId,
+    promotion_status: promoted ? "promoted" : "not_promoted",
+    rows_written_to_vessel_snapshots: Number(recordsSaved || 0),
+    rows_written_to_port_call_master: Number(portCallMasterRowsWritten || 0),
+    rows_written_by_table: dbRowsWrittenByTable,
+    active_dataset_pointer_updated: false,
+    dashboard_summary_snapshot_written: Number(dashboardSummarySnapshotResult.summary_snapshot_rows || 0) > 0,
+    latest_successful_run_id_updated: false,
+    active_run_id: null,
+    latest_successful_run_id: null,
+    errors: []
+  };
+
+  if (verification.rows_written_to_vessel_snapshots <= 0) {
+    verification.errors.push("rows_written_to_vessel_snapshots_zero");
+  }
+  if (verification.rows_written_to_port_call_master <= 0) {
+    verification.errors.push("rows_written_to_port_call_master_zero");
+  }
+  if (!verification.dashboard_summary_snapshot_written) {
+    verification.errors.push("dashboard_summary_snapshot_not_written");
+  }
+  if (!promoted) {
+    verification.errors.push("active_dataset_pointer_not_promoted");
+  }
+  if (promotion?.promotable === false && Array.isArray(promotion.promotion_blockers) && promotion.promotion_blockers.length) {
+    verification.promotion_blockers = promotion.promotion_blockers;
+  }
+
+  const activePointer = await supabase
+    .from("active_dataset_pointer")
+    .select("active_run_id,promoted_at")
+    .eq("id", "current")
+    .limit(1);
+  if (activePointer.error) {
+    verification.errors.push(`active_dataset_pointer_read_failed:${activePointer.error.message}`);
+  } else {
+    const pointerRow = Array.isArray(activePointer.data) ? activePointer.data[0] : activePointer.data;
+    verification.active_run_id = pointerRow?.active_run_id || null;
+    verification.active_dataset_pointer_updated = Boolean(runId && pointerRow?.active_run_id === runId);
+    if (promoted && !verification.active_dataset_pointer_updated) {
+      verification.errors.push("active_dataset_pointer_run_id_mismatch");
+    }
+  }
+
+  const latestSummary = await supabase
+    .from("dashboard_summary_snapshots")
+    .select("run_id,record_count,all_vessels_count,generated_at,is_latest_successful")
+    .eq("is_latest_successful", true)
+    .order("generated_at", { ascending: false })
+    .limit(1);
+  if (latestSummary.error) {
+    verification.errors.push(`latest_successful_summary_read_failed:${latestSummary.error.message}`);
+  } else {
+    const summaryRow = Array.isArray(latestSummary.data) ? latestSummary.data[0] : latestSummary.data;
+    verification.latest_successful_run_id = summaryRow?.run_id || null;
+    verification.latest_successful_record_count = Number(summaryRow?.all_vessels_count || summaryRow?.record_count || 0);
+    verification.latest_successful_run_id_updated = Boolean(runId && summaryRow?.run_id === runId);
+    if (!verification.latest_successful_run_id_updated) {
+      verification.errors.push("latest_successful_run_id_not_updated");
+    }
+    if (verification.latest_successful_record_count <= 0) {
+      verification.errors.push("latest_successful_summary_record_count_zero");
+    }
+  }
+
+  verification.status = verification.errors.length ? "failed" : "completed";
+  return verification;
+}
+
 function eventTimeBucket(value, fallback = new Date()) {
   const date = new Date(value || fallback);
   if (Number.isNaN(date.getTime())) return kstSnapshotDate(fallback);
@@ -3506,6 +3588,17 @@ export async function saveToSupabase(records, options = {}) {
 
   let promoted = false;
   if (promotion.promotable) {
+    if (recordsSaved <= 0) {
+      blockPromotion(promotion, "rows_written_to_vessel_snapshots_positive", "No rows were written to vessel_snapshots.");
+    }
+    if (portCallMasterRows.length <= 0) {
+      blockPromotion(promotion, "rows_written_to_port_call_master_positive", "No rows were written to port_call_master.");
+    }
+    if (dashboardSummarySnapshotResult.summary_snapshot_rows <= 0) {
+      blockPromotion(promotion, "dashboard_summary_snapshot_written", "Dashboard summary snapshot was not written.");
+    }
+  }
+  if (promotion.promotable) {
     const { error } = await supabase.from("active_dataset_pointer").upsert({
       id: "current",
       active_run_id: runId,
@@ -3550,10 +3643,20 @@ export async function saveToSupabase(records, options = {}) {
     vessel_universe_audit: vesselUniverseAuditResult.rows_written
   };
   const retentionRowsDeletedByTable = Object.fromEntries(Object.entries(retentionCleanup || {}).map(([table, value]) => [table, Number(value?.rows_deleted || 0)]));
+  const postWriteVerification = await verifySupabaseWriteFinalization(supabase, {
+    runId,
+    promoted,
+    promotion,
+    recordsSaved,
+    portCallMasterRowsWritten: portCallMasterRows.length,
+    dashboardSummarySnapshotResult,
+    dbRowsWrittenByTable
+  });
+  const storageFinalized = postWriteVerification.status === "completed";
 
   await supabase.from("data_collection_runs").update({
-    status: promoted ? "promoted" : runStatus === "promotable" ? "degraded_not_promoted" : runStatus,
-    validation_status: promoted ? "passed" : "not_promoted",
+    status: storageFinalized ? promoted ? "promoted" : runStatus === "promotable" ? "degraded_not_promoted" : runStatus : "storage_finalization_failed",
+    validation_status: storageFinalized && promoted ? "passed" : "failed",
     source_summary: {
       ...diagnostics,
       imo_recovery: imoRecoveryDiagnostics,
@@ -3562,6 +3665,7 @@ export async function saveToSupabase(records, options = {}) {
       db_foundation_write_mode: foundationWriteMode(),
       db_rows_written_by_table: dbRowsWrittenByTable,
       retention_rows_deleted_by_table: retentionRowsDeletedByTable,
+      post_write_verification: postWriteVerification,
       dashboard_summary_snapshot: dashboardSummarySnapshotResult,
       materialized_current_tables: currentMaterializedResult,
       vessel_universe_audit: vesselUniverseAuditResult,
@@ -3576,7 +3680,7 @@ export async function saveToSupabase(records, options = {}) {
         high_score_without_explanation_count: intelligencePopulationDiagnostics.high_score_without_explanation_count
       }
     },
-    error_summary: { error: options.error || null, promotion, historical_snapshot: historicalSnapshotResult.historical_snapshot_error_summary }
+    error_summary: { error: options.error || (storageFinalized ? null : "Supabase write did not finalize."), promotion, post_write_verification: postWriteVerification, historical_snapshot: historicalSnapshotResult.historical_snapshot_error_summary }
   }).eq("run_id", runId);
 
   return {
@@ -3608,6 +3712,10 @@ export async function saveToSupabase(records, options = {}) {
     ...dashboardSummarySnapshotResult,
     ...currentMaterializedResult,
     vesselUniverseAudit: vesselUniverseAuditResult,
+    post_write_verification: postWriteVerification,
+    storage_finalization_status: postWriteVerification.status,
+    active_run_id: postWriteVerification.active_run_id,
+    latest_successful_run_id: postWriteVerification.latest_successful_run_id,
     db_rows_written_by_table: dbRowsWrittenByTable,
     retention_rows_deleted_by_table: retentionRowsDeletedByTable,
     retentionCleanup,
