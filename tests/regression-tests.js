@@ -118,6 +118,12 @@ assert(
   "HOT candidate cards must dedupe repeated vessel identities and use fixed score sorting."
 );
 assert(
+  dashboardSource.includes("subSum>total") &&
+    dashboardSource.includes("서브항 일부 표시") &&
+    publicDashboardSource.includes("서브항 일부 표시"),
+  "Port cards must not report partial sub-port breakdowns as total-count mismatches."
+);
+assert(
   publicDashboardSource.includes("function getLastUpdatedAt(payload)") &&
     publicDashboardSource.includes("최근 갱신 시간 확인 불가") &&
     publicDashboardSource.includes("AbortController") &&
