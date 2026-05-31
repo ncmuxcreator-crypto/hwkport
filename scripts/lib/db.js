@@ -882,6 +882,10 @@ function scoreNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function hasValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
 function candidateLabel(record = {}) {
   const score = commercialScore(record);
   if (record.candidate_band) return record.candidate_band;

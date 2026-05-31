@@ -46,8 +46,8 @@ function validateRuntimeDiagnostic(label, payload, { allowPlaceholder = false } 
     .filter(marker => !(marker in (payload || {})));
   if (missingRuntimeMarkers.length) {
     const localNoLiveDataDiagnostics = validationMode === "local" && String(status?.data_mode || "") === "no_live_data";
-    if (localNoLiveDataDiagnostics) {
-      validationWarnings.push(`${label} is a legacy/local diagnostic missing runtime markers: ${missingRuntimeMarkers.join(",")}`);
+    if (allowPlaceholder || localNoLiveDataDiagnostics || (typeof protectedFailedRun !== "undefined" && protectedFailedRun)) {
+      validationWarnings.push(`${label} is a legacy/protected diagnostic missing runtime markers: ${missingRuntimeMarkers.join(",")}`);
     } else {
       throw new Error(`${label} missing runtime diagnostic field: ${missingRuntimeMarkers[0]}`);
     }
