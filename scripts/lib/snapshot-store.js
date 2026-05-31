@@ -153,7 +153,7 @@ export function buildCandidateChanges(current = [], previous = []) {
   };
 }
 
-export function buildBackendOpsReport({ version, buildName, records = [], apiSources = [], supabaseStatus = "not_configured" }) {
+export function buildBackendOpsReport({ version, buildName, records = [], apiSources = [], supabaseStatus = "not_configured", runOrigin = {} }) {
   const enabled = apiSources.filter(s => s.enabled).map(s => s.key);
   const collectorTiers = [
     { tier: "base", name: "Port-call / berth signals", sources: ["port_operation", "berth_sources", "pilot_sources", "ulsan_core"] },
@@ -176,6 +176,7 @@ export function buildBackendOpsReport({ version, buildName, records = [], apiSou
   const changed = records.filter(r => Number(r.candidate_score_delta || 0) !== 0);
 
   return {
+    ...runOrigin,
     version,
     build_name: buildName,
     backend_stage: "actual_collector_backend_ready",
@@ -202,12 +203,12 @@ export function buildBackendOpsReport({ version, buildName, records = [], apiSou
   };
 }
 
-export function writeSnapshotOutputs({ records = [], report = {}, version, buildName, apiSources = [], supabaseStatus, diagnosticsOnly = false, debugDir = "dashboard/api/debug" }) {
+export function writeSnapshotOutputs({ records = [], report = {}, version, buildName, apiSources = [], supabaseStatus, diagnosticsOnly = false, debugDir = "dashboard/api/debug", runOrigin = {} }) {
   const previous = report.data_mode === "no_live_data" ? [] : safeReadJson("data/latest-lite.json", []);
   const merged = mergeSnapshots(records, Array.isArray(previous) ? previous : []);
   const today = new Date().toISOString().slice(0, 10);
   const candidateChanges = buildCandidateChanges(merged, Array.isArray(previous) ? previous : []);
-  const backendOps = buildBackendOpsReport({ version, buildName, records: merged, apiSources, supabaseStatus });
+  const backendOps = buildBackendOpsReport({ version, buildName, records: merged, apiSources, supabaseStatus, runOrigin });
   const apiDir = diagnosticsOnly ? debugDir : "dashboard/api";
 
   ensureDir(`${apiDir}/backend-ops.json`);

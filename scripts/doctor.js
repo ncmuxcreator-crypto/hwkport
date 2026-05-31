@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
-import { buildRuntimeConfigAudit, missingRequiredEnvNames } from "./lib/runtime-config-audit.js";
+import { buildRunOrigin, buildRuntimeConfigAudit, missingRequiredEnvNames } from "./lib/runtime-config-audit.js";
 
 const requiredFiles = [
   "package.json",
@@ -132,6 +132,11 @@ const productionReady = filesExist &&
   !["no_live_data", "degraded_sample_only", "sample_only"].includes(dataMode);
 
 const report = {
+  ...buildRunOrigin({
+    runId: status.run_id || status.active_run_id || null,
+    validationMode: status.validation_mode || process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local"),
+    servingMode
+  }),
   ok: productionReady,
   checked_at: new Date().toISOString(),
   serving_mode: servingMode,

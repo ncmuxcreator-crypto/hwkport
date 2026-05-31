@@ -25,6 +25,12 @@ function usingDebugOutput(file) {
   return outputPath(file).replace(/\\/g, "/").startsWith(`${DEBUG_API_DIR}/`);
 }
 
+function validateRunOrigin(label, payload) {
+  for (const marker of ["generated_by", "is_github_actions", "validation_mode", "serving_mode", "run_id"]) {
+    if (!(marker in (payload || {}))) throw new Error(`${label} missing run origin field: ${marker}`);
+  }
+}
+
 const required = [
   "data/latest-lite.json",
   "data/pipeline-report.json",
@@ -57,6 +63,9 @@ const required = [
   "dashboard/api/ports.json",
   "dashboard/api/coverage-registry.json",
   "dashboard/api/readiness-gate.json",
+  "dashboard/api/snapshot-guard.json",
+  "dashboard/api/source-health-runtime.json",
+  "dashboard/api/collector-plan-runtime.json",
   "dashboard/api/backend-ops.json",
   "dashboard/api/candidate-changes.json",
   ".github/workflows/longterm-update.yml",
@@ -241,11 +250,13 @@ function validateVesselRowContract(name, rows) {
 }
 validateApiContract("dashboard-summary.json", dashboardSummary);
 validateApiContract("status.json", status);
+validateRunOrigin("status.json", status);
 validateVesselRowContract("all-collected-vessels.json", jsonRows(allCollectedVessels));
 validateVesselRowContract("target-vessels.json", jsonRows(targetVessels));
 validateVesselRowContract("vessels.json", jsonRows(vessels));
 if (outputExists("dashboard/api/backend-doctor.json")) {
   const doctor = readOutputJson("dashboard/api/backend-doctor.json");
+  if ("generated_by" in doctor) validateRunOrigin("backend-doctor.json", doctor);
   if (doctor.files_have_rows === false && doctor.ok === true) {
     throw new Error("Backend doctor must not return ok=true for empty vessel data");
   }
@@ -264,6 +275,7 @@ if (outputExists("dashboard/api/backend-doctor.json")) {
 }
 if (outputExists("dashboard/api/readiness-gate.json")) {
   const readiness = readOutputJson("dashboard/api/readiness-gate.json");
+  validateRunOrigin("readiness-gate.json", readiness);
   if (!readiness.run_id || !readiness.generated_at) {
     throw new Error("Readiness gate must include run_id and generated_at");
   }
@@ -279,6 +291,7 @@ if (outputExists("dashboard/api/readiness-gate.json")) {
 }
 if (outputExists("dashboard/api/snapshot-guard.json")) {
   const guard = readOutputJson("dashboard/api/snapshot-guard.json");
+  validateRunOrigin("snapshot-guard.json", guard);
   if (Number(status.record_count || 0) === 0 && guard.status !== "empty_dataset") {
     throw new Error("Snapshot guard must mark zero-row outputs as empty_dataset");
   }
@@ -288,6 +301,7 @@ if (outputExists("dashboard/api/snapshot-guard.json")) {
 }
 if (outputExists("dashboard/api/source-health-runtime.json")) {
   const sourceHealth = readOutputJson("dashboard/api/source-health-runtime.json");
+  validateRunOrigin("source-health-runtime.json", sourceHealth);
   const sourceHealthHasCurrentRunFields = ["run_id", "generated_at", "secrets_present", "enabled_collectors", "attempted_collectors", "skipped_collectors"].every(marker => marker in sourceHealth);
   const localDebugStatusWithStaleMainSourceHealth = validationMode === "local" &&
     String(status.data_mode || "") === "no_live_data" &&
@@ -304,6 +318,12 @@ if (outputExists("dashboard/api/source-health-runtime.json")) {
   for (const marker of ["run_id", "generated_at", "secrets_present", "enabled_collectors", "attempted_collectors", "skipped_collectors"]) {
     if (!(marker in sourceHealth)) throw new Error(`Source health runtime missing current-run field: ${marker}`);
   }
+}
+if (outputExists("dashboard/api/collector-plan-runtime.json")) {
+  validateRunOrigin("collector-plan-runtime.json", readOutputJson("dashboard/api/collector-plan-runtime.json"));
+}
+if (outputExists("dashboard/api/backend-ops.json")) {
+  validateRunOrigin("backend-ops.json", readOutputJson("dashboard/api/backend-ops.json"));
 }
 if (!status.candidate_ops || !status.backend_health || !status.seven_pack_summary) {
   throw new Error("Missing stability bundle outputs");

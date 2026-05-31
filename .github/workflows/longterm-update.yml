@@ -79,7 +79,7 @@ jobs:
       SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
       SERVICEKEY: ${{ secrets.SERVICEKEY }}
       YGPA_SERVICE_KEY: ${{ secrets.YGPA_SERVICE_KEY }}
-      PORT_OPERATION_API_URL: ${{ vars.PORT_OPERATION_API_URL || secrets.PORT_OPERATION_API_URL }}
+      PORT_OPERATION_API_URL: ${{ vars.PORT_OPERATION_API_URL || secrets.PORT_OPERATION_API_URL || 'http://apis.data.go.kr/1192000/VsslEtrynd5/Info5' }}
       ULSAN_API_URL: ${{ secrets.ULSAN_API_URL }}
       ULSAN_API_KEY: ${{ secrets.ULSAN_API_KEY }}
       ULSAN_BERTH_DETAIL_API_URL: ${{ secrets.ULSAN_BERTH_DETAIL_API_URL }}

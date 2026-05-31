@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { buildRuntimeConfigAudit, portOperationApiUrlInfo, portOperationServiceKeyPresent } from "./lib/runtime-config-audit.js";
+import { buildRunOrigin, buildRuntimeConfigAudit, portOperationApiUrlInfo, portOperationServiceKeyPresent } from "./lib/runtime-config-audit.js";
 
 const tracked = [
   "SUPABASE_URL",
@@ -73,8 +73,14 @@ const collectorNotAttemptedReason = portOperationAttemptedCount === 0
     ? "missing_service_key_and_api_url"
     : diagnostics.preflight_failure_reason || diagnostics.preflight?.preflight_failure_reason || diagnostics.skip_reason || "unknown_error"
   : null;
+const runOrigin = buildRunOrigin({
+  runId: statusRunId,
+  validationMode,
+  servingMode
+});
 
 const report = {
+  ...runOrigin,
   version: "17.7.0",
   run_id: statusRunId,
   status_run_id: statusRunId,
@@ -138,6 +144,7 @@ fs.mkdirSync("dashboard/api", { recursive: true });
 if (diagnosticsOnly) fs.mkdirSync("dashboard/api/debug", { recursive: true });
 fs.mkdirSync("data", { recursive: true });
 const registryReport = {
+  ...runOrigin,
   version: "17.7.0",
   run_id: statusRunId,
   generated_at: report.generated_at,

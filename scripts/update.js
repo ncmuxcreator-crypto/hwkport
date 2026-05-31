@@ -8,6 +8,7 @@ import { enrichWithReferenceDictionaries, loadReferenceDictionaries } from "./li
 import { configDiagnostics, validateRequiredConfig } from "./lib/config.js";
 import {
   buildRuntimeConfigAudit,
+  buildRunOrigin,
   missingRequiredEnvNames,
   portOperationApiUrlInfo,
   portOperationServiceKeyPresent,
@@ -2179,6 +2180,34 @@ function writeApiJson(filePath, payload, report = {}) {
   return target;
 }
 
+function withRunOrigin(payload = {}, origin = {}) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  return {
+    ...origin,
+    ...payload,
+    run_id: payload.run_id || origin.run_id || null,
+    validation_mode: payload.validation_mode || origin.validation_mode,
+    serving_mode: payload.serving_mode || origin.serving_mode,
+    generated_by: payload.generated_by || origin.generated_by,
+    is_github_actions: payload.is_github_actions ?? origin.is_github_actions,
+    GITHUB_RUN_ID: payload.GITHUB_RUN_ID || origin.GITHUB_RUN_ID || null,
+    GITHUB_WORKFLOW: payload.GITHUB_WORKFLOW || origin.GITHUB_WORKFLOW || null
+  };
+}
+
+function writeRuntimeDiagnosticJson(filePath, payload, origin = {}) {
+  const normalized = String(filePath || "").replace(/\\/g, "/");
+  const body = withRunOrigin(payload, origin);
+  fs.mkdirSync(normalized.split("/").slice(0, -1).join("/"), { recursive: true });
+  fs.writeFileSync(normalized, JSON.stringify(body, null, 2));
+  if (normalized.startsWith("dashboard/api/")) {
+    const debugPath = `${DEBUG_API_DIR}/${normalized.slice("dashboard/api/".length)}`;
+    fs.mkdirSync(debugPath.split("/").slice(0, -1).join("/"), { recursive: true });
+    fs.writeFileSync(debugPath, JSON.stringify(body, null, 2));
+  }
+  return normalized;
+}
+
 function riskLevel(score = 0) {
   if (score >= 85) return "Critical";
   if (score >= 70) return "High";
@@ -3495,6 +3524,130 @@ function buildReadinessGateReport({ report = {}, vessels = [], generatedAt = new
   };
 }
 
+function buildSnapshotGuardRuntimeReport({ report = {}, dashboardSummary = {}, allCollectedVessels = [], targetVessels = [], vessels = [], candidateList = [], generatedAt = new Date().toISOString() } = {}) {
+  const fileRows = {
+    "dashboard/api/vessels.json": vessels.length,
+    "dashboard/api/all-collected-vessels.json": allCollectedVessels.length,
+    "dashboard/api/target-vessels.json": targetVessels.length,
+    "dashboard/api/candidates.json": candidateList.length,
+    "dashboard/api/dashboard-summary.json": Number(dashboardSummary.record_count || 0)
+  };
+  const recordCount = Number(report.record_count || 0);
+  const allCollectedRows = Number(report.all_collected_vessel_count || allCollectedVessels.length || 0);
+  const dataMode = String(report.data_mode || report.data_mode_detail?.mode || "").toLowerCase();
+  const emptyDataset = recordCount === 0 || allCollectedRows === 0;
+  const localNoLiveData = VALIDATION_MODE === "local" && dataMode === "no_live_data";
+  const ok = !emptyDataset;
+  return {
+    version: VERSION,
+    run_id: report.run_id || runId,
+    active_run_id: report.active_run_id || report.run_id || runId,
+    generated_at: generatedAt,
+    validation_mode: VALIDATION_MODE,
+    data_mode: dataMode || "unknown",
+    record_count: recordCount,
+    dashboard_summary_record_count: Number(dashboardSummary.record_count || 0),
+    required: Object.keys(fileRows),
+    missing: [],
+    empty: Object.entries(fileRows).filter(([, rows]) => Number(rows || 0) === 0).map(([file]) => file),
+    file_rows: fileRows,
+    status: emptyDataset ? "empty_dataset" : "ready",
+    guard_severity: emptyDataset ? localNoLiveData ? "diagnostics_only" : "fatal" : "ready",
+    ok,
+    production_ready: ok && VALIDATION_MODE === "production",
+    diagnostics_only: localNoLiveData && emptyDataset,
+    warning: localNoLiveData && emptyDataset ? "local/no-secret no_live_data snapshot has no rows and is diagnostics-only" : null
+  };
+}
+
+function buildCollectorPlanRuntimeReport({ report = {}, collectorDiagnostics = {}, generatedAt = new Date().toISOString() } = {}) {
+  const plan = collectorDiagnostics.port_operation_collection_plan || {};
+  const preflight = collectorDiagnostics.preflight || {};
+  const coverage = collectorDiagnostics.coverage || {};
+  return {
+    version: VERSION,
+    run_id: report.run_id || runId,
+    active_run_id: report.active_run_id || report.run_id || runId,
+    generated_at: generatedAt,
+    status: report.data_mode === "no_live_data" ? "blocked" : "ready",
+    validation_mode: VALIDATION_MODE,
+    sequence: ["config_preflight", "source_health", "port_operation", "normalization", "candidate_engine", "snapshot_guard"],
+    target: "safe port-operation collection and current-run diagnostics",
+    port_operation_collector_enabled: Boolean(plan.port_operation_collector_enabled || preflight.port_operation_collector_enabled),
+    port_operation_service_key_present: Boolean(plan.port_operation_secret_present || preflight.port_operation_secret_present),
+    port_operation_api_url_present: Boolean(plan.port_operation_api_url_present || preflight.port_operation_api_url_present),
+    port_operation_api_url_effective: Boolean(plan.port_operation_api_url_effective || preflight.port_operation_api_url_effective),
+    port_operation_api_url_default_used: Boolean(plan.port_operation_api_url_default_used || preflight.port_operation_api_url_default_used),
+    enabled_ports_loaded_count: Number(plan.enabled_ports_loaded_count || preflight.enabled_ports_loaded_count || 0),
+    enabled_ports_passed_to_collector_count: Number(plan.enabled_ports_passed_to_collector_count || preflight.enabled_ports_passed_to_collector_count || 0),
+    ports_attempted_count: Number(coverage.ports_attempted_count || collectorDiagnostics.ports_attempted_count || 0),
+    preflight_status: collectorDiagnostics.preflight_status || (preflight.ok === false ? "failed" : null),
+    preflight_failure_reason: collectorDiagnostics.preflight_failure_reason || preflight.preflight_failure_reason || null,
+    collector_not_attempted: Number(coverage.ports_attempted_count || collectorDiagnostics.ports_attempted_count || 0) === 0,
+    collector_not_attempted_reason: report.collector_not_attempted_reason || collectorDiagnostics.collector_not_attempted_reason || null,
+    first_5_ports_to_attempt: plan.first_5_ports_to_attempt || preflight.first_5_ports_to_attempt || []
+  };
+}
+
+function buildSourceHealthRuntimeReport({ report = {}, collectorDiagnostics = {}, generatedAt = new Date().toISOString() } = {}) {
+  const sources = Array.isArray(collectorDiagnostics.sources) ? collectorDiagnostics.sources : [];
+  const plan = collectorDiagnostics.port_operation_collection_plan || {};
+  const coverage = collectorDiagnostics.coverage || {};
+  const runtimeAudit = report.runtime_config_audit || runtimeConfigAudit;
+  const attemptedCollectors = sources.filter(source => source.attempted).map(source => source.key || source.source_name);
+  const skippedCollectors = sources.filter(source => source.skipped).map(source => ({
+    source_name: source.key || source.source_name || source.label || "unknown_source",
+    reason: source.skip_reason || source.reason || source.error_message || source.status || "unknown_error",
+    raw_reason: source.raw_skip_reason || source.reason || source.error_message || source.status || null
+  }));
+  return {
+    version: VERSION,
+    run_id: report.run_id || runId,
+    status_run_id: report.run_id || runId,
+    generated_at: generatedAt,
+    validation_mode: VALIDATION_MODE,
+    serving_mode: report.output_mode || (shouldWriteDebugApiOutputs(report) ? "debug_diagnostics_only" : "production_api"),
+    update_mode: process.env.UPDATE_MODE || null,
+    process_env_CI: process.env.CI || null,
+    is_github_actions: process.env.GITHUB_ACTIONS === "true",
+    is_local_build: process.env.GITHUB_ACTIONS !== "true",
+    collection_mode: report.data_mode === "no_live_data" ? "no_live_data" : "collection_result",
+    status_generated_at: report.completed_at || report.generated_at || null,
+    stale_source_health: false,
+    secrets_present: runtimeAudit.canonical_env_present || {},
+    runtime_config_audit: runtimeAudit,
+    expected_env_names: runtimeAudit.expected_env_names || [],
+    accepted_fallback_env_names: runtimeAudit.accepted_fallback_env_names || {},
+    missing_required_env_names: runtimeAudit.missing_required_env_names || [],
+    enabled_collectors: [...new Set(sources.map(source => source.key || source.source_name).filter(Boolean))],
+    attempted_collectors: attemptedCollectors,
+    skipped_collectors: skippedCollectors,
+    port_operation: {
+      collector_enabled: Boolean(plan.port_operation_collector_enabled),
+      secret_present: Boolean(plan.port_operation_secret_present),
+      canonical_service_key_present: Boolean(runtimeAudit.canonical_env_present?.PORT_OPERATION_SERVICE_KEY),
+      api_url_present: Boolean(plan.port_operation_api_url_present),
+      api_url_effective: Boolean(plan.port_operation_api_url_effective),
+      api_url_default_used: Boolean(plan.port_operation_api_url_default_used),
+      enabled_ports_loaded_count: Number(plan.enabled_ports_loaded_count || 0),
+      enabled_ports_passed_to_collector_count: Number(plan.enabled_ports_passed_to_collector_count || 0),
+      ports_attempted_count: Number(coverage.ports_attempted_count || collectorDiagnostics.ports_attempted_count || 0),
+      collector_not_attempted: Number(coverage.ports_attempted_count || collectorDiagnostics.ports_attempted_count || 0) === 0,
+      collector_not_attempted_reason: report.collector_not_attempted_reason || collectorDiagnostics.collector_not_attempted_reason || null,
+      ports_skipped_reason: plan.ports_skipped_reason || collectorDiagnostics.skip_reason || null,
+      first_5_ports_to_attempt: plan.first_5_ports_to_attempt || [],
+      smoke_test_status: collectorDiagnostics.smoke_test_status || collectorDiagnostics.port_operation_smoke_test?.smoke_test_status || null,
+      smoke_test_failure_reason: collectorDiagnostics.smoke_test_failure_reason || collectorDiagnostics.port_operation_smoke_test?.smoke_test_failure_reason || null
+    },
+    preflight: collectorDiagnostics.preflight || null,
+    preflight_status: collectorDiagnostics.preflight_status || null,
+    preflight_failure_reason: collectorDiagnostics.preflight_failure_reason || collectorDiagnostics.preflight?.preflight_failure_reason || null,
+    collector_not_attempted: report.collector_not_attempted,
+    collector_not_attempted_reason: report.collector_not_attempted_reason,
+    realDataReady: Number(report.record_count || 0) > 0
+  };
+}
+
 function buildDatasetGenerationAudit({
   report = {},
   collectedRows = [],
@@ -4439,6 +4592,9 @@ try {
     serving_mode: process.env.SERVING_MODE || "static_json",
     is_github_actions: process.env.GITHUB_ACTIONS === "true",
     is_local_build: process.env.GITHUB_ACTIONS !== "true",
+    generated_by: process.env.GITHUB_ACTIONS === "true" ? "github_actions" : "local",
+    GITHUB_RUN_ID: process.env.GITHUB_RUN_ID || null,
+    GITHUB_WORKFLOW: process.env.GITHUB_WORKFLOW || null,
     port_operation_service_key_present_effective: portOperationServiceKeyPresent(),
     port_operation_api_url_present: Boolean(process.env.PORT_OPERATION_API_URL),
     port_operation_api_url_effective: portOperationApiUrl.effective_present,
@@ -4446,6 +4602,7 @@ try {
     collection_mode: collectorNotAttempted ? "collector_not_attempted" : isFallbackDataset ? "no_live_data" : "source_collection"
   };
   const baseReport = {
+    ...buildRunOrigin({ runId, validationMode: VALIDATION_MODE, servingMode: isFallbackDataset ? "debug_diagnostics_only" : "production_api" }),
     version: VERSION,
     build_name: BUILD_NAME,
     status,
@@ -4549,6 +4706,11 @@ try {
     },
     error: errorMessage
   };
+  const runOrigin = buildRunOrigin({
+    runId,
+    validationMode: VALIDATION_MODE,
+    servingMode: shouldWriteDebugApiOutputs(baseReport) ? "debug_diagnostics_only" : "production_api"
+  });
   baseReport.next_development_plan = buildNextDevelopmentPlan(baseReport, detectSecrets());
   const snapshotOutputs = writeSnapshotOutputs({
     records: vessels,
@@ -4558,7 +4720,8 @@ try {
     apiSources: detectSecrets(),
     supabaseStatus,
     diagnosticsOnly: shouldWriteDebugApiOutputs(baseReport),
-    debugDir: DEBUG_API_DIR
+    debugDir: DEBUG_API_DIR,
+    runOrigin
   });
   const allCollectedVessels = ensureOutputContractFields(
     activeRecordsOnly(snapshotOutputs.merged),
@@ -4813,6 +4976,41 @@ try {
     ...report.dataset_generation_audit.static_outputs_generated,
     "dashboard/api/dashboard-summary.json": dashboardSummary.record_count
   };
+  const finalRunOrigin = buildRunOrigin({
+    runId,
+    validationMode: VALIDATION_MODE,
+    servingMode: report.output_mode || (lastSuccessfulDatasetLocked ? "debug_diagnostics_only" : "production_api")
+  });
+  Object.assign(report, withRunOrigin(report, finalRunOrigin));
+  Object.assign(dashboardSummary, withRunOrigin(dashboardSummary, finalRunOrigin));
+  const currentReadinessGateReport = withRunOrigin(readinessGateReport, finalRunOrigin);
+  const snapshotGuardRuntimeReport = buildSnapshotGuardRuntimeReport({
+    report,
+    dashboardSummary,
+    allCollectedVessels,
+    targetVessels,
+    vessels,
+    candidateList,
+    generatedAt: completedAt
+  });
+  const collectorPlanRuntimeReport = buildCollectorPlanRuntimeReport({
+    report,
+    collectorDiagnostics: collectorDiagnosticsAfterCollection,
+    generatedAt: completedAt
+  });
+  const sourceHealthRuntimeReport = buildSourceHealthRuntimeReport({
+    report,
+    collectorDiagnostics: collectorDiagnosticsAfterCollection,
+    generatedAt: completedAt
+  });
+  report.backend_ops = withRunOrigin(report.backend_ops || snapshotOutputs.backendOps, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/status.json", report, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/backend-ops.json", report.backend_ops, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/readiness-gate.json", currentReadinessGateReport, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/readiness-gate-runtime.json", currentReadinessGateReport, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/snapshot-guard.json", snapshotGuardRuntimeReport, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/collector-plan-runtime.json", collectorPlanRuntimeReport, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/source-health-runtime.json", sourceHealthRuntimeReport, finalRunOrigin);
 
   writeStaticDatasetJson("dashboard/api/all-collected-vessels.json", allCollectedVessels, report, staticOutputManifest);
   writeStaticDatasetJson("dashboard/api/target-vessels.json", targetVessels, report, staticOutputManifest);
@@ -4896,8 +5094,15 @@ try {
   writeApiJson("dashboard/api/port-congestion-heatmap.json", portCongestionHeatmap, report);
   writeApiJson("dashboard/api/biofouling-timeline.json", biofoulingTimeline, report);
   writeApiJson("dashboard/api/status.json", report, report);
-  writeApiJson("dashboard/api/readiness-gate.json", readinessGateReport, report);
-  writeApiJson("dashboard/api/readiness-gate-runtime.json", readinessGateReport, report);
+  writeApiJson("dashboard/api/readiness-gate.json", currentReadinessGateReport, report);
+  writeApiJson("dashboard/api/readiness-gate-runtime.json", currentReadinessGateReport, report);
+  writeRuntimeDiagnosticJson("dashboard/api/status.json", report, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/backend-ops.json", report.backend_ops, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/readiness-gate.json", currentReadinessGateReport, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/readiness-gate-runtime.json", currentReadinessGateReport, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/snapshot-guard.json", snapshotGuardRuntimeReport, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/collector-plan-runtime.json", collectorPlanRuntimeReport, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/source-health-runtime.json", sourceHealthRuntimeReport, finalRunOrigin);
   fs.writeFileSync("data/pipeline-report.json", JSON.stringify(report, null, 2));
   fs.writeFileSync(`data/reports/${today}.json`, JSON.stringify(report, null, 2));
   fs.copyFileSync("dashboard/index.html", "public/index.html");
@@ -4920,6 +5125,10 @@ try {
   console.log("=== Collection Summary ===");
   for (const [key, value] of Object.entries(collectionSummary)) {
     console.log(`${key}=${Array.isArray(value) ? value.join(",") : value}`);
+  }
+  if (VALIDATION_MODE === "production" && runtimeConfigAudit.missing_required_env_names?.length) {
+    console.error(`[HWK] Production config missing required env: ${runtimeConfigAudit.missing_required_env_names.join(",")}`);
+    process.exitCode = 1;
   }
   if (VALIDATION_MODE === "production" && report.data_mode === "no_live_data") {
     process.exitCode = 1;

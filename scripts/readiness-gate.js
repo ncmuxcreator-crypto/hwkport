@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { buildRunOrigin } from "./lib/runtime-config-audit.js";
 
 const vesselsPath = "dashboard/api/vessels.json";
 const statusPath = "dashboard/api/status.json";
@@ -35,8 +36,14 @@ const dataMode = String(status.data_mode || status.data_mode_detail?.mode || "")
 const emptyDataset = vessels.length === 0 || Number(status.record_count || 0) === 0;
 const noLiveData = dataMode === "no_live_data";
 const productionReady = !staleReadinessGate && !emptyDataset && !noLiveData;
+const runOrigin = buildRunOrigin({
+  runId: statusRunId,
+  validationMode,
+  servingMode: dataMode === "no_live_data" ? "debug_diagnostics_only" : "production_api"
+});
 
 const report = {
+  ...runOrigin,
   version: "17.7.0",
   run_id: statusRunId,
   status_run_id: statusRunId,

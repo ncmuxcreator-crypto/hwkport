@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { buildRunOrigin } from "./lib/runtime-config-audit.js";
 
 const required = [
   "dashboard/api/vessels.json",
@@ -63,8 +64,14 @@ const ok = missing.length === 0 && !emptyDataset;
 const guardSeverity = emptyDataset
   ? localNoLiveData ? "diagnostics_only" : "fatal"
   : missing.length ? "fatal" : "ready";
+const runOrigin = buildRunOrigin({
+  runId: status.run_id || status.active_run_id || status.summary_run_id || null,
+  validationMode,
+  servingMode: emptyDataset ? "debug_diagnostics_only" : "production_api"
+});
 
 const report = {
+  ...runOrigin,
   version: "17.7.0",
   generated_at: new Date().toISOString(),
   validation_mode: validationMode,

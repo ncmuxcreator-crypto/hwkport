@@ -98,10 +98,25 @@ export function buildRuntimeConfigAudit(env = process.env) {
       VALIDATION_MODE: env.VALIDATION_MODE || null,
       UPDATE_MODE: env.UPDATE_MODE || null,
       CI: env.CI || null,
-      GITHUB_ACTIONS: env.GITHUB_ACTIONS || null
+      GITHUB_ACTIONS: env.GITHUB_ACTIONS || null,
+      GITHUB_RUN_ID: env.GITHUB_RUN_ID || null,
+      GITHUB_WORKFLOW: env.GITHUB_WORKFLOW || null
     },
     is_github_actions: env.GITHUB_ACTIONS === "true",
     is_local_build: env.GITHUB_ACTIONS !== "true"
+  };
+}
+
+export function buildRunOrigin({ runId = null, validationMode = null, servingMode = null, generatedBy = null } = {}, env = process.env) {
+  const isGithubActions = env.GITHUB_ACTIONS === "true";
+  return {
+    generated_by: generatedBy || (isGithubActions ? "github_actions" : "local"),
+    is_github_actions: isGithubActions,
+    validation_mode: validationMode || env.VALIDATION_MODE || (env.CI === "true" ? "production" : "local"),
+    serving_mode: servingMode || env.SERVING_MODE || (isGithubActions ? "github_actions_artifact" : "local_diagnostics"),
+    GITHUB_RUN_ID: env.GITHUB_RUN_ID || null,
+    GITHUB_WORKFLOW: env.GITHUB_WORKFLOW || null,
+    run_id: runId || null
   };
 }
 
@@ -114,6 +129,8 @@ export function printRuntimeConfigAudit(audit = buildRuntimeConfigAudit()) {
   console.log("[CONFIG_AUDIT] UPDATE_MODE:", audit.runtime_flags.UPDATE_MODE);
   console.log("[CONFIG_AUDIT] CI:", audit.runtime_flags.CI);
   console.log("[CONFIG_AUDIT] GITHUB_ACTIONS:", audit.runtime_flags.GITHUB_ACTIONS);
+  console.log("[CONFIG_AUDIT] GITHUB_RUN_ID:", audit.runtime_flags.GITHUB_RUN_ID);
+  console.log("[CONFIG_AUDIT] GITHUB_WORKFLOW:", audit.runtime_flags.GITHUB_WORKFLOW);
   console.log("[CONFIG_AUDIT] expected_env_names:", audit.expected_env_names.join(","));
   console.log("[CONFIG_AUDIT] accepted_fallback_env_names:", JSON.stringify(audit.accepted_fallback_env_names));
   console.log("[CONFIG_AUDIT] fallback_env_present:", JSON.stringify(audit.fallback_env_present));
