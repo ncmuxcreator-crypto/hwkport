@@ -2292,6 +2292,15 @@ export async function saveToSupabase(records, options = {}) {
       ],
       stripped_optional_columns: [],
       retry_count: 0
+    },
+    dashboard_summary_snapshots: {
+      status: "native_schema",
+      optional_columns: [
+        "total_vessels",
+        "data_mode"
+      ],
+      stripped_optional_columns: [],
+      retry_count: 0
     }
   };
   const preRetentionCleanup = await runLeanRetentionCleanup(supabase);
@@ -3933,9 +3942,13 @@ export async function saveToSupabase(records, options = {}) {
         blockPromotion(promotion, "summary_count_drop_guard", dashboardSummarySnapshotResult.summary_snapshot_error);
         throw new Error(dashboardSummarySnapshotResult.summary_snapshot_error);
       }
-      const { error } = await supabase
-        .from("dashboard_summary_snapshots")
-        .upsert(summarySnapshot, { onConflict: "snapshot_id" });
+      const { error } = await upsertWithSchemaCompatibility(
+        supabase,
+        "dashboard_summary_snapshots",
+        [summarySnapshot],
+        { onConflict: "snapshot_id" },
+        schemaCompatibility.dashboard_summary_snapshots
+      );
       if (error) throw error;
       const verifySummary = await supabase
         .from("dashboard_summary_snapshots")

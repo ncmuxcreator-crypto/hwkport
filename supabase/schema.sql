@@ -1721,6 +1721,7 @@ alter table dashboard_summary_snapshots add column if not exists status text def
 alter table dashboard_summary_snapshots add column if not exists is_latest_successful boolean default false;
 alter table dashboard_summary_snapshots add column if not exists record_count int default 0;
 alter table dashboard_summary_snapshots add column if not exists all_vessels_count int default 0;
+alter table dashboard_summary_snapshots add column if not exists total_vessels int default 0;
 alter table dashboard_summary_snapshots add column if not exists target_vessels_count int default 0;
 alter table dashboard_summary_snapshots add column if not exists sales_target_count int default 0;
 alter table dashboard_summary_snapshots add column if not exists immediate_target_count int default 0;
@@ -1732,6 +1733,7 @@ alter table dashboard_summary_snapshots add column if not exists candidate_summa
 alter table dashboard_summary_snapshots add column if not exists congestion_summary jsonb default '{}'::jsonb;
 alter table dashboard_summary_snapshots add column if not exists data_quality_summary jsonb default '{}'::jsonb;
 alter table dashboard_summary_snapshots add column if not exists source_health_summary jsonb default '{}'::jsonb;
+alter table dashboard_summary_snapshots add column if not exists data_mode text;
 alter table dashboard_summary_snapshots add column if not exists created_at timestamptz default now();
 alter table sales_candidates_current add column if not exists current_id text;
 alter table sales_candidates_current add column if not exists run_id text;
