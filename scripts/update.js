@@ -4824,6 +4824,7 @@ try {
     run_id: runId,
     active_run_id: runId,
     generated_at: completedAt,
+    last_success_at: completedAt,
     started_at: startedAt,
     completed_at: completedAt,
     data_source_used: isFallbackDataset ? "diagnostics_only_no_live_data" : "static_json_snapshot",
@@ -5171,6 +5172,7 @@ try {
     run_context_warning: summaryRunMismatch ? "status_run_id !== summary_run_id" : null,
     warnings: summaryRunWarnings,
     generated_at: completedAt,
+    last_success_at: report?.last_success_at || completedAt,
     data_freshness: {
       active_collected_at: report?.completed_at || completedAt,
       update_interval_label_ko: "4시간마다 자동 업데이트"
@@ -5219,6 +5221,7 @@ try {
       run_context_mismatch: summaryRunMismatch,
       run_context_warning: summaryRunMismatch ? "status_run_id !== summary_run_id" : null,
       generated_at: completedAt,
+      last_success_at: report?.last_success_at || completedAt,
       data_mode: report?.data_mode,
       record_count: report?.record_count || 0,
       storage: report.storage_status,
@@ -5295,8 +5298,29 @@ try {
     collectorDiagnostics: collectorDiagnosticsAfterCollection,
     generatedAt: completedAt
   });
+  const healthPayload = withRunOrigin({
+    run_id: report.run_id || runId,
+    status_run_id: summaryStatusRunId,
+    active_run_id: summaryActiveRunId,
+    generated_at: completedAt,
+    last_success_at: report.last_success_at || completedAt,
+    data_source_used: report.data_source_used,
+    serving_mode: normalizeServingMode(report.output_mode || (lastSuccessfulDatasetLocked ? "local_diagnostics" : "static_json")),
+    fallback_used: Boolean(report.fallback_used),
+    fallback_reason: report.fallback_reason || null,
+    data_freshness: report.data_freshness || dashboardSummary.data_freshness,
+    record_count: report.record_count || 0,
+    all_vessels_count: report.all_collected_vessel_count || allCollectedVessels.length,
+    data_status: report.data_status || (report.data_mode === "no_live_data" ? "diagnostics_only" : "ready"),
+    user_message: report.user_message || null,
+    supabase_write_status: report.supabase_write?.status || report.storage_status?.supabase?.status || "unknown",
+    promotion_status: report.promotion_status || "unknown",
+    latest_successful_run_id: latestSuccessfulRunId,
+    status: report.status || status
+  }, finalRunOrigin);
   report.backend_ops = withRunOrigin(report.backend_ops || snapshotOutputs.backendOps, finalRunOrigin);
   writeRuntimeDiagnosticJson("dashboard/api/status.json", report, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/health.json", healthPayload, finalRunOrigin);
   writeRuntimeDiagnosticJson("dashboard/api/backend-ops.json", report.backend_ops, finalRunOrigin);
   writeRuntimeDiagnosticJson("dashboard/api/readiness-gate.json", currentReadinessGateReport, finalRunOrigin);
   writeRuntimeDiagnosticJson("dashboard/api/readiness-gate-runtime.json", currentReadinessGateReport, finalRunOrigin);

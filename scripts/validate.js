@@ -124,6 +124,11 @@ const allCollectedVessels = readOutputJson("dashboard/api/all-collected-vessels.
 const targetVessels = readOutputJson("dashboard/api/target-vessels.json");
 const status = readOutputJson("dashboard/api/status.json");
 const dashboardSummary = readOutputJson("dashboard/api/dashboard-summary.json");
+const health = outputExists("dashboard/api/health.json") ? readOutputJson("dashboard/api/health.json") : null;
+
+if (![status, dashboardSummary, health].some(payload => payload && (payload.last_success_at || payload.generated_at))) {
+  throw new Error("status/dashboard-summary/health must expose generated_at or last_success_at for dashboard freshness display.");
+}
 
 function jsonRows(value) {
   if (Array.isArray(value)) return value;
