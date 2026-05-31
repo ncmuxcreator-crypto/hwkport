@@ -113,6 +113,8 @@ const report = JSON.parse(fs.readFileSync("data/pipeline-report.json", "utf8"));
 const vessels = readOutputJson("dashboard/api/vessels.json");
 const allCollectedVessels = readOutputJson("dashboard/api/all-collected-vessels.json");
 const targetVessels = readOutputJson("dashboard/api/target-vessels.json");
+const status = readOutputJson("dashboard/api/status.json");
+const dashboardSummary = readOutputJson("dashboard/api/dashboard-summary.json");
 
 function jsonRows(value) {
   if (Array.isArray(value)) return value;
@@ -121,6 +123,23 @@ function jsonRows(value) {
   if (Array.isArray(value?.vessels)) return value.vessels;
   if (Array.isArray(value?.candidates)) return value.candidates;
   return [];
+}
+
+function statusText(value) {
+  return String(value || "").toLowerCase();
+}
+
+function isProtectedFailedRun() {
+  const statusFailed = ["failed", "storage_failed", "storage_finalization_failed", "db_write_failed"].includes(statusText(status.status || report.status || dashboardSummary.status));
+  const storageFailed = statusText(status.supabase_write?.status || status.storage?.supabase?.status || report.supabase_write_status) === "failed";
+  const postWriteFailed = statusText(status.supabase_write?.post_write_verification?.status || report.post_write_verification) === "failed";
+  const protectedOutput = status.fallback_used === true ||
+    dashboardSummary.fallback_used === true ||
+    status.production_api_write_protected === true ||
+    report.production_api_write_protected === true ||
+    status.last_successful_dataset_lock?.locked === true ||
+    report.last_successful_dataset_lock?.locked === true;
+  return validationMode === "production" && (statusFailed || storageFailed || postWriteFailed) && protectedOutput;
 }
 
 if (!Array.isArray(data)) {
@@ -157,8 +176,12 @@ const vesselGroupValidation = {
 if (!vesselGroupValidation.all_collected_vessels_exists || !vesselGroupValidation.target_vessels_exists) {
   throw new Error(`Missing vessel group static JSON outputs: ${JSON.stringify(vesselGroupValidation)}`);
 }
-if (report.data_mode !== "no_live_data" && report.record_count > 0 && vesselGroupValidation.all_collected_vessels_count === 0) {
+const protectedFailedRun = isProtectedFailedRun();
+if (report.data_mode !== "no_live_data" && report.record_count > 0 && vesselGroupValidation.all_collected_vessels_count === 0 && !protectedFailedRun) {
   throw new Error(`all-collected-vessels.json must contain rows when live record_count > 0: ${JSON.stringify(vesselGroupValidation)}`);
+}
+if (protectedFailedRun && report.record_count > 0 && vesselGroupValidation.all_collected_vessels_count === 0) {
+  validationWarnings.push(`Protected failed production run: static vessel outputs were not replaced by this failed run. ${JSON.stringify(vesselGroupValidation)}`);
 }
 const productionValidationFailures = [
   report.data_mode === "no_live_data" ? "data_mode_no_live_data" : null,
@@ -255,8 +278,6 @@ for (const vessel of vessels) {
 
 
 
-const status = readOutputJson("dashboard/api/status.json");
-const dashboardSummary = readOutputJson("dashboard/api/dashboard-summary.json");
 const commonApiFields = ["run_id", "active_run_id", "generated_at", "serving_mode", "data_source_used", "fallback_used", "fallback_reason", "data_freshness", "record_count"];
 const supportedServingModes = new Set(["worker_supabase", "static_json", "local_diagnostics"]);
 const vesselRowFields = ["port_call_id", "master_vessel_id", "vessel_name", "port_code", "port_name", "candidate_band", "commercial_value_score", "data_confidence_score"];
@@ -335,11 +356,12 @@ if (
 validateRunOrigin("status.json", status);
 const statusSupabaseStorage = status.storage?.supabase || status.storage_status?.supabase || status.supabase_write || {};
 const statusSupabaseStorageStatus = String(statusSupabaseStorage.status || "").toLowerCase();
-if (validationMode === "production" && ["syncing", "pending", "unknown", "not_configured", ""].includes(statusSupabaseStorageStatus)) {
+if (validationMode === "production" && !protectedFailedRun && ["syncing", "pending", "unknown", "not_configured", ""].includes(statusSupabaseStorageStatus)) {
   throw new Error(`Production status must not treat non-final Supabase storage status as success: ${statusSupabaseStorageStatus}`);
 }
 if (
   validationMode === "production" &&
+  !protectedFailedRun &&
   Number(status.record_count || 0) > 0 &&
   statusSupabaseStorageStatus !== "completed"
 ) {
@@ -347,6 +369,7 @@ if (
 }
 if (
   validationMode === "production" &&
+  !protectedFailedRun &&
   Number(status.record_count || 0) > 0 &&
   statusSupabaseStorage.post_write_verification?.status !== "completed"
 ) {

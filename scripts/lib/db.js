@@ -252,6 +252,21 @@ function uniqueBy(values = [], keyFn) {
   return [...map.values()];
 }
 
+function dedupeForUpsert(values = [], keyFn, tableName, audit = {}) {
+  const before = values.length;
+  const deduped = uniqueBy(values, keyFn);
+  const removed = before - deduped.length;
+  if (removed > 0 && tableName) {
+    audit[tableName] = {
+      ...(audit[tableName] || {}),
+      before,
+      after: deduped.length,
+      removed
+    };
+  }
+  return deduped;
+}
+
 function pickStaticFields(record = {}) {
   return {
     imo: record.imo || null,
@@ -684,9 +699,9 @@ function buildCurrentMaterializedRows(records = [], runId, now, summarySnapshot 
   const immediateRows = records.filter(isImmediateTargetRecord);
   const summary = summarySnapshot || buildDashboardSummarySnapshot(records, runId, now);
   return {
-    salesCandidates: salesRows.map(record => currentCandidateRow(record, runId, now, "SCUR")),
-    immediateTargets: immediateRows.map(record => currentCandidateRow(record, runId, now, "ICUR")),
-    portSummaries: (summary.port_summary || []).map(port => ({
+    salesCandidates: uniqueBy(salesRows.map(record => currentCandidateRow(record, runId, now, "SCUR")), row => row.current_id),
+    immediateTargets: uniqueBy(immediateRows.map(record => currentCandidateRow(record, runId, now, "ICUR")), row => row.current_id),
+    portSummaries: uniqueBy((summary.port_summary || []).map(port => ({
       port_unit_key: port.port_unit_key || stableEntityId("PORTCUR", `${port.port_code || ""}-${port.sub_port || port.port_name || ""}`),
       run_id: runId,
       port_code: port.port_code || null,
@@ -705,7 +720,7 @@ function buildCurrentMaterializedRows(records = [], runId, now, summarySnapshot 
       payload: port,
       is_current: true,
       updated_at: now
-    }))
+    })), row => row.port_unit_key)
   };
 }
 
@@ -1918,7 +1933,7 @@ function buildHistoricalWarehouseRows(records = [], runId, now) {
     };
   });
 
-  const routeRows = [...groupBy(usefulRecords.filter(record => record.previous_port || record.destination_port || record.next_port || record.route_region), record => [
+  const routeRows = uniqueBy([...groupBy(usefulRecords.filter(record => record.previous_port || record.destination_port || record.next_port || record.route_region), record => [
     normalizeCompanyName(record.previous_port || ""),
     normalizeCompanyName(record.destination_port || record.destination || ""),
     normalizeCompanyName(record.next_port || ""),
@@ -1943,7 +1958,7 @@ function buildHistoricalWarehouseRows(records = [], runId, now) {
       created_at: now,
       payload: {}
     };
-  });
+  }), row => `${row.snapshot_date}|${row.previous_port}|${row.destination_port}|${row.vessel_type_group}`);
 
   const opportunityRows = uniqueBy(usefulRecords.filter(record => commercialScore(record) >= 50 || scoreNumber(record.predicted_cleaning_opportunity_score) >= 60).map(record => {
     const portCallId = buildPortCallId(record);
@@ -2036,6 +2051,7 @@ export async function saveToSupabase(records, options = {}) {
         : "no_live_data";
   const storageMode = leanStorageEnabled() ? "lean" : "full";
   const batchSize = Number(process.env.SUPABASE_BATCH_SIZE || 100);
+  const upsertDedupeAudit = {};
   const schemaCompatibility = {
     vessel_snapshots: {
       status: "native_schema",
@@ -2146,7 +2162,12 @@ export async function saveToSupabase(records, options = {}) {
     error_summary: { error: options.error || null, promotion }
   }, schemaCompatibility.data_collection_runs);
   if (runInsert.error) throw runInsert.error;
-  const sourceCollectionLogRows = buildSourceCollectionLogRows(diagnostics, runId);
+  const sourceCollectionLogRows = dedupeForUpsert(
+    buildSourceCollectionLogRows(diagnostics, runId),
+    row => row.source_log_id,
+    "source_collection_logs",
+    upsertDedupeAudit
+  );
   if (sourceCollectionLogRows.length) {
     for (let index = 0; index < sourceCollectionLogRows.length; index += batchSize) {
       const batch = sourceCollectionLogRows.slice(index, index + batchSize);
@@ -2162,7 +2183,7 @@ export async function saveToSupabase(records, options = {}) {
     { onConflict: "run_id" }
   );
 
-  const rows = records.map(r => ({
+  const rows = dedupeForUpsert(records.map(r => ({
     snapshot_uid: stableEntityId("SNAP", `${runId}-${buildPortCallId(r)}-${r.hybrid_entity_key || r.vessel_id || r.call_sign || r.vessel_name || ""}-${r.source || r.source_name || ""}`),
     run_id: runId,
     snapshot_date: now.slice(0, 10),
@@ -2300,7 +2321,7 @@ export async function saveToSupabase(records, options = {}) {
     collected_at: now,
     source: r.source || r.source_mode || "korea-port-hull-intelligence",
     source_name: r.source || r.source_label || r.source_mode || "korea-port-hull-intelligence"
-  }));
+  })), row => row.snapshot_uid, "vessel_snapshots", upsertDedupeAudit);
 
   if (!rows.length) {
     return {
@@ -2409,7 +2430,7 @@ export async function saveToSupabase(records, options = {}) {
     if (error) throw error;
   }
 
-  const entities = records.map(r => ({
+  const entities = dedupeForUpsert(records.map(r => ({
     hybrid_entity_key: r.hybrid_entity_key || r.vessel_id,
     vessel_id: r.vessel_id,
     vessel_name: r.vessel_name,
@@ -2421,7 +2442,7 @@ export async function saveToSupabase(records, options = {}) {
     operator: r.operator || null,
     last_seen_at: now,
     payload: storagePayload(r)
-  })).filter(r => r.hybrid_entity_key);
+  })).filter(r => r.hybrid_entity_key), row => row.hybrid_entity_key, "vessel_entities", upsertDedupeAudit);
 
   for (let index = 0; index < entities.length; index += batchSize) {
     const batch = entities.slice(index, index + batchSize);
@@ -2431,7 +2452,7 @@ export async function saveToSupabase(records, options = {}) {
     if (error) throw error;
   }
 
-  let masterRows = records.map(r => ({
+  let masterRows = dedupeForUpsert(records.map(r => ({
     master_vessel_id: fallbackMasterId(r),
     imo: r.imo || null,
     mmsi: r.mmsi || null,
@@ -2452,7 +2473,7 @@ export async function saveToSupabase(records, options = {}) {
     last_seen: now,
     updated_at: now,
     payload: storagePayload(r)
-  })).filter(r => r.master_vessel_id);
+  })).filter(r => r.master_vessel_id), row => row.master_vessel_id, "vessel_master", upsertDedupeAudit);
 
   const existingMasters = new Map();
   for (let index = 0; index < masterRows.length; index += batchSize) {
@@ -2466,7 +2487,7 @@ export async function saveToSupabase(records, options = {}) {
     for (const row of data || []) existingMasters.set(row.master_vessel_id, row);
   }
 
-  masterRows = masterRows.map(row => {
+  masterRows = dedupeForUpsert(masterRows.map(row => {
     const old = existingMasters.get(row.master_vessel_id);
     if (!old) return row;
     const oldConfidence = Number(old.identity_confidence || 0);
@@ -2492,7 +2513,7 @@ export async function saveToSupabase(records, options = {}) {
       imo_status: row.imo_status || old.imo_status || null,
       first_seen: old.first_seen || row.first_seen
     };
-  });
+  }), row => row.master_vessel_id, "vessel_master_after_merge", upsertDedupeAudit);
 
   for (let index = 0; index < masterRows.length; index += batchSize) {
     const batch = masterRows.slice(index, index + batchSize);
@@ -3836,6 +3857,7 @@ export async function saveToSupabase(records, options = {}) {
       db_analytics_scope: analyticsScope(),
       db_foundation_write_mode: foundationWriteMode(),
       db_rows_written_by_table: dbRowsWrittenByTable,
+      db_upsert_dedupe: upsertDedupeAudit,
       schema_compatibility: schemaCompatibility,
       retention_rows_deleted_by_table: retentionRowsDeletedByTable,
       post_write_verification: postWriteVerification,
@@ -3891,6 +3913,7 @@ export async function saveToSupabase(records, options = {}) {
     active_run_id: postWriteVerification.active_run_id,
     latest_successful_run_id: postWriteVerification.latest_successful_run_id,
     db_rows_written_by_table: dbRowsWrittenByTable,
+    db_upsert_dedupe: upsertDedupeAudit,
     schema_compatibility: schemaCompatibility,
     retention_rows_deleted_by_table: retentionRowsDeletedByTable,
     retentionCleanup,
