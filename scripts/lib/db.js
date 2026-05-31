@@ -1428,6 +1428,52 @@ function buildVesselUniverseAuditRow(records = [], diagnostics = {}, runId, gene
   };
 }
 
+function compactDbError(error) {
+  if (!error) return null;
+  return {
+    code: error.code || null,
+    message: error.message || String(error),
+    details: error.details || null,
+    hint: error.hint || null
+  };
+}
+
+function isMissingSchemaTableError(error) {
+  const text = [
+    error?.code,
+    error?.message,
+    error?.details,
+    error?.hint
+  ].filter(Boolean).join(" ").toLowerCase();
+  return text.includes("schema cache") ||
+    text.includes("could not find the table") ||
+    text.includes("does not exist") ||
+    text.includes("pgrst205");
+}
+
+async function upsertOptionalDiagnosticsRow(supabase, table, row, options = {}) {
+  const result = {
+    table,
+    status: "skipped_no_row",
+    rows_written: 0,
+    error: null,
+    missing_table: false,
+    optional: true
+  };
+  if (!row) return result;
+  const { error } = await supabase.from(table).upsert(row, options);
+  if (!error) {
+    result.status = "written";
+    result.rows_written = 1;
+    return result;
+  }
+  result.error = compactDbError(error);
+  result.missing_table = isMissingSchemaTableError(error);
+  result.status = result.missing_table ? "skipped_missing_table" : "failed_nonfatal";
+  console.warn(`[HWK] Optional diagnostics table write skipped: ${table}`, result.error);
+  return result;
+}
+
 function eventTimeBucket(value, fallback = new Date()) {
   const date = new Date(value || fallback);
   if (Number.isNaN(date.getTime())) return kstSnapshotDate(fallback);
@@ -1864,12 +1910,12 @@ export async function saveToSupabase(records, options = {}) {
     }
   }
   const vesselUniverseAudit = buildVesselUniverseAuditRow(records, diagnostics, runId, now);
-  {
-    const { error } = await supabase
-      .from("vessel_universe_audit")
-      .upsert(vesselUniverseAudit, { onConflict: "run_id" });
-    if (error) throw error;
-  }
+  const vesselUniverseAuditResult = await upsertOptionalDiagnosticsRow(
+    supabase,
+    "vessel_universe_audit",
+    vesselUniverseAudit,
+    { onConflict: "run_id" }
+  );
 
   const rows = records.map(r => ({
     snapshot_uid: stableEntityId("SNAP", `${runId}-${buildPortCallId(r)}-${r.hybrid_entity_key || r.vessel_id || r.call_sign || r.vessel_name || ""}-${r.source || r.source_name || ""}`),
@@ -3500,7 +3546,8 @@ export async function saveToSupabase(records, options = {}) {
     port_snapshot_daily: historicalSnapshotResult.port_snapshot_daily_rows_written,
     operator_snapshot_daily: historicalSnapshotResult.operator_snapshot_daily_rows_written,
     route_snapshot_daily: historicalSnapshotResult.route_snapshot_daily_rows_written,
-    commercial_opportunity_daily: historicalSnapshotResult.commercial_opportunity_daily_rows_written
+    commercial_opportunity_daily: historicalSnapshotResult.commercial_opportunity_daily_rows_written,
+    vessel_universe_audit: vesselUniverseAuditResult.rows_written
   };
   const retentionRowsDeletedByTable = Object.fromEntries(Object.entries(retentionCleanup || {}).map(([table, value]) => [table, Number(value?.rows_deleted || 0)]));
 
@@ -3517,6 +3564,7 @@ export async function saveToSupabase(records, options = {}) {
       retention_rows_deleted_by_table: retentionRowsDeletedByTable,
       dashboard_summary_snapshot: dashboardSummarySnapshotResult,
       materialized_current_tables: currentMaterializedResult,
+      vessel_universe_audit: vesselUniverseAuditResult,
       last_successful_dataset_lock: promotion.last_successful_dataset_lock,
       port_call_architecture: {
         port_call_id_coverage: promotion.port_call_id_coverage,
@@ -3559,6 +3607,7 @@ export async function saveToSupabase(records, options = {}) {
     ...intelligencePopulationDiagnostics,
     ...dashboardSummarySnapshotResult,
     ...currentMaterializedResult,
+    vesselUniverseAudit: vesselUniverseAuditResult,
     db_rows_written_by_table: dbRowsWrittenByTable,
     retention_rows_deleted_by_table: retentionRowsDeletedByTable,
     retentionCleanup,
