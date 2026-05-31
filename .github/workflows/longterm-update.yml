@@ -13,8 +13,8 @@ on:
     - cron: "0 */4 * * *"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'schedule' }}
 
 jobs:
   update:
@@ -53,7 +53,7 @@ jobs:
       DB_ANALYTICS_SCOPE: candidate
       DB_FOUNDATION_WRITE_MODE: minimal
       DB_RETENTION_CLEANUP: "true"
-      DB_RETENTION_PROFILE: ${{ vars.DB_RETENTION_PROFILE || 'free_500mb' }}
+      DB_RETENTION_PROFILE: ${{ vars.DB_RETENTION_PROFILE || 'pro_7_5gb' }}
       DB_RETENTION_TARGET_MB: ${{ vars.DB_RETENTION_TARGET_MB || '' }}
       DB_RETENTION_HARD_CAP_MB: ${{ vars.DB_RETENTION_HARD_CAP_MB || '' }}
       DB_RETENTION_KEEP_PROMOTED_RUNS: ${{ vars.DB_RETENTION_KEEP_PROMOTED_RUNS || '' }}

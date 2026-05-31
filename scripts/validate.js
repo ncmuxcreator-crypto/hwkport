@@ -586,8 +586,11 @@ if (!/on:\s*[\s\S]*workflow_dispatch:/.test(workflow) || !/schedule:/.test(workf
 if (!workflow.includes("runs-on: ubuntu-latest") || workflow.includes("runs-on: self-hosted")) {
   throw new Error("Longterm workflow must use ubuntu-latest and must not use self-hosted runners");
 }
-if (!workflow.includes("group: ${{ github.workflow }}-${{ github.ref }}") || !workflow.includes("cancel-in-progress: true")) {
-  throw new Error("Longterm workflow concurrency must be isolated by workflow and ref");
+if (
+  !workflow.includes("group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}") ||
+  !workflow.includes("cancel-in-progress: ${{ github.event_name == 'schedule' }}")
+) {
+  throw new Error("Longterm workflow concurrency must isolate push and schedule runs");
 }
 const longtermJobTimeouts = workflow.match(/^\s{4}timeout-minutes:\s*30\s*$/gm) || [];
 if (!longtermJobTimeouts.length) {
