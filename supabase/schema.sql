@@ -286,6 +286,7 @@ create index if not exists idx_port_call_master_score on port_call_master(commer
 create index if not exists idx_port_calls_collected_at on port_calls(collected_at desc);
 create index if not exists idx_port_calls_port on port_calls(port);
 create index if not exists idx_port_calls_risk_score on port_calls(risk_score desc);
+create index if not exists idx_port_calls_vessel_id on port_calls(vessel_id);
 
 alter table port_call_master add column if not exists pilot_inbound timestamptz;
 alter table port_call_master add column if not exists pilot_outbound timestamptz;
@@ -1119,6 +1120,35 @@ create unique index if not exists ux_port_snapshot_daily_date_port on port_snaps
 create unique index if not exists ux_operator_snapshot_daily_date_operator on operator_snapshot_daily(snapshot_date, operator_normalized);
 create unique index if not exists ux_route_snapshot_daily_date_route on route_snapshot_daily(snapshot_date, previous_port, destination_port, vessel_type_group);
 create unique index if not exists ux_commercial_opportunity_daily_date_opportunity on commercial_opportunity_daily(snapshot_date, opportunity_id);
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid = 'vessel_snapshot_daily'::regclass and contype = 'p') then
+    alter table vessel_snapshot_daily add constraint vessel_snapshot_daily_pkey primary key using index ux_vessel_snapshot_daily_date_port_call;
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'port_snapshot_daily'::regclass and contype = 'p') then
+    update port_snapshot_daily set sub_port = '' where sub_port is null;
+    alter table port_snapshot_daily alter column sub_port set not null;
+    alter table port_snapshot_daily add constraint port_snapshot_daily_pkey primary key using index ux_port_snapshot_daily_date_port;
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'operator_snapshot_daily'::regclass and contype = 'p') then
+    alter table operator_snapshot_daily add constraint operator_snapshot_daily_pkey primary key using index ux_operator_snapshot_daily_date_operator;
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'route_snapshot_daily'::regclass and contype = 'p') then
+    update route_snapshot_daily
+    set previous_port = coalesce(previous_port, ''),
+        destination_port = coalesce(destination_port, ''),
+        vessel_type_group = coalesce(vessel_type_group, '')
+    where previous_port is null or destination_port is null or vessel_type_group is null;
+    alter table route_snapshot_daily
+      alter column previous_port set not null,
+      alter column destination_port set not null,
+      alter column vessel_type_group set not null;
+    alter table route_snapshot_daily add constraint route_snapshot_daily_pkey primary key using index ux_route_snapshot_daily_date_route;
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'commercial_opportunity_daily'::regclass and contype = 'p') then
+    alter table commercial_opportunity_daily add constraint commercial_opportunity_daily_pkey primary key using index ux_commercial_opportunity_daily_date_opportunity;
+  end if;
+end $$;
 comment on table commercial_opportunity_daily is 'Historical warehouse diagnostics: historical_snapshot_generation_status, daily_snapshot_rows_written, vessel_snapshot_daily_rows_written, port_snapshot_daily_rows_written, operator_snapshot_daily_rows_written, route_snapshot_daily_rows_written, commercial_opportunity_daily_rows_written, duplicate_snapshot_rows_skipped, raw_payloads_archived_to_gdrive, raw_payloads_db_insert_blocked, ais_raw_rows_skipped, event_rows_written, event_duplicates_skipped, estimated_db_growth_per_day, estimated_db_growth_per_year.';
 
 create table if not exists raw_archive_index (

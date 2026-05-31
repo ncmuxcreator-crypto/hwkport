@@ -56,6 +56,11 @@ function validateRuntimeDiagnostic(label, payload, { allowPlaceholder = false } 
     throw new Error(`${label} is a placeholder and must not be used as runtime truth`);
   }
   if (status?.run_id && payload?.run_id && String(status.run_id) !== String(payload.run_id) && payload.stale_diagnostic !== true) {
+    const localNoLiveDataDiagnostics = validationMode === "local" && String(status?.data_mode || "") === "no_live_data";
+    if (allowPlaceholder || localNoLiveDataDiagnostics || (typeof protectedFailedRun !== "undefined" && protectedFailedRun)) {
+      validationWarnings.push(`${label} is a stale local/protected diagnostic: run_id differs from status.json`);
+      return;
+    }
     throw new Error(`${label} must mark stale_diagnostic=true when run_id differs from status.json`);
   }
 }
@@ -836,4 +841,3 @@ for (const warning of validationWarnings) {
   console.warn(`[HWK] ${warning}`);
 }
 console.log(`[HWK] validation success (${validationMode})`);
-

@@ -15,6 +15,14 @@ import {
   printRuntimeConfigAudit
 } from "./lib/runtime-config-audit.js";
 import { latestSuccessfulFallbackState } from "./lib/dataset-state.js";
+import { withStableDashboardSummaryFields } from "./lib/db/summary-snapshot.js";
+import {
+  buildSalesPipeline,
+  buildVesselVisits,
+  normalizeAlertsPayload,
+  normalizeOpportunityCandidate,
+  withApiContract
+} from "./lib/intelligence-foundation.js";
 import { PIPELINE_STAGES, sourceOfTruthTables } from "./pipeline/index.js";
 
 const VERSION = "17.7.0";
@@ -3276,7 +3284,7 @@ function buildAgentFollowupQueue(records = []) {
         ? "Biofouling compliance and pre-departure cleaning readiness."
         : Number(v.stay_hours || v.anchorage_hours || 0) >= 72
           ? "Long-stay hull performance and fuel-efficiency opportunity."
-          : "Work-window confirmation and HullWiper Korea service fit.",
+          : "Work-window confirmation and service fit.",
       next_action: v.agent || v.agent_name
         ? "Confirm IMO/operator and cleaning decision path via local agent."
         : "Identify local agent or operator contact before outreach.",
@@ -3344,9 +3352,10 @@ function buildTopCandidatesPayload({ candidateList = [], immediateTargets = [], 
         stayHours >= 72 ? "장기 체류 또는 묘박 신호가 있습니다." : null,
         Number(v.biofouling_exposure_score || v.biofouling_score || v.risk_score || 0) >= 65 ? "Biofouling 위험 신호가 높습니다." : null
       ].filter(Boolean).join(" ") || "상업 점수와 항만 체류 신호를 확인하세요.";
-      return {
+      return normalizeOpportunityCandidate({
         ...v,
         port: v.port_name || v.port,
+        regulated_route_signal: regulatedRouteSignal(v),
         stay_hours: stayHours,
         stay_days: Math.round((stayHours / 24) * 10) / 10,
         opportunity_score: priorityScore,
@@ -3357,7 +3366,7 @@ function buildTopCandidatesPayload({ candidateList = [], immediateTargets = [], 
         reason_summary: reasonSummary,
         recommended_action: v.recommended_action || v.recommended_next_action || v.candidate_next_action || "Confirm contact path and work window.",
         why_now: v.why_now || reasonSummary
-      };
+      }, { generated_at: generatedAt });
     })
     .sort((a, b) =>
       Number(b.sales_priority_score || 0) - Number(a.sales_priority_score || 0) ||
@@ -3366,14 +3375,14 @@ function buildTopCandidatesPayload({ candidateList = [], immediateTargets = [], 
     )
     .slice(0, 50)
     .map((v, index) => ({ ...v, rank: index + 1 }));
-  return {
+  return withApiContract({
     generated_at: generatedAt,
-    focus_question: "Which vessel should HullWiper Korea contact next and why?",
-    ranking_model: "sales_priority_v3",
+    focus_question: "Which vessel should we contact next, and why?",
+    ranking_model: "commercial_opportunity_v1",
     immediate_targets: opportunities.filter(v => v.sales_priority_band === "HOT" || v.is_immediate_candidate || Number(v.commercial_value_score || v.total_sales_priority_score || 0) >= IMMEDIATE_TARGET_THRESHOLD).slice(0, 10),
     opportunities,
-    operating_rule: "Sales priority blends commercial score, biofouling risk, long stay, Brazil/Australia/New Zealand compliance route, work window, confidence, and contact readiness."
-  };
+    operating_rule: "Commercial opportunity blends commercial score, biofouling risk, long stay, Brazil/Australia/New Zealand compliance route, work window, confidence, and contact readiness."
+  }, { generated_at: generatedAt, data_mode: "derived", source_status: "derived_from_candidates", record_count: opportunities.length });
 }
 
 function buildCandidateChangesPayload(candidateChanges = {}, generatedAt = new Date().toISOString()) {
@@ -3463,10 +3472,10 @@ function buildDailySalesReportPayload({ topCandidates = {}, dataContinuity = {},
   const hot = opportunities.filter(v => v.sales_priority_band === "HOT");
   const warm = opportunities.filter(v => v.sales_priority_band === "WARM");
   const compliance = opportunities.filter(regulatedRouteSignal);
-  return {
+  return withApiContract({
     generated_at: generatedAt,
     report_type: "daily_sales_intelligence",
-    title: "HWK Daily Sales Intelligence Report",
+    title: "Daily Maritime Sales Intelligence Report",
     executive_summary_ko: dataContinuity.status === "fallback_active"
       ? "현재 실행은 운영 데이터로 승격되지 않았습니다. 영업 판단 전 데이터 상태를 먼저 확인하세요."
       : `${hot.length}척 HOT 후보와 ${warm.length}척 WARM 후보가 선별되었습니다.`,
@@ -3493,7 +3502,7 @@ function buildDailySalesReportPayload({ topCandidates = {}, dataContinuity = {},
       storage_verification: dataContinuity.storage_verification
     },
     automation_next_step: "Configure email/webhook secrets to deliver this JSON as a scheduled alert."
-  };
+  }, { generated_at: generatedAt, data_mode: report.data_mode, fallback_used: report.fallback_used, source_status: "derived_daily_report", record_count: opportunities.length });
 }
 
 function buildScoringDiagnostics(records = []) {
@@ -3950,6 +3959,21 @@ function writeStaticDatasetJson(path, payload, report = {}, manifest = {}) {
     if (rootOutputCreated) {
       fs.mkdirSync(path.split("/").slice(0, -1).join("/"), { recursive: true });
       fs.writeFileSync(path, JSON.stringify(outputPayload, null, 2));
+    } else if (String(path).replace(/\\/g, "/") === "dashboard/api/dashboard-summary.json") {
+      const existingSummary = readJsonFile(path, null);
+      if (existingSummary && typeof existingSummary === "object" && !Array.isArray(existingSummary)) {
+        const normalizedSummary = withApiContract(withStableDashboardSummaryFields({
+          ...existingSummary,
+          generated_at: existingSummary.generated_at || existingSummary.status?.generated_at || existingSummary.data_freshness?.active_collected_at || report.completed_at || report.generated_at
+        }), {
+          generated_at: existingSummary.generated_at || report.completed_at || report.generated_at,
+          data_mode: existingSummary.data_mode || report.data_mode,
+          fallback_used: existingSummary.fallback_used ?? report.fallback_used,
+          source_status: existingSummary.source_status || existingSummary.data_status || report.data_status || report.status,
+          record_count: existingSummary.record_count
+        });
+        fs.writeFileSync(path, JSON.stringify(normalizedSummary, null, 2));
+      }
     }
     manifest[path] = {
       status: "written_to_debug_only",
@@ -5560,7 +5584,7 @@ try {
       null);
   const summaryRunMismatch = Boolean(summaryStatusRunId && summaryRunId && String(summaryStatusRunId) !== String(summaryRunId));
   const summaryRunWarnings = summaryRunMismatch ? ["status_run_id !== summary_run_id"] : [];
-  const dashboardSummary = {
+  const dashboardSummary = withStableDashboardSummaryFields({
     run_id: report?.run_id || runId,
     status_run_id: summaryStatusRunId,
     summary_run_id: summaryRunId,
@@ -5598,6 +5622,7 @@ try {
     collector_not_attempted_reason: collectorNotAttemptedReason,
     runtime_mode_diagnostics: runtimeModeDiagnostics,
     production_ready: currentRunStoredSuccessfully,
+    data_mode: report?.data_mode || "static_json_snapshot",
     record_count: report?.record_count || 0,
     storage: report.storage_status,
     storage_status: report.storage_status,
@@ -5644,7 +5669,7 @@ try {
     congestion_summary: portCongestionHeatmap,
     data_quality_summary: dataQualityLayer,
     source_health_summary: collectorDiagnosticsAfterCollection
-  };
+  });
   const staticOutputManifest = {};
   report.static_output_write_status = staticOutputManifest;
   const lastSuccessfulDatasetLocked = shouldWriteDebugApiOutputs(report);
@@ -5742,6 +5767,12 @@ try {
     next_action: v.candidate_next_action || v.recommended_action,
     reason_codes: salesPriorityReasonCodes(v)
   }));
+  const apiContractContext = {
+    generated_at: completedAt,
+    data_mode: report.data_mode,
+    fallback_used: Boolean(report.fallback_used || lastSuccessfulDatasetLocked),
+    source_status: report.data_status || report.status || "unknown"
+  };
   const successfulBundleOutputs = {
     "dashboard/api/all-collected-vessels.json": allCollectedVessels,
     "dashboard/api/target-vessels.json": targetVessels,
@@ -5778,6 +5809,9 @@ try {
     report,
     generatedAt: completedAt
   });
+  const latestAlertsPayload = normalizeAlertsPayload(salesAlertsPayload, apiContractContext);
+  const salesPipelinePayload = buildSalesPipeline(topCandidatesPayload, apiContractContext);
+  const vesselVisitsPayload = buildVesselVisits(allCollectedVessels.length ? allCollectedVessels : vessels, apiContractContext);
   const dailySalesReportPayload = buildDailySalesReportPayload({
     topCandidates: topCandidatesPayload,
     dataContinuity: dataContinuityReport,
@@ -5794,12 +5828,12 @@ try {
     storage_verification: dataContinuityReport.storage_verification
   };
   report.backend_ops = withRunOrigin(report.backend_ops || snapshotOutputs.backendOps, finalRunOrigin);
-  writeRuntimeDiagnosticJson("dashboard/api/status.json", report, finalRunOrigin);
-  writeRuntimeDiagnosticJson("dashboard/api/health.json", healthPayload, finalRunOrigin);
-  writeApiJson("dashboard/api/health/pipeline.json", healthPayload, report);
+  writeRuntimeDiagnosticJson("dashboard/api/status.json", withApiContract(report, apiContractContext), finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/health.json", withApiContract(healthPayload, apiContractContext), finalRunOrigin);
+  writeApiJson("dashboard/api/health/pipeline.json", withApiContract(healthPayload, apiContractContext), report);
   writeRuntimeDiagnosticJson("dashboard/api/data-continuity.json", dataContinuityReport, finalRunOrigin);
-  writeRuntimeDiagnosticJson("dashboard/api/alerts/sales-alerts.json", salesAlertsPayload, finalRunOrigin);
-  writeRuntimeDiagnosticJson("dashboard/api/alerts/latest.json", salesAlertsPayload, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/alerts/sales-alerts.json", latestAlertsPayload, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/alerts/latest.json", latestAlertsPayload, finalRunOrigin);
   writeRuntimeDiagnosticJson("dashboard/api/reports/daily-sales-report.json", dailySalesReportPayload, finalRunOrigin);
   writeRuntimeDiagnosticJson("dashboard/api/reports/daily-summary.json", dailySalesReportPayload, finalRunOrigin);
   writeRuntimeDiagnosticJson("dashboard/api/backend-ops.json", report.backend_ops, finalRunOrigin);
@@ -5811,15 +5845,16 @@ try {
 
   writeStaticDatasetJson("dashboard/api/all-collected-vessels.json", allCollectedVessels, report, staticOutputManifest);
   writeStaticDatasetJson("dashboard/api/target-vessels.json", targetVessels, report, staticOutputManifest);
-  writeApiJson("dashboard/api/staying-vessels.json", stayingVessels, report);
-  writeApiJson("dashboard/api/arrival-pipeline.json", arrivalPipeline, report);
+  writeApiJson("dashboard/api/staying-vessels.json", withApiContract(stayingVessels, { ...apiContractContext, record_count: stayingVessels.length, source_status: "derived_from_vessels" }), report);
+  writeApiJson("dashboard/api/arrival-pipeline.json", withApiContract(arrivalPipeline, { ...apiContractContext, record_count: arrivalPipeline.length, source_status: "derived_from_vessels" }), report);
   writeApiJson("dashboard/api/imo-recovery-queue.json", buildImoRecoveryQueue(vessels), report);
   writeApiJson("dashboard/api/imo-recovery-priority.json", buildImoRecoveryQueue(vessels), report);
   writeApiJson("dashboard/api/high-value-targets.json", buildHighValueTargets(vessels), report);
   writeApiJson("dashboard/api/unknown-gt-review.json", buildUnknownGtReview(vessels), report);
   writeApiJson("dashboard/api/high-value-low-confidence.json", buildHighValueLowConfidence(vessels), report);
-  writeApiJson("dashboard/api/congestion-watchlist.json", buildCongestionWatchlist(vessels), report);
-  writeApiJson("dashboard/api/agent-followup-queue.json", agentFollowupQueue, report);
+  const congestionWatchlistPayload = buildCongestionWatchlist(vessels);
+  writeApiJson("dashboard/api/congestion-watchlist.json", withApiContract(congestionWatchlistPayload, { ...apiContractContext, record_count: congestionWatchlistPayload.length, source_status: "derived_from_vessels" }), report);
+  writeApiJson("dashboard/api/agent-followup-queue.json", withApiContract(agentFollowupQueue, { ...apiContractContext, record_count: agentFollowupQueue.length, source_status: "derived_from_candidates" }), report);
   fs.mkdirSync(routeApiOutputPath("dashboard/api/quality/basic-info-coverage.json", report).split("/").slice(0, -1).join("/"), { recursive: true });
   fs.mkdirSync(routeApiOutputPath("dashboard/api/review/basic-info-missing.json", report).split("/").slice(0, -1).join("/"), { recursive: true });
   writeApiJson("dashboard/api/quality/basic-info-coverage.json", buildBasicInfoCoverage(vessels), report);
@@ -5835,6 +5870,8 @@ try {
   writeStaticDatasetJson("data/latest-lite.json", vessels, report, staticOutputManifest);
   writeStaticDatasetJson("dashboard/api/candidates.json", candidateList, report, staticOutputManifest);
   writeApiJson("dashboard/api/candidates/top.json", topCandidatesPayload, report);
+  writeApiJson("dashboard/api/sales-pipeline.json", salesPipelinePayload, report);
+  writeApiJson("dashboard/api/history/vessel-visits.json", vesselVisitsPayload, report);
   writeApiJson("dashboard/api/changes.json", candidateChangesPayload, report);
   writeApiJson("dashboard/api/contact-ready-vessels.json", contactReadyVessels, report);
   writeApiJson("dashboard/api/fleet-opportunities.json", fleetOpportunities, report);
@@ -5844,7 +5881,7 @@ try {
   writeApiJson("dashboard/api/hot-candidates.json", candidateList.filter(v => v.is_immediate_candidate || (v.total_sales_priority_score || 0) >= IMMEDIATE_TARGET_THRESHOLD).slice(0, 40), report);
   writeApiJson("dashboard/api/hot-vessels.json", hotVessels, report);
   writeStaticDatasetJson("dashboard/api/ports.json", portIntelligence.map(({ all_vessels, scored_vessels, sales_candidates, immediate_targets, berths, ...port }) => port), report, staticOutputManifest);
-  writeStaticDatasetJson("dashboard/api/dashboard-summary.json", dashboardSummary, report, staticOutputManifest);
+  writeStaticDatasetJson("dashboard/api/dashboard-summary.json", withApiContract(dashboardSummary, apiContractContext), report, staticOutputManifest);
   writeApiJson("dashboard/api/port-opportunities.json", portOpportunities, report);
   writeApiJson("dashboard/api/coverage-registry.json", {
     generated_at: completedAt,
@@ -5880,10 +5917,10 @@ try {
   writeApiJson("dashboard/api/commercial-command-center.json", commercialCommandCenter, report);
   writeApiJson("dashboard/api/port-congestion-heatmap.json", portCongestionHeatmap, report);
   writeApiJson("dashboard/api/biofouling-timeline.json", biofoulingTimeline, report);
-  writeApiJson("dashboard/api/status.json", report, report);
+  writeApiJson("dashboard/api/status.json", withApiContract(report, apiContractContext), report);
   writeApiJson("dashboard/api/readiness-gate.json", currentReadinessGateReport, report);
   writeApiJson("dashboard/api/readiness-gate-runtime.json", currentReadinessGateReport, report);
-  writeRuntimeDiagnosticJson("dashboard/api/status.json", report, finalRunOrigin);
+  writeRuntimeDiagnosticJson("dashboard/api/status.json", withApiContract(report, apiContractContext), finalRunOrigin);
   writeRuntimeDiagnosticJson("dashboard/api/backend-ops.json", report.backend_ops, finalRunOrigin);
   writeRuntimeDiagnosticJson("dashboard/api/readiness-gate.json", currentReadinessGateReport, finalRunOrigin);
   writeRuntimeDiagnosticJson("dashboard/api/readiness-gate-runtime.json", currentReadinessGateReport, finalRunOrigin);

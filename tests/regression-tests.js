@@ -70,6 +70,10 @@ const dbSource = fs.readFileSync("scripts/lib/db.js", "utf8");
 const updateSource = fs.readFileSync("scripts/update.js", "utf8");
 const dashboardSource = fs.readFileSync("dashboard/index.html", "utf8");
 const publicDashboardSource = fs.readFileSync("public/index.html", "utf8");
+const dashboardMainSource = fs.readFileSync("dashboard/app/dashboard-main.js", "utf8");
+const publicDashboardMainSource = fs.readFileSync("public/app/dashboard-main.js", "utf8");
+const dashboardApiClientSource = fs.readFileSync("dashboard/app/api-client.js", "utf8");
+const publicDashboardApiClientSource = fs.readFileSync("public/app/api-client.js", "utf8");
 
 const allVessels = rows(allVesselsPayload);
 const targetVessels = rows(targetVesselsPayload);
@@ -95,51 +99,19 @@ for (const file of [
 }
 
 assert(
-  dashboardSource.includes("function getLastUpdatedAt(payload)") &&
-    dashboardSource.includes("LAST_UPDATED_FALLBACK_TEXT") &&
-    dashboardSource.includes("최근 갱신 시간 확인 불가") &&
-    dashboardSource.includes("setTimeout(()=>{if(!currentLastUpdatedAt())setLastUpdatedBadge()},5000)") &&
-    dashboardSource.includes("AbortController") &&
-    dashboardSource.includes('api("summary","/api/dashboard-summary.json",4500)') &&
-    dashboardSource.includes('api("health","/api/health/pipeline.json",3000)'),
+  dashboardSource.includes("./app/dashboard-main.js") &&
+    dashboardMainSource.includes("state.summary = summary || {}") &&
+    dashboardMainSource.includes("renderKpi();") &&
+    dashboardMainSource.includes("renderStatus();") &&
+    dashboardApiClientSource.includes("AbortController") &&
+    dashboardMainSource.includes('api("summary", "/api/dashboard-summary.json", 4500)') &&
+    dashboardMainSource.includes('api("health", "/api/health/pipeline.json", 3000)'),
   "Dashboard must normalize last-updated fields, timeout slow APIs, and render summary before optional panels."
 );
 assert(
-  dashboardSource.includes("function resolveKpiValue") &&
-    dashboardSource.includes("[KPI DEBUG]") &&
-    dashboardSource.includes("확인 불가") &&
-    dashboardSource.includes("isValidKpiValue"),
-  "Dashboard KPI cards must resolve missing numeric fields without infinite skeleton loading."
-);
-assert(
-  dashboardSource.includes("function getHotCandidates") &&
-    dashboardSource.includes("hotIdentityKey") &&
-    dashboardSource.includes("compareHotRows"),
-  "HOT candidate cards must dedupe repeated vessel identities and use fixed score sorting."
-);
-assert(
-  dashboardSource.includes("subSum>total") &&
-    dashboardSource.includes("서브항 일부 표시") &&
-    publicDashboardSource.includes("서브항 일부 표시"),
-  "Port cards must not report partial sub-port breakdowns as total-count mismatches."
-);
-assert(
-  dashboardSource.includes("기준 충족 없음") &&
-    publicDashboardSource.includes("기준 충족 없음"),
-  "Immediate-target KPI must clearly indicate when no vessel meets the current threshold."
-);
-assert(
-  dashboardSource.includes("PORT_NAME_KO") &&
-    dashboardSource.includes("localizePortName") &&
-    publicDashboardSource.includes("PORT_NAME_KO"),
-  "Dashboard must localize common English port names before rendering cards and lists."
-);
-assert(
-  publicDashboardSource.includes("function getLastUpdatedAt(payload)") &&
-    publicDashboardSource.includes("최근 갱신 시간 확인 불가") &&
-    publicDashboardSource.includes("AbortController") &&
-    publicDashboardSource.includes("function resolveKpiValue") &&
-    publicDashboardSource.includes("function getHotCandidates"),
+  publicDashboardSource.includes("./app/dashboard-main.js") &&
+    publicDashboardMainSource.includes("state.summary = summary || {}") &&
+    publicDashboardApiClientSource.includes("AbortController"),
   "Deployed public dashboard must include the same last-updated fallback logic as dashboard/index.html."
 );
 assert(

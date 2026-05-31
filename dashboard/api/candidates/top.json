@@ -1,0 +1,7 @@
+{
+  "generated_at": "2026-05-31T10:43:26.673Z",
+  "focus_question": "Which vessel should we contact next, and why?",
+  "immediate_targets": [],
+  "opportunities": [],
+  "operating_rule": "Highest commercial opportunity score first; ties prefer feasible work windows, congestion exposure, confidence, and biofouling risk."
+}

@@ -1,29 +1,14 @@
-﻿import { createClient } from "@supabase/supabase-js";
-import ws from "ws";
 import { createHash, randomUUID } from "node:crypto";
+import { getSupabase, createRunId } from "./db/client.js";
+import { withStableDashboardSummaryFields } from "./db/summary-snapshot.js";
+import { retentionCutoff, retentionPolicyFromEnv } from "./db/retention.js";
+import { activeDatasetRunId, latestPromotedRunIds } from "./db/runs.js";
+
+export { getSupabase, createRunId };
 
 const COMMERCIAL_RULE_VERSION = process.env.COMMERCIAL_RULE_VERSION || "commercial_rules_v2026_05_31";
 const CANDIDATE_RULE_VERSION = process.env.CANDIDATE_RULE_VERSION || "candidate_hybrid_percentile_v2026_05_31";
 const EXPLAINABILITY_RULE_VERSION = process.env.EXPLAINABILITY_RULE_VERSION || "explainability_ko_v2026_05_31";
-
-export function getSupabase() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !key) {
-    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  }
-
-  return createClient(url, key, {
-    realtime: {
-      transport: ws
-    }
-  });
-}
-
-export function createRunId() {
-  return `run_${new Date().toISOString().replace(/[-:.TZ]/g, "")}_${randomUUID().slice(0, 8)}`;
-}
 
 function normalizeVesselName(value) {
   return String(value || "")
@@ -749,7 +734,7 @@ function buildDashboardSummarySnapshot(records = [], runId, now, diagnostics = {
   const portSummary = aggregatePortSummaryRows(portUnitSummary);
   const topImmediate = [...immediateRows].sort((a, b) => commercialScore(b) - commercialScore(a)).slice(0, 5);
   const topSales = [...salesRows].filter(row => !isImmediateTargetRecord(row)).sort((a, b) => commercialScore(b) - commercialScore(a)).slice(0, 5);
-  return {
+  return withStableDashboardSummaryFields({
     snapshot_id: stableEntityId("DSUM", runId),
     run_id: runId,
     generated_at: now,
@@ -792,7 +777,7 @@ function buildDashboardSummarySnapshot(records = [], runId, now, diagnostics = {
       ).length
     },
     created_at: now
-  };
+  });
 }
 
 function currentCandidateRow(record = {}, runId, now, prefix) {
@@ -1297,135 +1282,6 @@ function shouldPersistFeatureRow(record = {}) {
   return shouldPersistAnalyticalRow(record);
 }
 
-function retentionCutoff(days, dateOnly = false) {
-  const cutoff = new Date(Date.now() - Number(days || 0) * 24 * 60 * 60 * 1000).toISOString();
-  return dateOnly ? cutoff.slice(0, 10) : cutoff;
-}
-
-async function activeDatasetRunId(supabase) {
-  try {
-    const { data, error } = await supabase
-      .from("active_dataset_pointer")
-      .select("active_run_id")
-      .eq("id", "current")
-      .limit(1);
-    if (error) return null;
-    return data?.[0]?.active_run_id || null;
-  } catch {
-    return null;
-  }
-}
-
-async function latestPromotedRunIds(supabase, limit = 1) {
-  try {
-    const { data, error } = await supabase
-      .from("data_collection_runs")
-      .select("run_id,started_at,promoted_at")
-      .eq("status", "promoted")
-      .order("started_at", { ascending: false })
-      .limit(Math.max(1, Number(limit || 1)));
-    if (error) return [];
-    return (data || []).map(row => row.run_id).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-function retentionNumberEnv(name, fallback) {
-  const raw = process.env[name];
-  if (raw === undefined || raw === null || String(raw).trim() === "") return fallback;
-  const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 ? value : fallback;
-}
-
-const RETENTION_PROFILES = {
-  free_500mb: {
-    targetMb: 450,
-    hardCapMb: 500,
-    keepPromotedRuns: 1,
-    vesselSnapshotsDays: 1,
-    portCallMasterDays: 7,
-    riskHistoryDays: 3,
-    enrichmentDays: 2,
-    sourceLogsDays: 7,
-    dashboardSummaryDays: 14,
-    currentStaleDays: 2,
-    eventDays: 3,
-    pilotEventDays: 3,
-    congestionDays: 3,
-    identityDays: 3,
-    historyDays: 3,
-    routePredictionDays: 3,
-    dailyWarehouseDays: 7,
-    rawArchiveIndexDays: 14,
-    ruleDays: 3,
-    featureDays: 3,
-    modelDays: 3,
-    explainabilityDays: 3
-  },
-  ideal: {
-    targetMb: 4096,
-    hardCapMb: 8192,
-    keepPromotedRuns: 14,
-    vesselSnapshotsDays: 30,
-    portCallMasterDays: 180,
-    riskHistoryDays: 90,
-    enrichmentDays: 30,
-    sourceLogsDays: 90,
-    dashboardSummaryDays: 180,
-    currentStaleDays: 14,
-    eventDays: 90,
-    pilotEventDays: 90,
-    congestionDays: 90,
-    identityDays: 90,
-    historyDays: 180,
-    routePredictionDays: 90,
-    dailyWarehouseDays: 365,
-    rawArchiveIndexDays: 365,
-    ruleDays: 90,
-    featureDays: 90,
-    modelDays: 180,
-    explainabilityDays: 90
-  }
-};
-
-function retentionProfileName() {
-  const raw = String(process.env.DB_RETENTION_PROFILE || "free_500mb").trim().toLowerCase();
-  if (["ideal", "analytics", "growth"].includes(raw)) return "ideal";
-  if (["free", "free_500", "500mb", "free_500mb", "lean"].includes(raw)) return "free_500mb";
-  return "free_500mb";
-}
-
-function retentionPolicyFromEnv() {
-  const profile = retentionProfileName();
-  const defaults = RETENTION_PROFILES[profile] || RETENTION_PROFILES.free_500mb;
-  return {
-    profile,
-    targetMb: retentionNumberEnv("DB_RETENTION_TARGET_MB", defaults.targetMb),
-    hardCapMb: retentionNumberEnv("DB_RETENTION_HARD_CAP_MB", defaults.hardCapMb),
-    keepPromotedRuns: retentionNumberEnv("DB_RETENTION_KEEP_PROMOTED_RUNS", defaults.keepPromotedRuns),
-    vesselSnapshotsDays: retentionNumberEnv("DB_RETENTION_VESSEL_SNAPSHOTS_DAYS", defaults.vesselSnapshotsDays),
-    portCallMasterDays: retentionNumberEnv("DB_RETENTION_PORT_CALL_MASTER_DAYS", defaults.portCallMasterDays),
-    riskHistoryDays: retentionNumberEnv("DB_RETENTION_RISK_HISTORY_DAYS", defaults.riskHistoryDays),
-    enrichmentDays: retentionNumberEnv("DB_RETENTION_ENRICHMENT_DAYS", defaults.enrichmentDays),
-    sourceLogsDays: retentionNumberEnv("DB_RETENTION_SOURCE_LOGS_DAYS", defaults.sourceLogsDays),
-    dashboardSummaryDays: retentionNumberEnv("DB_RETENTION_DASHBOARD_SUMMARY_DAYS", defaults.dashboardSummaryDays),
-    currentStaleDays: retentionNumberEnv("DB_RETENTION_CURRENT_STALE_DAYS", defaults.currentStaleDays),
-    eventDays: retentionNumberEnv("DB_RETENTION_EVENT_DAYS", defaults.eventDays),
-    pilotEventDays: retentionNumberEnv("DB_RETENTION_PILOT_EVENT_DAYS", defaults.pilotEventDays),
-    congestionDays: retentionNumberEnv("DB_RETENTION_CONGESTION_DAYS", defaults.congestionDays),
-    identityDays: retentionNumberEnv("DB_RETENTION_IDENTITY_DAYS", defaults.identityDays),
-    historyDays: retentionNumberEnv("DB_RETENTION_HISTORY_DAYS", defaults.historyDays),
-    routePredictionDays: retentionNumberEnv("DB_RETENTION_ROUTE_PREDICTION_DAYS", defaults.routePredictionDays),
-    dailyWarehouseDays: retentionNumberEnv("DB_RETENTION_DAILY_WAREHOUSE_DAYS", defaults.dailyWarehouseDays),
-    rawArchiveIndexDays: retentionNumberEnv("DB_RETENTION_RAW_ARCHIVE_INDEX_DAYS", defaults.rawArchiveIndexDays),
-    ruleDays: retentionNumberEnv("DB_RETENTION_RULE_DAYS", defaults.ruleDays),
-    featureDays: retentionNumberEnv("DB_RETENTION_FEATURE_DAYS", defaults.featureDays),
-    modelDays: retentionNumberEnv("DB_RETENTION_MODEL_DAYS", defaults.modelDays),
-    explainabilityDays: retentionNumberEnv("DB_RETENTION_EXPLAINABILITY_DAYS", defaults.explainabilityDays)
-  };
-}
-
 async function deleteRowsOlderThan(supabase, job, activeRunId) {
   const days = Number(job.days);
   if (!Number.isFinite(days) || days <= 0) {
@@ -1572,6 +1428,8 @@ async function runLeanRetentionCleanup(supabase) {
       keep_promoted_runs: retention.keepPromotedRuns,
       strategy: retention.profile === "ideal"
         ? "retain broader analytical history while still pruning stale run-scoped rows"
+        : retention.profile === "pro_7_5gb"
+          ? "retain operational analytics history while keeping Supabase below the 7.5GB operating cap"
         : "keep active run plus latest promoted run, archive/fallback outside Supabase"
     },
     run_prune: runPruneResult,

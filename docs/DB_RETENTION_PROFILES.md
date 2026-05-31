@@ -1,16 +1,28 @@
 # HWK DB Retention Profiles
 
-HWK supports two database retention modes through one environment value:
+HWK supports three database retention modes through one environment value:
+
+```env
+DB_RETENTION_PROFILE=pro_7_5gb
+```
+
+Other supported modes:
 
 ```env
 DB_RETENTION_PROFILE=free_500mb
-```
-
-or:
-
-```env
 DB_RETENTION_PROFILE=ideal
 ```
+
+## pro_7_5gb
+
+Use this as the default Pro Plan operating mode.
+
+- Target size: 6.5 GB
+- Hard cap: 7.5 GB
+- Keeps active run plus 30 promoted runs
+- Keeps operational intelligence history, usually 14-365 days
+- Preserves enough history for sales follow-up, trend review, and model calibration without letting Supabase grow unbounded
+
 
 ## free_500mb
 
@@ -24,7 +36,7 @@ Use this while Supabase Free Plan size matters.
 
 ## ideal
 
-Use this later when the database has enough paid capacity.
+Use this only when the database has enough paid capacity beyond the 7.5 GB operating cap.
 
 - Target size: 4 GB
 - Hard cap: 8 GB
@@ -41,6 +53,12 @@ Settings -> Secrets and variables -> Actions -> Variables
 ```
 
 Set:
+
+```text
+DB_RETENTION_PROFILE = pro_7_5gb
+```
+
+or:
 
 ```text
 DB_RETENTION_PROFILE = free_500mb
