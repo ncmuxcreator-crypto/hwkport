@@ -1451,6 +1451,57 @@ function isMissingSchemaTableError(error) {
     text.includes("pgrst205");
 }
 
+function missingSchemaColumnName(error) {
+  const text = [
+    error?.message,
+    error?.details,
+    error?.hint
+  ].filter(Boolean).join(" ");
+  const schemaCacheMatch = text.match(/Could not find the ['"]([^'"]+)['"] column/i);
+  if (schemaCacheMatch?.[1]) return schemaCacheMatch[1];
+  const columnMissingMatch = text.match(/column ["']?([a-zA-Z0-9_]+)["']? does not exist/i);
+  if (columnMissingMatch?.[1]) return columnMissingMatch[1];
+  return null;
+}
+
+function stripColumnsFromRows(rows, columns = []) {
+  const columnSet = new Set(columns.filter(Boolean));
+  if (!columnSet.size) return rows;
+  return rows.map(row => {
+    const next = { ...row };
+    for (const column of columnSet) delete next[column];
+    return next;
+  });
+}
+
+async function upsertWithSchemaCompatibility(supabase, table, rows, options = {}, compatibility = {}) {
+  const optionalColumns = new Set(compatibility.optional_columns || compatibility.optionalColumns || []);
+  const strippedColumns = new Set(compatibility.stripped_optional_columns || []);
+  let retryCount = 0;
+
+  while (true) {
+    const writeRows = stripColumnsFromRows(rows, Array.from(strippedColumns));
+    const { error } = await supabase.from(table).upsert(writeRows, options);
+    if (!error) {
+      compatibility.stripped_optional_columns = Array.from(strippedColumns);
+      compatibility.retry_count = Number(compatibility.retry_count || 0) + retryCount;
+      compatibility.status = strippedColumns.size ? "optional_columns_stripped" : "native_schema";
+      return { error: null, stripped_optional_columns: Array.from(strippedColumns), retry_count: retryCount };
+    }
+
+    const missingColumn = missingSchemaColumnName(error);
+    if (!missingColumn || !optionalColumns.has(missingColumn) || strippedColumns.has(missingColumn)) {
+      return { error };
+    }
+
+    strippedColumns.add(missingColumn);
+    retryCount += 1;
+    compatibility.last_error = compactDbError(error);
+    compatibility.status = "optional_columns_stripped";
+    console.warn(`[HWK] Supabase schema compatibility: ${table}.${missingColumn} missing; retrying without optional column.`);
+  }
+}
+
 async function upsertOptionalDiagnosticsRow(supabase, table, row, options = {}) {
   const result = {
     table,
@@ -1916,6 +1967,20 @@ export async function saveToSupabase(records, options = {}) {
         : "no_live_data";
   const storageMode = leanStorageEnabled() ? "lean" : "full";
   const batchSize = Number(process.env.SUPABASE_BATCH_SIZE || 100);
+  const schemaCompatibility = {
+    vessel_snapshots: {
+      status: "native_schema",
+      optional_columns: ["gt_source", "eta_source", "congestion_source", "score_source"],
+      stripped_optional_columns: [],
+      retry_count: 0
+    },
+    port_call_master: {
+      status: "native_schema",
+      optional_columns: ["gt_source", "eta_source", "operator_source", "congestion_source", "score_source"],
+      stripped_optional_columns: [],
+      retry_count: 0
+    }
+  };
   const preRetentionCleanup = await runLeanRetentionCleanup(supabase);
   const highScoreNotPromoted = records
     .filter(r => commercialScore(r) >= 65 && !isSalesTargetRecord(r))
@@ -2158,9 +2223,13 @@ export async function saveToSupabase(records, options = {}) {
   let recordsSaved = 0;
   for (let index = 0; index < rows.length; index += batchSize) {
     const batch = rows.slice(index, index + batchSize);
-    const { error } = await supabase
-      .from("vessel_snapshots")
-      .upsert(batch, { onConflict: "snapshot_uid" });
+    const { error } = await upsertWithSchemaCompatibility(
+      supabase,
+      "vessel_snapshots",
+      batch,
+      { onConflict: "snapshot_uid" },
+      schemaCompatibility.vessel_snapshots
+    );
     if (error) throw error;
     recordsSaved += batch.length;
   }
@@ -2232,9 +2301,13 @@ export async function saveToSupabase(records, options = {}) {
 
   for (let index = 0; index < portCallMasterRows.length; index += batchSize) {
     const batch = portCallMasterRows.slice(index, index + batchSize);
-    const { error } = await supabase
-      .from("port_call_master")
-      .upsert(batch, { onConflict: "port_call_id" });
+    const { error } = await upsertWithSchemaCompatibility(
+      supabase,
+      "port_call_master",
+      batch,
+      { onConflict: "port_call_id" },
+      schemaCompatibility.port_call_master
+    );
     if (error) throw error;
   }
 
@@ -3664,6 +3737,7 @@ export async function saveToSupabase(records, options = {}) {
       db_analytics_scope: analyticsScope(),
       db_foundation_write_mode: foundationWriteMode(),
       db_rows_written_by_table: dbRowsWrittenByTable,
+      schema_compatibility: schemaCompatibility,
       retention_rows_deleted_by_table: retentionRowsDeletedByTable,
       post_write_verification: postWriteVerification,
       dashboard_summary_snapshot: dashboardSummarySnapshotResult,
@@ -3717,6 +3791,7 @@ export async function saveToSupabase(records, options = {}) {
     active_run_id: postWriteVerification.active_run_id,
     latest_successful_run_id: postWriteVerification.latest_successful_run_id,
     db_rows_written_by_table: dbRowsWrittenByTable,
+    schema_compatibility: schemaCompatibility,
     retention_rows_deleted_by_table: retentionRowsDeletedByTable,
     retentionCleanup,
     routePatternRowsSaved: routePatternRows.length,

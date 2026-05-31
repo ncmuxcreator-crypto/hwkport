@@ -5372,6 +5372,8 @@ try {
     active_run_id: report.active_run_id || null,
     latest_successful_run_id: report.latest_successful_run_id || null,
     promotion_status: report.promotion_status || null,
+    schema_compatibility_stripped: Object.entries(report.supabase_write?.schema_compatibility || {})
+      .flatMap(([table, value]) => (value?.stripped_optional_columns || []).map(column => `${table}.${column}`)),
     failed_stage: report.dataset_generation_audit?.failed_stage || null,
     root_cause: report.dataset_generation_audit?.root_cause || null,
     error: report.error || report.supabase_write?.error || null
