@@ -99,6 +99,13 @@ for (const file of required) {
   if (!outputExists(file)) {
     throw new Error(`Missing required output: ${file}`);
   }
+  if (/\.json$/i.test(file)) {
+    try {
+      readOutputJson(file);
+    } catch (error) {
+      throw new Error(`Invalid JSON output: ${file}`);
+    }
+  }
 }
 
 const data = JSON.parse(fs.readFileSync("data/latest-lite.json", "utf8"));
@@ -344,6 +351,19 @@ if (
   statusSupabaseStorage.post_write_verification?.status !== "completed"
 ) {
   throw new Error("Production status with vessel rows requires completed post_write_verification");
+}
+if (validationMode === "production") {
+  const realDatasetExists = Number(status.record_count || report.record_count || dashboardSummary.record_count || 0) > 0 ||
+    Number(status.all_vessels_count || status.all_collected_vessel_count || report.all_vessels_count || report.all_collected_vessel_count || dashboardSummary.all_vessels_count || 0) > 0 ||
+    Boolean(status.latest_successful_run_id || status.latest_successful_summary_run_id || dashboardSummary.latest_successful_run_id) ||
+    jsonRows(allCollectedVessels).length > 0 ||
+    jsonRows(vessels).length > 0;
+  if (!realDatasetExists) {
+    throw new Error("Production validation requires at least one real active, fallback, or static dataset.");
+  }
+  if (status.status === "failed" && status.fallback_used === true && !status.latest_successful_run_id && !dashboardSummary.latest_successful_run_id && !jsonRows(allCollectedVessels).length) {
+    throw new Error("Failed production run must still expose a latest successful dataset fallback.");
+  }
 }
 validateVesselRowContract("all-collected-vessels.json", jsonRows(allCollectedVessels));
 validateVesselRowContract("target-vessels.json", jsonRows(targetVessels));
@@ -740,6 +760,9 @@ if (packageJson.scripts?.reprocess !== "node scripts/reprocess.js" || !fs.exists
 }
 if (packageJson.scripts?.["test:regression"] !== "node tests/regression-tests.js") {
   throw new Error("Regression tests must be available as npm run test:regression");
+}
+if (packageJson.scripts?.["audit:data"] !== "node scripts/audit-data-health.js" || !fs.existsSync("scripts/audit-data-health.js")) {
+  throw new Error("Data health audit must be available as npm run audit:data");
 }
 if (packageJson.scripts?.["gdrive:check"] && !fs.existsSync("scripts/gdrive-check.js")) {
   throw new Error("Google Drive check script is registered but scripts/gdrive-check.js is missing");

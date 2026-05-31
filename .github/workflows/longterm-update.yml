@@ -218,7 +218,13 @@ jobs:
           console.log("storage.gdrive=", status.storage_status?.gdrive?.status || status.gdrive_archive?.status || "unknown");
           NODE
 
+      - name: Audit data health
+        if: always()
+        timeout-minutes: 2
+        run: npm run audit:data
+
       - name: Validate output
+        if: always()
         timeout-minutes: 2
         run: npm run validate
 

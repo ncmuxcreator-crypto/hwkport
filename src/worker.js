@@ -1773,6 +1773,28 @@ async function supabaseGet(env, path) {
   return { ok: true, status: res.status, rows: Array.isArray(rows) ? rows : [], error: null, keyType: base.keyType };
 }
 
+async function fetchLatestCompletedRunPointer(env, diagnostics = []) {
+  const completed = await supabaseGet(env, "/rest/v1/data_collection_runs?select=run_id,finished_at,promoted_at,status,total_rows,raw_collected_rows,normalized_rows,all_vessels_count,candidates_count,immediate_targets_count&status=in.(completed,promoted)&or=(all_vessels_count.gt.0,total_rows.gt.0,raw_collected_rows.gt.0,normalized_rows.gt.0)&order=finished_at.desc.nullslast&order=promoted_at.desc.nullslast&limit=1");
+  diagnostics.push({ source: "latest_completed_real_run", ok: completed.ok, status: completed.status, row_count: completed.rows.length, error: completed.error });
+  const run = completed.rows[0] || null;
+  if (!run?.run_id) return null;
+  return {
+    configured: true,
+    active_run_id: run.run_id,
+    active_collected_at: run.finished_at || run.promoted_at || null,
+    promoted_at: run.promoted_at || null,
+    is_stale: true,
+    auth_key_type: completed.keyType || supabaseBase(env)?.keyType || "unknown",
+    pointer_source: "latest_completed_real_run",
+    pointer_diagnostics: diagnostics,
+    fallback_pointer: true,
+    latest_completed_run: true,
+    latest_run_status: run.status || null,
+    latest_run_row_count: Number(run.all_vessels_count || run.total_rows || run.raw_collected_rows || run.normalized_rows || 0),
+    error: null
+  };
+}
+
 async function fetchActivePointer(env) {
   const base = supabaseBase(env);
   if (!base) return { configured: false, active_run_id: null, error: "missing_supabase_binding", auth_key_type: "missing" };
@@ -1785,23 +1807,8 @@ async function fetchActivePointer(env) {
     return { configured: true, ...pointer, auth_key_type: base.keyType, pointer_source: "active_dataset_pointer", pointer_diagnostics: diagnostics, error: null };
   }
 
-  const promoted = await supabaseGet(env, "/rest/v1/data_collection_runs?select=run_id,promoted_at,finished_at,status,total_rows,all_vessels_count,candidates_count,immediate_targets_count&status=eq.promoted&order=promoted_at.desc.nullslast&order=finished_at.desc.nullslast&limit=1");
-  diagnostics.push({ source: "latest_promoted_run", ok: promoted.ok, status: promoted.status, row_count: promoted.rows.length, error: promoted.error });
-  const run = promoted.rows[0] || null;
-  if (run?.run_id) {
-    return {
-      configured: true,
-      active_run_id: run.run_id,
-      active_collected_at: run.finished_at || null,
-      promoted_at: run.promoted_at || null,
-      is_stale: false,
-      auth_key_type: base.keyType,
-      pointer_source: "latest_promoted_run",
-      pointer_diagnostics: diagnostics,
-      fallback_pointer: true,
-      error: null
-    };
-  }
+  const completedPointer = await fetchLatestCompletedRunPointer(env, diagnostics);
+  if (completedPointer?.active_run_id) return completedPointer;
 
   const latestRun = await supabaseGet(env, "/rest/v1/vessel_snapshots?select=run_id,collected_at&run_id=not.is.null&order=collected_at.desc&limit=1");
   diagnostics.push({ source: "latest_snapshot_run", ok: latestRun.ok, status: latestRun.status, row_count: latestRun.rows.length, error: latestRun.error });
@@ -1894,6 +1901,26 @@ async function fetchSupabaseRows(env) {
   }
 
   if (!pointer.legacy_latest) {
+    const completedPointer = await fetchLatestCompletedRunPointer(env, pointer.pointer_diagnostics || []);
+    if (completedPointer?.active_run_id && completedPointer.active_run_id !== pointer.active_run_id) {
+      const completedRows = await supabaseGet(env, `/rest/v1/vessel_snapshots?select=*&run_id=eq.${encodeURIComponent(completedPointer.active_run_id)}&order=collected_at.desc&limit=5000`);
+      if (completedRows.ok && completedRows.rows.length) {
+        return {
+          rows: completedRows.rows.map(normalizeSnapshot).map(enrichCumulativeStay),
+          configured: true,
+          error: null,
+          pointer: {
+            ...completedPointer,
+            active_dataset_error: response.ok ? null : response.error,
+            active_dataset_empty: response.ok && response.rows.length === 0
+          },
+          data_source_used: "supabase_latest_completed_run_fallback",
+          fallback_used: true,
+          fallback_reason: response.ok && response.rows.length === 0 ? "active_dataset_empty" : response.error || "active_dataset_failed"
+        };
+      }
+    }
+
     const fallback = await supabaseGet(env, "/rest/v1/vessel_snapshots?select=*&order=collected_at.desc&limit=5000");
     const fallbackPointer = {
       ...pointer,
@@ -4228,6 +4255,15 @@ function buildStatus(records, source) {
     auto_update_label: "데이터는 4시간마다 자동 업데이트됩니다.",
     version: "worker-live-api-v1",
     status: source.error && !records.length ? "degraded" : "success",
+    user_message: fallbackUsed ? "최신 갱신 실패 - 마지막 정상 데이터 표시 중" : null,
+    data_health: {
+      label: "데이터 상태",
+      last_successful_update: activeCollectedAt,
+      current_run_status: source.pointer?.latest_run_status || (source.error ? "failed_or_unavailable" : "active"),
+      vessel_record_count: records.length,
+      supabase_storage_status: source.configured === false ? "static_json" : records.length ? "completed" : "unavailable",
+      dataset_promotion_status: source.pointer?.fallback_pointer ? "fallback" : "promoted"
+    },
     data_mode: dataMode,
     commercial_use_status: displayableRows ? "review_required" : "not_ready",
     live_data_available: Boolean(displayableRows),

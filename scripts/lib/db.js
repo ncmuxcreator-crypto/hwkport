@@ -3739,8 +3739,8 @@ export async function saveToSupabase(records, options = {}) {
   const storageFinalized = postWriteVerification.status === "completed";
 
   const finalRunUpdate = await supabase.from("data_collection_runs").update({
-    status: storageFinalized ? promoted ? "promoted" : runStatus === "promotable" ? "degraded_not_promoted" : runStatus : "storage_finalization_failed",
-    validation_status: storageFinalized && promoted ? "passed" : "failed",
+    status: storageFinalized ? promoted ? "promoted" : "completed" : "storage_finalization_failed",
+    validation_status: storageFinalized ? promoted ? "passed" : "promotion_blocked" : "failed",
     source_summary: {
       ...diagnostics,
       imo_recovery: imoRecoveryDiagnostics,

@@ -5164,6 +5164,14 @@ try {
       active_collected_at: report?.completed_at || completedAt,
       update_interval_label_ko: "4시간마다 자동 업데이트"
     },
+    data_health: {
+      label: "데이터 상태",
+      last_successful_update: latestSuccessfulRunId ? report?.completed_at || completedAt : null,
+      current_run_status: report?.status || status,
+      vessel_record_count: report?.all_collected_vessel_count || allCollectedVessels.length,
+      supabase_storage_status: report?.supabase_write?.status || report?.storage_status?.supabase?.status || "unknown",
+      dataset_promotion_status: report?.promotion_status || "unknown"
+    },
     data_source_used: report?.data_source_used || (report?.data_mode === "no_live_data" ? "diagnostics_only_no_live_data" : "static_json_snapshot"),
     fallback_used: Boolean(report?.fallback_used || report?.data_mode === "no_live_data"),
     fallback_reason: report?.fallback_reason || (report?.data_mode === "no_live_data" ? "local_or_failed_run_without_live_source_rows" : null),
