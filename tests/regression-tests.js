@@ -129,6 +129,12 @@ assert(
   "Immediate-target KPI must clearly indicate when no vessel meets the current threshold."
 );
 assert(
+  dashboardSource.includes("PORT_NAME_KO") &&
+    dashboardSource.includes("localizePortName") &&
+    publicDashboardSource.includes("PORT_NAME_KO"),
+  "Dashboard must localize common English port names before rendering cards and lists."
+);
+assert(
   publicDashboardSource.includes("function getLastUpdatedAt(payload)") &&
     publicDashboardSource.includes("최근 갱신 시간 확인 불가") &&
     publicDashboardSource.includes("AbortController") &&

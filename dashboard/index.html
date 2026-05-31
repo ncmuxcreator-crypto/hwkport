@@ -159,7 +159,9 @@ const score=v=>n(pick(v,"commercial_value_score","salesScore","sales_score","tot
 const stay=v=>n(pick(v,"cumulative_stay_hours","stay_hours","current_call_stay_hours","anchorage_hours"));
 const confidence=v=>n(pick(v,"data_confidence_score","confidence_score"));
 const vesselName=v=>pick(v,"vessel_name","name","ship_name")||"선명 확인 필요";
-const portName=v=>pick(v,"port_name","port_name_ko","port")||"항만 확인 필요";
+const PORT_NAME_KO={busan:"부산항",ulsan:"울산항","yeosu-gwangyang":"여수·광양항","pyeongtaek-dangjin":"평택·당진항",incheon:"인천항",pohang:"포항항","south gyeongsang":"경남권 항만",daesan:"대산항",mokpo:"목포항",gunsan:"군산항","donghae-mukho":"동해·묵호항",jeju:"제주항","masan-jinhae":"마산·진해항",tongyeong:"통영항","geoje-okpo":"거제·옥포항"};
+const localizePortName=value=>{const text=String(value||"").trim();return PORT_NAME_KO[text.toLowerCase()]||text}
+const portName=v=>localizePortName(pick(v,"port_name_ko","port_name","port")||"항만 확인 필요");
 const subPort=v=>pick(v,"sub_port","berth_name","terminal_name","anchorage_name")||"서브항 확인 필요";
 const statusText=v=>pick(v,"status_bucket","operational_status","status")||"상태 확인 필요";
 const operator=v=>pick(v,"operator_name","operator")||"운영선사 확인 필요";
