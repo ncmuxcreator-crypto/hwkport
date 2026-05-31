@@ -98,12 +98,16 @@ assert(
   dashboardSource.includes("function getLastUpdatedAt(payload)") &&
     dashboardSource.includes("LAST_UPDATED_FALLBACK_TEXT") &&
     dashboardSource.includes("최근 갱신 시간 확인 불가") &&
-    dashboardSource.includes("setTimeout(()=>{if(!currentLastUpdatedAt())setLastUpdatedBadge()},5000)"),
-  "Dashboard must normalize last-updated fields and stop showing infinite loading after 5 seconds."
+    dashboardSource.includes("setTimeout(()=>{if(!currentLastUpdatedAt())setLastUpdatedBadge()},5000)") &&
+    dashboardSource.includes("AbortController") &&
+    dashboardSource.includes('api("summary","/api/dashboard-summary.json",4500)') &&
+    dashboardSource.includes('api("health","/api/health/pipeline.json",3000)'),
+  "Dashboard must normalize last-updated fields, timeout slow APIs, and render summary before optional panels."
 );
 assert(
   publicDashboardSource.includes("function getLastUpdatedAt(payload)") &&
-    publicDashboardSource.includes("최근 갱신 시간 확인 불가"),
+    publicDashboardSource.includes("최근 갱신 시간 확인 불가") &&
+    publicDashboardSource.includes("AbortController"),
   "Deployed public dashboard must include the same last-updated fallback logic as dashboard/index.html."
 );
 assert(
