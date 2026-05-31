@@ -208,7 +208,13 @@ jobs:
           console.log("storage.supabase=", status.storage_status?.supabase?.status || status.supabase_write?.status || "unknown");
           console.log("storage.supabase.promoted=", status.storage_status?.supabase?.promoted ?? status.supabase_write?.promoted ?? "unknown");
           console.log("storage.supabase.error=", status.storage_status?.supabase?.error || status.supabase_write?.error || "");
-          console.log("storage.supabase.promotion_blockers=", JSON.stringify(status.storage_status?.supabase?.promotion?.promotion_blockers || status.supabase_write?.promotion?.promotion_blockers || []));
+          console.log("storage.supabase.promotion_blockers=", JSON.stringify(status.promotion_blockers || status.storage_status?.supabase?.promotion_blockers || status.storage_status?.supabase?.promotion?.promotion_blockers || status.supabase_write?.promotion_blockers || status.supabase_write?.promotion?.promotion_blockers || []));
+          console.log("storage.supabase.failure_type=", status.supabase_write_failure_type || status.storage_status?.supabase?.failure_type || status.supabase_write?.failure_type || "");
+          console.log("storage.supabase.rows_written_by_table=", JSON.stringify(status.rows_written_by_table || status.storage_status?.supabase?.db_rows_written_by_table || status.supabase_write?.db_rows_written_by_table || {}));
+          console.log("storage.supabase.post_write_verification=", status.storage_status?.supabase?.post_write_verification?.status || status.supabase_write?.post_write_verification?.status || "unknown");
+          console.log("storage.supabase.post_write_verification_errors=", JSON.stringify(status.post_write_verification_all_errors || status.post_write_verification_errors || status.supabase_write?.post_write_verification?.all_errors || status.supabase_write?.post_write_verification?.errors || []));
+          console.log("storage.supabase.active_run_id=", status.active_run_id || status.supabase_write?.active_run_id || "");
+          console.log("storage.supabase.latest_successful_run_id=", status.latest_successful_run_id || status.supabase_write?.latest_successful_run_id || "");
           console.log("storage.gdrive=", status.storage_status?.gdrive?.status || status.gdrive_archive?.status || "unknown");
           NODE
 

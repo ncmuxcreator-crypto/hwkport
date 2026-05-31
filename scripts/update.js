@@ -2165,11 +2165,13 @@ function shouldWriteDebugApiOutputs(report = {}) {
   const supabaseStorageStatus = String(report?.storage_status?.supabase?.status || report?.supabase_write?.status || "").toLowerCase();
   const productionStorageNotCompleted = VALIDATION_MODE === "production" &&
     ["failed", "syncing", "pending", "unknown", "not_configured", ""].includes(supabaseStorageStatus);
+  const productionFallbackActive = VALIDATION_MODE === "production" && report?.fallback_used === true;
   return dataMode === "no_live_data" ||
     dataMode === "degraded_sample_only" ||
     recordCount <= 0 ||
     allVesselsCount <= 0 ||
-    productionStorageNotCompleted;
+    productionStorageNotCompleted ||
+    productionFallbackActive;
 }
 
 function routeApiOutputPath(filePath, report = {}) {
@@ -3481,6 +3483,20 @@ function isSupabaseWriteFinal(status) {
   return ["completed", "failed"].includes(String(status || "").toLowerCase());
 }
 
+function promotionRequiredInProduction() {
+  return String(process.env.REQUIRE_PROMOTION_IN_PRODUCTION || "true").toLowerCase() !== "false";
+}
+
+function classifySupabasePersistenceIssue(supabaseWrite = {}) {
+  const status = String(supabaseWrite?.status || "").toLowerCase();
+  const verification = supabaseWrite?.post_write_verification || {};
+  if (!isSupabaseWriteCompleted(status)) return "db_write_failed";
+  if (verification.status && verification.status !== "completed") return "post_write_verification_failed";
+  if (verification.promotion_errors?.includes("active_dataset_pointer_run_id_mismatch")) return "active_dataset_pointer_not_updated";
+  if (verification.promotion_errors?.includes("active_dataset_pointer_not_promoted") || supabaseWrite.promoted === false) return "promotion_blocked";
+  return null;
+}
+
 function baseDatasetEmptyFields({ dataMode = "", recordCount = 0, allCollectedCount = 0, vesselCount = 0 } = {}) {
   const mode = String(dataMode || "").toLowerCase();
   const baseRows = Math.max(Number(recordCount || 0), Number(allCollectedCount || 0), Number(vesselCount || 0));
@@ -4717,6 +4733,7 @@ try {
       legacy_status: finalized ? "synced" : null,
       storage_finalization_status: result?.post_write_verification?.status || "unknown",
       ...result,
+      promotion_blockers: result?.promotion?.promotion_blockers || result?.post_write_verification?.promotion_blockers || [],
       post_write_verification: result?.post_write_verification || {
         status: "failed",
         errors: ["missing_post_write_verification"]
@@ -4737,6 +4754,7 @@ try {
       status: "failed",
       error: errorMessage,
       failed_stage: "supabase_write",
+      failure_type: error?.failure_type || error?.persistence_failure_type || "db_write_failed",
       post_write_verification: error?.postWriteVerification || {
         status: "failed",
         errors: ["supabase_write_threw_before_finalization"]
@@ -5094,18 +5112,27 @@ try {
   report.active_run_id = supabaseWrite?.active_run_id || report.active_run_id || runId;
   report.latest_successful_run_id = supabaseWrite?.latest_successful_run_id || supabaseWrite?.latest_successful_summary_run_id || null;
   report.promotion_status = supabaseWrite?.post_write_verification?.promotion_status || (supabaseWrite?.promoted ? "promoted" : "not_promoted");
-  const currentRunStoredSuccessfully = isSupabaseWriteCompleted(supabaseWrite?.status) &&
-    supabaseWrite?.post_write_verification?.status === "completed" &&
-    supabaseWrite?.promoted === true;
+  report.promotion_blockers = supabaseWrite?.promotion_blockers || supabaseWrite?.promotion?.promotion_blockers || supabaseWrite?.post_write_verification?.promotion_blockers || [];
+  report.post_write_verification_errors = supabaseWrite?.post_write_verification?.errors || [];
+  report.post_write_verification_all_errors = supabaseWrite?.post_write_verification?.all_errors || report.post_write_verification_errors;
+  report.supabase_write_failure_type = classifySupabasePersistenceIssue(supabaseWrite);
+  const currentRunDbWriteCompleted = isSupabaseWriteCompleted(supabaseWrite?.status) &&
+    supabaseWrite?.post_write_verification?.status === "completed";
+  const currentRunStoredSuccessfully = currentRunDbWriteCompleted &&
+    (!promotionRequiredInProduction() || supabaseWrite?.promoted === true);
   const latestSuccessfulFallback = latestSuccessfulFallbackState();
   if (VALIDATION_MODE === "production" && !currentRunStoredSuccessfully) {
     report.status = "failed";
-    report.data_status = "storage_failed";
+    report.data_status = currentRunDbWriteCompleted ? "promotion_blocked" : "storage_failed";
     report.data_source_used = "last_successful_snapshot_fallback";
     report.fallback_used = true;
-    report.fallback_reason = "supabase_write_did_not_finalize";
-    report.error = report.error || "Supabase write did not finalize.";
-    report.user_message = "최신 수집은 완료됐지만 DB 저장이 완료되지 않아 마지막 정상 데이터를 표시 중입니다.";
+    report.fallback_reason = report.supabase_write_failure_type || "supabase_persistence_not_available";
+    report.error = report.error || (currentRunDbWriteCompleted
+      ? "Supabase write completed but dataset promotion was blocked."
+      : "Supabase write did not finalize.");
+    report.user_message = currentRunDbWriteCompleted
+      ? "최신 수집과 DB 저장은 완료됐지만 운영 데이터 승격이 차단되어 마지막 정상 데이터를 표시 중입니다."
+      : "최신 수집은 완료됐지만 DB 저장이 완료되지 않아 마지막 정상 데이터를 표시 중입니다.";
   }
   report.latest_successful_fallback = latestSuccessfulFallback;
   const summaryStatusRunId = report?.status_run_id || report?.run_id || runId;
@@ -5367,11 +5394,15 @@ try {
     target_vessels_count: report.target_vessel_count || report.dataset_generation_audit?.target_vessels_generated || 0,
     supabase_write_status: report.supabase_write?.status || report.storage_status?.supabase?.status || "unknown",
     supabase_promoted: report.supabase_write?.promoted ?? report.storage_status?.supabase?.promoted ?? null,
-    supabase_promotion_blockers: report.supabase_write?.promotion?.promotion_blockers || report.storage_status?.supabase?.promotion?.promotion_blockers || [],
+    supabase_promotion_blockers: report.promotion_blockers || report.supabase_write?.promotion_blockers || report.supabase_write?.promotion?.promotion_blockers || report.storage_status?.supabase?.promotion?.promotion_blockers || [],
     post_write_verification: report.supabase_write?.post_write_verification?.status || "unknown",
+    db_rows_written_by_table: JSON.stringify(report.rows_written_by_table || report.supabase_write?.db_rows_written_by_table || {}),
     active_run_id: report.active_run_id || null,
     latest_successful_run_id: report.latest_successful_run_id || null,
     promotion_status: report.promotion_status || null,
+    promotion_blockers: report.promotion_blockers || [],
+    post_write_verification_errors: report.post_write_verification_all_errors || report.post_write_verification_errors || [],
+    supabase_write_failure_type: report.supabase_write_failure_type || null,
     schema_compatibility_stripped: Object.entries(report.supabase_write?.schema_compatibility || {})
       .flatMap(([table, value]) => (value?.stripped_optional_columns || []).map(column => `${table}.${column}`)),
     failed_stage: report.dataset_generation_audit?.failed_stage || null,
@@ -5390,7 +5421,7 @@ try {
     process.exitCode = 1;
   }
   if (VALIDATION_MODE === "production" && report.status === "failed") {
-    console.error(`[HWK] Production update failed: ${report.error || "unknown_error"}`);
+    console.error(`[HWK] Production update failed: ${report.supabase_write_failure_type || report.error || "unknown_error"}`);
     process.exitCode = 1;
   }
   if (VALIDATION_MODE === "production" && !isSupabaseWriteFinal(report.supabase_write?.status)) {
@@ -5398,11 +5429,15 @@ try {
     process.exitCode = 1;
   }
   if (VALIDATION_MODE === "production" && report.supabase_write?.status !== "completed") {
-    console.error(`[HWK] Production Supabase write did not complete: ${report.supabase_write?.status || "unknown"}`);
+    console.error(`[HWK] Production Supabase write did not complete: ${report.supabase_write?.status || "unknown"} (${report.supabase_write_failure_type || "db_write_failed"})`);
     process.exitCode = 1;
   }
   if (VALIDATION_MODE === "production" && report.supabase_write?.post_write_verification?.status !== "completed") {
     console.error(`[HWK] Production post-write verification failed: ${(report.supabase_write?.post_write_verification?.errors || []).join(",") || "unknown"}`);
+    process.exitCode = 1;
+  }
+  if (VALIDATION_MODE === "production" && promotionRequiredInProduction() && report.supabase_write?.status === "completed" && report.supabase_write?.promoted !== true) {
+    console.error(`[HWK] Production promotion blocked: ${(report.promotion_blockers || []).join(",") || report.supabase_write_failure_type || "active_dataset_pointer_not_updated"}`);
     process.exitCode = 1;
   }
 }

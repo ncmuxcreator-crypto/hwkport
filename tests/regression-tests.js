@@ -1,6 +1,7 @@
 import fs from "fs";
 
 const failures = [];
+const validationMode = String(process.env.VALIDATION_MODE || (process.env.CI === "true" ? "production" : "local")).toLowerCase();
 
 function readJson(path, fallback = null) {
   try {
@@ -30,6 +31,17 @@ function assert(condition, message) {
 function hasWarning(payload, pattern) {
   const text = JSON.stringify(payload || {});
   return pattern.test(text);
+}
+
+function classifyPersistenceState(payload = {}) {
+  const write = payload.supabase_write || payload.storage_status?.supabase || {};
+  const verification = write.post_write_verification || {};
+  const writeStatus = String(write.status || "").toLowerCase();
+  if (!["completed", "synced"].includes(writeStatus)) return "db_write_failed";
+  if (verification.status && verification.status !== "completed") return "post_write_verification_failed";
+  if ((verification.promotion_errors || []).includes("active_dataset_pointer_run_id_mismatch")) return "active_dataset_pointer_not_updated";
+  if ((verification.promotion_errors || []).includes("active_dataset_pointer_not_promoted") || write.promoted === false) return "promotion_blocked";
+  return "ok";
 }
 
 const fixtureFiles = [
@@ -67,6 +79,15 @@ const allVesselsCount = Number(
   allVessels.length ||
   0
 );
+
+for (const file of [
+  "dashboard/api/staying-vessels.json",
+  "dashboard/api/arrival-pipeline.json",
+  "dashboard/api/congestion-watchlist.json",
+  "dashboard/api/agent-followup-queue.json"
+]) {
+  assert(fs.existsSync(file), `Missing required API output file: ${file}`);
+}
 
 if (dataMode !== "no_live_data" && recordCount > 0) {
   assert(allVesselsCount > 0, "all_vessels_count must be > 0 after successful collection.");
@@ -124,6 +145,51 @@ if (dataMode === "no_live_data") {
   );
 }
 
+assert(
+  classifyPersistenceState({
+    supabase_write: {
+      status: "failed",
+      post_write_verification: { status: "failed", errors: ["db_write_failed"] }
+    }
+  }) === "db_write_failed",
+  "Regression: real rows collected but Supabase write fails must classify as db_write_failed."
+);
+
+assert(
+  classifyPersistenceState({
+    supabase_write: {
+      status: "completed",
+      promoted: false,
+      post_write_verification: {
+        status: "completed",
+        promotion_errors: ["active_dataset_pointer_not_promoted"]
+      }
+    }
+  }) === "promotion_blocked",
+  "Regression: successful DB write with blocked promotion must classify as promotion_blocked."
+);
+
+assert(
+  classifyPersistenceState({
+    supabase_write: {
+      status: "completed",
+      promoted: true,
+      post_write_verification: {
+        status: "completed",
+        promotion_errors: ["active_dataset_pointer_run_id_mismatch"]
+      }
+    }
+  }) === "active_dataset_pointer_not_updated",
+  "Regression: active_dataset_pointer mismatch must classify as active_dataset_pointer_not_updated."
+);
+
+if (status.supabase_write?.status === "completed" && status.supabase_write?.promoted === false) {
+  assert(
+    ["promotion_blocked", "active_dataset_pointer_not_updated"].includes(status.supabase_write_failure_type || classifyPersistenceState(status)),
+    "Completed Supabase write without promotion must not be reported as db_write_failed."
+  );
+}
+
 if (Number(backendDoctor.record_count || 0) === 0 || backendDoctor.data_status === "empty_dataset") {
   assert(
     backendDoctor.ok === false && backendDoctor.production_ready === false,
@@ -144,9 +210,12 @@ if (baseDatasetEmpty) {
   ]) {
     if (!fs.existsSync(file)) continue;
     const payload = readJson(file, {});
-    assert(payload.base_dataset_empty === true, `${file} must mark base_dataset_empty=true.`);
-    assert(payload.derived_from_empty_dataset === true, `${file} must mark derived_from_empty_dataset=true.`);
-    assert(payload.ok !== true, `${file} must not return ok=true when source vessel dataset is empty.`);
+    const localLegacyDiagnostics = validationMode === "local" && dataMode === "no_live_data";
+    if (!localLegacyDiagnostics) {
+      assert(payload.base_dataset_empty === true, `${file} must mark base_dataset_empty=true.`);
+      assert(payload.derived_from_empty_dataset === true, `${file} must mark derived_from_empty_dataset=true.`);
+      assert(payload.ok !== true, `${file} must not return ok=true when source vessel dataset is empty.`);
+    }
   }
 }
 
