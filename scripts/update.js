@@ -3459,12 +3459,42 @@ function countJsonRows(value) {
   return 0;
 }
 
+function normalizeServingMode(mode, fallback = "static_json") {
+  const value = String(mode || "").trim().toLowerCase();
+  if (["worker_supabase", "static_json", "local_diagnostics"].includes(value)) return value;
+  if (value === "production_api") return "static_json";
+  if (value === "debug_diagnostics_only" || value === "diagnostics_only") return "local_diagnostics";
+  if (value === "mixed") return "worker_supabase";
+  return fallback;
+}
+
+function buildStaticApiPayload(path, payload, report = {}) {
+  const normalizedPath = String(path || "").replace(/\\/g, "/");
+  if (!normalizedPath.startsWith("dashboard/api/") || !Array.isArray(payload)) return payload;
+  const servingMode = normalizeServingMode(report.serving_mode || report.output_mode || (shouldWriteDebugApiOutputs(report) ? "local_diagnostics" : "static_json"));
+  return {
+    serving_mode: servingMode,
+    data_source_used: report.data_source_used || (servingMode === "local_diagnostics" ? "diagnostics_only_no_live_data" : "static_json_snapshot"),
+    fallback_used: Boolean(report.fallback_used),
+    fallback_reason: report.fallback_reason || null,
+    run_id: report.run_id || null,
+    active_run_id: report.active_run_id || report.run_id || null,
+    generated_at: report.generated_at || report.completed_at || new Date().toISOString(),
+    data_freshness: report.data_freshness || {
+      active_collected_at: report.completed_at || report.generated_at || null
+    },
+    record_count: payload.length,
+    data: payload
+  };
+}
+
 function writeStaticDatasetJson(path, payload, report = {}, manifest = {}) {
   const outputPath = routeApiOutputPath(path, report);
+  const outputPayload = buildStaticApiPayload(path, payload, report);
   if (outputPath !== path) {
-    const incomingRows = countJsonRows(payload);
+    const incomingRows = countJsonRows(outputPayload);
     fs.mkdirSync(outputPath.split("/").slice(0, -1).join("/"), { recursive: true });
-    fs.writeFileSync(outputPath, JSON.stringify(payload, null, 2));
+    fs.writeFileSync(outputPath, JSON.stringify(outputPayload, null, 2));
     manifest[path] = {
       status: "written_to_debug_only",
       output_path: outputPath,
@@ -3475,7 +3505,7 @@ function writeStaticDatasetJson(path, payload, report = {}, manifest = {}) {
   }
   const existingPayload = readJsonFile(path, null);
   const existingRows = countJsonRows(existingPayload);
-  const incomingRows = countJsonRows(payload);
+  const incomingRows = countJsonRows(outputPayload);
   const shouldPreserve = shouldWriteDebugApiOutputs(report) && existingRows > 0;
   fs.mkdirSync(path.split("/").slice(0, -1).join("/"), { recursive: true });
   if (shouldPreserve) {
@@ -3487,7 +3517,7 @@ function writeStaticDatasetJson(path, payload, report = {}, manifest = {}) {
     };
     return manifest[path];
   }
-  fs.writeFileSync(path, JSON.stringify(payload, null, 2));
+  fs.writeFileSync(path, JSON.stringify(outputPayload, null, 2));
   manifest[path] = {
     status: "written",
     rows: incomingRows,
@@ -3658,7 +3688,7 @@ function buildSourceHealthRuntimeReport({ report = {}, collectorDiagnostics = {}
     status_run_id: report.run_id || runId,
     generated_at: generatedAt,
     validation_mode: VALIDATION_MODE,
-    serving_mode: report.output_mode || (shouldWriteDebugApiOutputs(report) ? "debug_diagnostics_only" : "production_api"),
+    serving_mode: normalizeServingMode(report.output_mode || (shouldWriteDebugApiOutputs(report) ? "local_diagnostics" : "static_json")),
     update_mode: process.env.UPDATE_MODE || null,
     process_env_CI: process.env.CI || null,
     is_github_actions: process.env.GITHUB_ACTIONS === "true",
@@ -4650,7 +4680,7 @@ try {
     VALIDATION_MODE: process.env.VALIDATION_MODE || null,
     resolved_validation_mode: VALIDATION_MODE,
     UPDATE_MODE: process.env.UPDATE_MODE || null,
-    serving_mode: process.env.SERVING_MODE || "static_json",
+    serving_mode: normalizeServingMode(process.env.SERVING_MODE || "static_json"),
     is_github_actions: process.env.GITHUB_ACTIONS === "true",
     is_local_build: process.env.GITHUB_ACTIONS !== "true",
     generated_by: process.env.GITHUB_ACTIONS === "true" ? "github_actions" : "local",
@@ -4663,7 +4693,7 @@ try {
     collection_mode: collectorNotAttempted ? "collector_not_attempted" : isFallbackDataset ? "no_live_data" : "source_collection"
   };
   const baseReport = {
-    ...buildRunOrigin({ runId, validationMode: VALIDATION_MODE, servingMode: isFallbackDataset ? "debug_diagnostics_only" : "production_api" }),
+    ...buildRunOrigin({ runId, validationMode: VALIDATION_MODE, servingMode: isFallbackDataset ? "local_diagnostics" : "static_json" }),
     version: VERSION,
     build_name: BUILD_NAME,
     status,
@@ -4770,7 +4800,7 @@ try {
   const runOrigin = buildRunOrigin({
     runId,
     validationMode: VALIDATION_MODE,
-    servingMode: shouldWriteDebugApiOutputs(baseReport) ? "debug_diagnostics_only" : "production_api"
+    servingMode: shouldWriteDebugApiOutputs(baseReport) ? "local_diagnostics" : "static_json"
   });
   baseReport.next_development_plan = buildNextDevelopmentPlan(baseReport, detectSecrets());
   const snapshotOutputs = writeSnapshotOutputs({
@@ -5051,7 +5081,7 @@ try {
       ? "keep_serving_last_successful_dataset"
       : "write_current_successful_dataset"
   };
-  report.output_mode = lastSuccessfulDatasetLocked ? "debug_diagnostics_only" : "production_api";
+  report.output_mode = lastSuccessfulDatasetLocked ? "local_diagnostics" : "static_json";
   report.production_api_write_protected = lastSuccessfulDatasetLocked;
   report.debug_api_dir = lastSuccessfulDatasetLocked ? DEBUG_API_DIR : null;
   report.dataset_generation_audit.static_outputs_generated = {
@@ -5061,7 +5091,7 @@ try {
   const finalRunOrigin = buildRunOrigin({
     runId,
     validationMode: VALIDATION_MODE,
-    servingMode: report.output_mode || (lastSuccessfulDatasetLocked ? "debug_diagnostics_only" : "production_api")
+    servingMode: normalizeServingMode(report.output_mode || (lastSuccessfulDatasetLocked ? "local_diagnostics" : "static_json"))
   });
   Object.assign(report, withRunOrigin(report, finalRunOrigin));
   Object.assign(dashboardSummary, withRunOrigin(dashboardSummary, finalRunOrigin));
@@ -5190,7 +5220,7 @@ try {
   fs.copyFileSync("dashboard/index.html", "public/index.html");
   const collectionSummary = {
     validation_mode: VALIDATION_MODE,
-    serving_mode: report.output_mode || (lastSuccessfulDatasetLocked ? "debug_diagnostics_only" : "production_api"),
+    serving_mode: normalizeServingMode(report.output_mode || (lastSuccessfulDatasetLocked ? "local_diagnostics" : "static_json")),
     required_secrets_present: Object.entries(startupConfigDiagnostics.secrets_present || {})
       .filter(([, present]) => present)
       .map(([key]) => key),

@@ -5,6 +5,7 @@ const IMMEDIATE_TARGET_THRESHOLD = 75;
 const CRITICAL_TARGET_THRESHOLD = 90;
 const PORT_REGISTRY_SOURCE = "data/reference/ports_registry.csv";
 const PORT_REGISTRY_GENERATED_FROM_CSV = true;
+const SUPPORTED_SERVING_MODES = new Set(["worker_supabase", "static_json", "local_diagnostics"]);
 // Compatibility cache generated from data/reference/ports_registry.csv.
 // Update the CSV source first, then regenerate this Worker constant.
 const PORT_REGISTRY = [
@@ -74,6 +75,47 @@ function parseJsonField(value, fallback) {
   }
   return fallback;
 }
+function normalizeServingMode(mode, fallback = "worker_supabase") {
+  const value = String(mode || "").trim().toLowerCase();
+  if (SUPPORTED_SERVING_MODES.has(value)) return value;
+  if (value === "production_api" || value === "mixed") return "worker_supabase";
+  if (value === "debug_diagnostics_only" || value === "diagnostics_only") return "local_diagnostics";
+  return fallback;
+}
+function defaultDataSourceForServingMode(servingMode) {
+  if (servingMode === "worker_supabase") return "supabase_active_dataset";
+  if (servingMode === "static_json") return "static_json";
+  return "diagnostics_only_no_live_data";
+}
+function withApiServingMetadata(data, meta = {}) {
+  const isObject = data && typeof data === "object" && !Array.isArray(data);
+  const current = isObject ? data : {};
+  const servingMode = normalizeServingMode(meta.serving_mode || current.serving_mode);
+  const dataSourceUsed = meta.data_source_used || current.data_source_used || defaultDataSourceForServingMode(servingMode);
+  const fallbackUsed = meta.fallback_used ?? current.fallback_used ?? dataSourceUsed.includes("fallback") ?? false;
+  const fallbackReason = meta.fallback_reason ?? current.fallback_reason ?? (fallbackUsed ? dataSourceUsed : null);
+  if (Array.isArray(data)) {
+    return {
+      serving_mode: servingMode,
+      data_source_used: dataSourceUsed,
+      fallback_used: Boolean(fallbackUsed),
+      fallback_reason: fallbackReason,
+      record_count: data.length,
+      data
+    };
+  }
+  return {
+    serving_mode: servingMode,
+    data_source_used: dataSourceUsed,
+    fallback_used: Boolean(fallbackUsed),
+    fallback_reason: fallbackReason,
+    ...current,
+    serving_mode: normalizeServingMode(current.serving_mode || servingMode, servingMode),
+    data_source_used: current.data_source_used || dataSourceUsed,
+    fallback_used: current.fallback_used ?? Boolean(fallbackUsed),
+    fallback_reason: current.fallback_reason ?? fallbackReason
+  };
+}
 const BASIC_INFO_FIELDS = [
   "vessel_name", "normalized_vessel_name", "call_sign", "imo", "mmsi", "vessel_type", "vessel_type_group",
   "gt", "dwt", "loa", "beam", "flag", "operator", "operator_normalized", "agent", "agent_normalized",
@@ -81,12 +123,13 @@ const BASIC_INFO_FIELDS = [
   "eta", "ata", "etd", "atd"
 ];
 function json(data, init = {}) {
-  return new Response(JSON.stringify(data, null, 2), {
-    ...init,
+  const { meta, ...responseInit } = init;
+  return new Response(JSON.stringify(withApiServingMetadata(data, meta), null, 2), {
+    ...responseInit,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": `public, max-age=${API_CACHE_SECONDS}, stale-while-revalidate=900`,
-      ...(init.headers || {})
+      ...(responseInit.headers || {})
     }
   });
 }
@@ -2994,6 +3037,7 @@ function buildDashboardSummary(allRecords = [], source = {}) {
   return {
     run_id: status.active_run_id,
     ...context,
+    serving_mode: status.serving_mode || "worker_supabase",
     data_source_used: status.data_source_used,
     fallback_used: status.fallback_used,
     fallback_reason: status.fallback_reason,
@@ -3053,6 +3097,7 @@ function buildStatusFromSummarySnapshot(snapshot = {}, source = {}, reason = "la
   return {
     run_id: context.status_run_id,
     ...context,
+    serving_mode: "worker_supabase",
     data_source_used: "latest_successful_summary_snapshot",
     generated_at: new Date().toISOString(),
     data_freshness: freshness,
@@ -3131,6 +3176,7 @@ function buildDashboardSummaryFromSnapshot(snapshot = {}, source = {}, reason = 
   return {
     run_id: context.status_run_id,
     ...context,
+    serving_mode: status.serving_mode || "worker_supabase",
     data_source_used: status.data_source_used,
     is_fallback: true,
     fallback_used: true,
@@ -4148,6 +4194,11 @@ function buildStatus(records, source) {
   const dataSourceUsed = source.data_source_used || (records.length
     ? (source.pointer?.local_static_snapshot ? "local_static_snapshot" : source.pointer?.fallback_pointer ? "supabase_latest_snapshot_fallback" : "supabase_active_dataset")
     : "diagnostics_only_no_live_data");
+  const servingMode = dataSourceUsed === "local_static_snapshot"
+    ? "static_json"
+    : dataSourceUsed === "diagnostics_only_no_live_data"
+      ? "local_diagnostics"
+      : "worker_supabase";
   const fallbackUsed = Boolean(source.fallback_used || usingSnapshotFallback || dataSourceUsed !== "supabase_active_dataset");
   const fallbackReason = source.fallback_reason || (fallbackUsed ? source.pointer?.pointer_source || source.error || dataSourceUsed : null);
   const activeRunId = source.pointer?.active_run_id || null;
@@ -4163,6 +4214,7 @@ function buildStatus(records, source) {
   return {
     run_id: activeRunId,
     ...context,
+    serving_mode: servingMode,
     data_source_used: dataSourceUsed,
     fallback_used: fallbackUsed,
     fallback_reason: fallbackReason,
@@ -4379,6 +4431,7 @@ function buildConfigStatus(env = {}) {
     environment: env.ENVIRONMENT || env.UPDATE_MODE || "cloudflare_worker",
     validation_mode: env.VALIDATION_MODE || "production",
     serving_mode: "worker_supabase",
+    supported_serving_modes: [...SUPPORTED_SERVING_MODES],
     production_data_source: "supabase_active_dataset",
     worker_supabase_available: workerSupabaseAvailable,
     fallback_used: false,

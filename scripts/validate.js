@@ -112,13 +112,13 @@ function jsonRows(value) {
 if (!Array.isArray(data)) {
   throw new Error("Invalid latest-lite.json");
 }
-if (!Array.isArray(vessels)) {
+if (!Array.isArray(vessels) && !Array.isArray(vessels?.data)) {
   throw new Error("Invalid vessels.json");
 }
-if (!Array.isArray(allCollectedVessels)) {
+if (!Array.isArray(allCollectedVessels) && !Array.isArray(allCollectedVessels?.data)) {
   throw new Error("Invalid all-collected-vessels.json");
 }
-if (!Array.isArray(targetVessels)) {
+if (!Array.isArray(targetVessels) && !Array.isArray(targetVessels?.data)) {
   throw new Error("Invalid target-vessels.json");
 }
 
@@ -243,7 +243,8 @@ for (const vessel of vessels) {
 
 const status = readOutputJson("dashboard/api/status.json");
 const dashboardSummary = readOutputJson("dashboard/api/dashboard-summary.json");
-const commonApiFields = ["run_id", "active_run_id", "generated_at", "data_source_used", "fallback_used", "fallback_reason", "data_freshness", "record_count"];
+const commonApiFields = ["run_id", "active_run_id", "generated_at", "serving_mode", "data_source_used", "fallback_used", "fallback_reason", "data_freshness", "record_count"];
+const supportedServingModes = new Set(["worker_supabase", "static_json", "local_diagnostics"]);
 const vesselRowFields = ["port_call_id", "master_vessel_id", "vessel_name", "port_code", "port_name", "candidate_band", "commercial_value_score", "data_confidence_score"];
 function contractIssue(message) {
   if (validationMode === "production") throw new Error(message);
@@ -252,6 +253,9 @@ function contractIssue(message) {
 function validateApiContract(name, payload, requiredFields = commonApiFields) {
   for (const field of requiredFields) {
     if (!(field in (payload || {}))) contractIssue(`${name} missing required API field: ${field}`);
+  }
+  if (payload?.serving_mode && !supportedServingModes.has(String(payload.serving_mode))) {
+    contractIssue(`${name} has unsupported serving_mode: ${payload.serving_mode}`);
   }
 }
 function validateVesselRowContract(name, rows) {
@@ -263,6 +267,17 @@ function validateVesselRowContract(name, rows) {
 }
 validateApiContract("dashboard-summary.json", dashboardSummary);
 validateApiContract("status.json", status);
+for (const [name, payload] of [
+  ["vessels.json", vessels],
+  ["all-collected-vessels.json", allCollectedVessels],
+  ["target-vessels.json", targetVessels]
+]) {
+  if (Array.isArray(payload)) {
+    contractIssue(`${name} must use a response envelope with serving_mode/data_source_used/fallback metadata`);
+  } else {
+    validateApiContract(name, payload);
+  }
+}
 for (const field of ["status_run_id", "summary_run_id", "latest_successful_run_id"]) {
   if (!(field in dashboardSummary)) contractIssue(`dashboard-summary.json missing run-context field: ${field}`);
 }

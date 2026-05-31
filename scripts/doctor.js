@@ -110,14 +110,15 @@ const collectorNotAttemptedReason = status.collector_not_attempted_reason ||
 const requestedServingMode = String(process.env.SERVING_MODE || "").trim().toLowerCase();
 const hasWorker = fs.existsSync("src/worker.js") && fs.existsSync("wrangler.jsonc");
 const hasStaticJson = fs.existsSync("dashboard/api/status.json") || fs.existsSync("dashboard/api/vessels.json");
-const servingMode = ["static_json", "worker_supabase", "mixed"].includes(requestedServingMode)
+const supportedServingModes = ["worker_supabase", "static_json", "local_diagnostics"];
+const servingMode = supportedServingModes.includes(requestedServingMode)
   ? requestedServingMode
-  : hasWorker && hasStaticJson
-    ? "mixed"
+  : process.env.VALIDATION_MODE === "local"
+    ? "local_diagnostics"
     : hasWorker
       ? "worker_supabase"
       : "static_json";
-const workerSupabaseRequired = servingMode === "worker_supabase" || servingMode === "mixed";
+const workerSupabaseRequired = servingMode === "worker_supabase";
 const staticOutputsValid = staticFilesMissingActual.length === 0 &&
   allCollectedVesselsExists &&
   targetVesselsExists &&
@@ -140,7 +141,12 @@ const report = {
   ok: productionReady,
   checked_at: new Date().toISOString(),
   serving_mode: servingMode,
-  production_data_source: workerSupabaseRequired ? "supabase_active_dataset" : "static_json",
+  supported_serving_modes: supportedServingModes,
+  production_data_source: workerSupabaseRequired
+    ? "supabase_active_dataset"
+    : servingMode === "static_json"
+      ? "static_json"
+      : "diagnostics_only_no_live_data",
   worker_supabase_required: workerSupabaseRequired,
   static_outputs_valid: staticOutputsValid,
   static_files_missing: servingMode === "static_json" ? staticFilesMissingActual : staticFilesMissingFromPackage,

@@ -109,11 +109,18 @@ export function buildRuntimeConfigAudit(env = process.env) {
 
 export function buildRunOrigin({ runId = null, validationMode = null, servingMode = null, generatedBy = null } = {}, env = process.env) {
   const isGithubActions = env.GITHUB_ACTIONS === "true";
+  const supportedServingModes = new Set(["worker_supabase", "static_json", "local_diagnostics"]);
+  const requestedServingMode = String(servingMode || env.SERVING_MODE || "").trim().toLowerCase();
+  const normalizedServingMode = supportedServingModes.has(requestedServingMode)
+    ? requestedServingMode
+    : isGithubActions
+      ? "static_json"
+      : "local_diagnostics";
   return {
     generated_by: generatedBy || (isGithubActions ? "github_actions" : "local"),
     is_github_actions: isGithubActions,
     validation_mode: validationMode || env.VALIDATION_MODE || (env.CI === "true" ? "production" : "local"),
-    serving_mode: servingMode || env.SERVING_MODE || (isGithubActions ? "github_actions_artifact" : "local_diagnostics"),
+    serving_mode: normalizedServingMode,
     GITHUB_RUN_ID: env.GITHUB_RUN_ID || null,
     GITHUB_WORKFLOW: env.GITHUB_WORKFLOW || null,
     run_id: runId || null
